@@ -2,12 +2,14 @@
   "expo": {
     "name": "finagotchi",
     "slug": "finagotchi",
+    "scheme": "finagotchi",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
-    "userInterfaceStyle": "light",
+    "userInterfaceStyle": "dark",
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.magicred1.finagotchi"
     },
     "android": {
       "adaptiveIcon": {
@@ -16,7 +18,8 @@
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "package": "com.magicred1.finagotchi"
     },
     "web": {
       "favicon": "./assets/favicon.png"
