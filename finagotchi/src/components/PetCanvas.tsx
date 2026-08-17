@@ -1,122 +1,134 @@
-// import React from 'react';
-// import {
-//     Image,
-//     StyleSheet,
-//     View,
-// } from 'react-native';
+import React, { useEffect } from 'react';
+import { StyleSheet, View } from 'react-native';
 
-// import { usePetStore } from '../features/pet/store';
-
-// const pets = {
-//     1: require('../../assets/pets/stage-1.png'),
-//     2: require('../../assets/pets/stage-2.png'),
-//     3: require('../../assets/pets/stage-3.png'),
-// };
-
-// export function PetCanvas() {
-//     const stage = usePetStore((state) => state.stage);
-
-//     return (
-//         <View style={styles.container}>
-//         <Image
-//             source={pets[stage]}
-//             resizeMode="contain"
-//             style={styles.pet}
-//         />
-//         </View>
-//     );
-// }
-
-// const styles = StyleSheet.create({
-//     container: {
-//         width: '100%',
-//         aspectRatio: 1,
-//         alignItems: 'center',
-//         justifyContent: 'center',
-//     },
-
-//     pet: {
-//         width: '90%',
-//         height: '90%',
-//     },
-// });
-
-import React from 'react';
 import {
-    StyleSheet,
-    Text,
-    View,
-} from 'react-native';
+  Atlas,
+  Canvas,
+  useImage,
+  useRectBuffer,
+  useRSXformBuffer,
+} from '@shopify/react-native-skia';
+
+import {
+  Easing,
+  useDerivedValue,
+  useSharedValue,
+  withRepeat,
+  withTiming,
+} from 'react-native-reanimated';
+
+import { usePetStore } from '../features/pet/store';
+
+const TOTAL_COLUMNS = 9;
+const TOTAL_ROWS = 7;
+const DISPLAY_SIZE = 180; // Reduced canvas size to fit hero neatly without clipping
+const FRAME_DURATION = 180;
+
+const STAGE_FRAMES = {
+  1: [0, 1, 2, 3],
+  2: [9, 10, 11, 12],
+  3: [27, 28, 29, 30],
+} as const;
 
 export function PetCanvas() {
-    return (
-        <View style={styles.container}>
-        <View style={styles.pet}>
-            <Text style={styles.eyes}>● ●</Text>
-            <Text style={styles.body}>🟢</Text>
-            <Text style={styles.heart}>♥</Text>
-        </View>
+  const stage = usePetStore((state) => state.stage);
 
-        <Text style={styles.label}>
-            Finny
-        </Text>
+  const spriteSheet = useImage(
+    require('../../assets/sprites/pets/pet-atlas.png')
+  );
 
-        <Text style={styles.stage}>
-            Baby • Stage 1
-        </Text>
-        </View>
+  const animationProgress = useSharedValue(0);
+  const floatAnim = useSharedValue(0);
+
+  const frames = STAGE_FRAMES[stage] ?? STAGE_FRAMES[1];
+
+  useEffect(() => {
+    animationProgress.value = 0;
+    animationProgress.value = withRepeat(
+      withTiming(1, {
+        duration: frames.length * FRAME_DURATION,
+        easing: Easing.linear,
+      }),
+      -1,
+      false
     );
-    }
 
-    const styles = StyleSheet.create({
-    container: {
-        width: '100%',
-        aspectRatio: 1,
-        alignItems: 'center',
-        justifyContent: 'center',
-    },
+    return () => {
+      animationProgress.value = 0;
+    };
+  }, [stage, frames.length]);
 
-    pet: {
-        width: 220,
-        height: 220,
-        borderRadius: 110,
-        backgroundColor: '#72E45A',
-        borderWidth: 8,
-        borderColor: '#3BAA43',
-        alignItems: 'center',
-        justifyContent: 'center',
-        position: 'relative',
-    },
+  useEffect(() => {
+    floatAnim.value = withRepeat(
+      withTiming(-6, {
+        duration: 1200,
+        easing: Easing.inOut(Easing.ease),
+      }),
+      -1,
+      true
+    );
 
-    eyes: {
-        fontSize: 30,
-        color: '#07111F',
-        letterSpacing: 22,
-        marginBottom: 10,
-    },
+    return () => {
+      floatAnim.value = 0;
+    };
+  }, []);
 
-    body: {
-        fontSize: 90,
-    },
+  const currentFrame = useDerivedValue(() => {
+    const frameIdx = Math.floor(animationProgress.value * frames.length);
+    return frames[Math.min(frameIdx, frames.length - 1)];
+  });
 
-    heart: {
-        position: 'absolute',
-        top: 25,
-        right: 30,
-        fontSize: 28,
-        color: '#FF647C',
-    },
+  const sprites = useRectBuffer(1, (value) => {
+    'worklet';
+    if (!spriteSheet) return;
 
-    label: {
-        marginTop: 14,
-        color: '#FFFFFF',
-        fontSize: 22,
-        fontWeight: '800',
-    },
+    const frameWidth = spriteSheet.width() / TOTAL_COLUMNS;
+    const frameHeight = spriteSheet.height() / TOTAL_ROWS;
 
-    stage: {
-        marginTop: 4,
-        color: '#8FA2B8',
-        fontSize: 14,
-    },
+    const frame = currentFrame.value;
+    const column = frame % TOTAL_COLUMNS;
+    const row = Math.floor(frame / TOTAL_COLUMNS);
+
+    value.setXYWH(
+      column * frameWidth,
+      row * frameHeight,
+      frameWidth,
+      frameHeight
+    );
+  });
+
+  const transforms = useRSXformBuffer(1, (value) => {
+    'worklet';
+    if (!spriteSheet) return;
+
+    const frameWidth = spriteSheet.width() / TOTAL_COLUMNS;
+    const scale = DISPLAY_SIZE / frameWidth;
+
+    value.set(scale, 0, 0, floatAnim.value);
+  });
+
+  if (!spriteSheet) {
+    return <View style={styles.canvasPlaceholder} />;
+  }
+
+  return (
+    <Canvas style={styles.canvas}>
+      <Atlas
+        image={spriteSheet}
+        sprites={sprites}
+        transforms={transforms}
+      />
+    </Canvas>
+  );
+}
+
+const styles = StyleSheet.create({
+  canvas: {
+    width: DISPLAY_SIZE,
+    height: DISPLAY_SIZE,
+  },
+  canvasPlaceholder: {
+    width: DISPLAY_SIZE,
+    height: DISPLAY_SIZE,
+  },
 });
