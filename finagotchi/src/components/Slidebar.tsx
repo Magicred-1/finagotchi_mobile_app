@@ -14,6 +14,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter, usePathname, Href } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import Animated, {
+    ReduceMotion,
+    SharedValue,
     runOnJS,
     useAnimatedStyle,
     useSharedValue,
@@ -24,15 +26,21 @@ import * as Haptics from 'expo-haptics';
 
 import { useWallet } from '../wallet/useWallet';
 import { usePetStore } from '../features/pet/store';
-import { colors, spacing, typography } from '../theme/tokens';
+import { PressableScale } from './PressableScale';
+import { colors, spacing, springs, typography } from '../theme/tokens';
 
-const SIDEBAR_WIDTH = 300;
+export const SIDEBAR_WIDTH = 300;
 const SWIPE_THRESHOLD = 60;
-const EDGE_WIDTH = 24;
+const FLICK_VELOCITY = 650;
 
 function truncateAddress(address: string | null) {
     if (!address) return '';
     return `${address.slice(0, 6)}...${address.slice(-6)}`;
+}
+
+function project(initialVelocity: number, decelerationRate = 0.998) {
+    'worklet';
+    return (initialVelocity / 1000) * decelerationRate / (1 - decelerationRate);
 }
 
 type NavAction =
@@ -51,6 +59,8 @@ type Props = {
     onClose: () => void;
     onOpenQuests: () => void;
     onOpenWaitlist: () => void;
+    translateX?: SharedValue<number>;
+    opacity?: SharedValue<number>;
 };
 
 export function Slidebar({
@@ -59,6 +69,8 @@ export function Slidebar({
     onClose,
     onOpenQuests,
     onOpenWaitlist,
+    translateX: externalTranslateX,
+    opacity: externalOpacity,
 }: Props) {
     const { width, height } = useWindowDimensions();
     const insets = useSafeAreaInsets();
@@ -67,31 +79,37 @@ export function Slidebar({
     const pathname = usePathname();
     const petName = usePetStore((state) => state.name);
 
-    const translateX = useSharedValue(-SIDEBAR_WIDTH);
-    const opacity = useSharedValue(0);
+    const internalTranslateX = useSharedValue(-SIDEBAR_WIDTH);
+    const internalOpacity = useSharedValue(0);
 
-    const animateOpen = useCallback(() => {
+    const translateX = externalTranslateX ?? internalTranslateX;
+    const opacity = externalOpacity ?? internalOpacity;
+
+    const animateOpen = useCallback((velocity = 0) => {
+        const isFlick = Math.abs(velocity) > FLICK_VELOCITY;
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
         translateX.value = withSpring(0, {
-            damping: 25,
-            stiffness: 200,
-            overshootClamping: true,
+            ...(isFlick ? springs.momentum : springs.default),
+            velocity,
+            reduceMotion: ReduceMotion.System,
         });
         opacity.value = withTiming(1, { duration: 200 });
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    }, [opacity, translateX]);
+    }, [translateX, opacity]);
 
-    const animateClose = useCallback(() => {
+    const animateClose = useCallback((velocity = 0) => {
+        const isFlick = Math.abs(velocity) > FLICK_VELOCITY;
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
         translateX.value = withSpring(-SIDEBAR_WIDTH, {
-            damping: 25,
-            stiffness: 200,
+            ...(isFlick ? springs.momentum : springs.default),
+            velocity,
+            reduceMotion: ReduceMotion.System,
         });
         opacity.value = withTiming(0, { duration: 200 }, (finished) => {
             if (finished) {
                 runOnJS(onClose)();
             }
         });
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    }, [onClose, opacity, translateX]);
+    }, [onClose, translateX, opacity]);
 
     useEffect(() => {
         if (visible) {
@@ -113,37 +131,33 @@ export function Slidebar({
             }
         })
         .onEnd((event) => {
+            const projectedX = event.translationX + project(event.velocityX);
             const shouldClose =
-                event.translationX < -SWIPE_THRESHOLD ||
-                event.velocityX < -500;
+                projectedX < -SWIPE_THRESHOLD ||
+                event.translationX < -SIDEBAR_WIDTH * 0.4;
+
+            const velocity = event.velocityX;
+            const isFlick = Math.abs(velocity) > FLICK_VELOCITY;
+            const springConfig = isFlick ? springs.momentum : springs.default;
 
             if (shouldClose) {
-                runOnJS(animateClose)();
+                runOnJS(Haptics.impactAsync)(Haptics.ImpactFeedbackStyle.Light);
+                translateX.value = withSpring(-SIDEBAR_WIDTH, {
+                    ...springConfig,
+                    velocity,
+                    reduceMotion: ReduceMotion.System,
+                });
+                opacity.value = withTiming(0, { duration: 200 }, (finished) => {
+                    if (finished) runOnJS(onClose)();
+                });
             } else {
-                runOnJS(animateOpen)();
-            }
-        });
-
-    // Swipe right from the left edge of the screen to open.
-    const edgePan = Gesture.Pan()
-        .minDistance(20)
-        .failOffsetY([-30, 30])
-        .onUpdate((event) => {
-            const x = event.translationX;
-            if (x >= 0) {
-                translateX.value = Math.min(0, -SIDEBAR_WIDTH + x);
-                opacity.value = Math.min(1, x / SIDEBAR_WIDTH);
-            }
-        })
-        .onEnd((event) => {
-            const shouldOpen =
-                event.translationX > SWIPE_THRESHOLD ||
-                event.velocityX > 500;
-
-            if (shouldOpen) {
-                runOnJS(onOpen)();
-            } else {
-                runOnJS(animateClose)();
+                runOnJS(Haptics.impactAsync)(Haptics.ImpactFeedbackStyle.Light);
+                translateX.value = withSpring(0, {
+                    ...springConfig,
+                    velocity,
+                    reduceMotion: ReduceMotion.System,
+                });
+                opacity.value = withTiming(1, { duration: 200 });
             }
         });
 
@@ -185,16 +199,6 @@ export function Slidebar({
 
     return (
         <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
-            {/* Left-edge swipe handle: only active when the menu is hidden */}
-            {!visible && (
-                <GestureDetector gesture={edgePan}>
-                    <Animated.View
-                        style={[styles.edgeHandle, { height }]}
-                        pointerEvents="auto"
-                    />
-                </GestureDetector>
-            )}
-
             <View
                 style={[styles.container, { width, height }]}
                 pointerEvents={visible ? 'auto' : 'none'}
@@ -208,7 +212,7 @@ export function Slidebar({
                 >
                     <Pressable
                         style={StyleSheet.absoluteFill}
-                        onPress={animateClose}
+                        onPress={() => animateClose()}
                     />
                 </Animated.View>
 
@@ -236,12 +240,11 @@ export function Slidebar({
                                     item.type === 'route' &&
                                     isActiveRoute(item.href);
                                 return (
-                                    <Pressable
+                                    <PressableScale
                                         key={item.label}
-                                        style={({ pressed }) => [
+                                        style={[
                                             styles.navItem,
                                             active && styles.navItemActive,
-                                            pressed && styles.navItemPressed,
                                         ]}
                                         onPress={() => handleNav(item)}
                                     >
@@ -266,7 +269,7 @@ export function Slidebar({
                                         {active && (
                                             <View style={styles.activePill} />
                                         )}
-                                    </Pressable>
+                                    </PressableScale>
                                 );
                             })}
                         </View>
@@ -299,11 +302,8 @@ export function Slidebar({
                         </View>
 
                         {wallet.connected ? (
-                            <Pressable
-                                style={({ pressed }) => [
-                                    styles.disconnectButton,
-                                    pressed && styles.disconnectButtonPressed,
-                                ]}
+                            <PressableScale
+                                style={styles.disconnectButton}
                                 onPress={wallet.disconnect}
                             >
                                 <Ionicons
@@ -314,7 +314,7 @@ export function Slidebar({
                                 <Text style={styles.disconnectText}>
                                     Disconnect wallet
                                 </Text>
-                            </Pressable>
+                            </PressableScale>
                         ) : null}
                     </Animated.View>
                 </GestureDetector>
@@ -329,13 +329,6 @@ const styles = StyleSheet.create({
         top: 0,
         left: 0,
         zIndex: 1000,
-    },
-    edgeHandle: {
-        position: 'absolute',
-        left: 0,
-        top: 0,
-        width: EDGE_WIDTH,
-        zIndex: 999,
     },
     backdrop: {
         backgroundColor: 'rgba(0,0,0,0.5)',
@@ -382,10 +375,6 @@ const styles = StyleSheet.create({
     navItemActive: {
         backgroundColor: colors.primary,
         borderColor: colors.primary,
-    },
-    navItemPressed: {
-        opacity: 0.8,
-        transform: [{ scale: 0.98 }],
     },
     navLabel: {
         flex: 1,
@@ -455,10 +444,6 @@ const styles = StyleSheet.create({
         backgroundColor: colors.danger,
         borderRadius: 14,
         paddingVertical: spacing.md,
-    },
-    disconnectButtonPressed: {
-        opacity: 0.85,
-        transform: [{ scale: 0.98 }],
     },
     disconnectText: {
         color: colors.background,

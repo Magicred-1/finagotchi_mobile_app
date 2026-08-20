@@ -1,5 +1,6 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
+    Pressable,
     SafeAreaView,
     StyleSheet,
     Text,
@@ -10,13 +11,15 @@ import {
 import Animated, {
     Easing,
     useAnimatedStyle,
+    useReducedMotion,
     useSharedValue,
     withDelay,
+    withRepeat,
     withSequence,
     withTiming,
 } from 'react-native-reanimated';
 
-import { colors } from '../../theme/tokens';
+import { colors, spacing, typography } from '../../theme/tokens';
 
 type Props = {
     onFinished?: () => void;
@@ -27,9 +30,23 @@ export default function SplashStep({ onFinished }: Props) {
     const opacity = useSharedValue(0);
     const creatureY = useSharedValue(14);
     const textOpacity = useSharedValue(0);
+    const hintOpacity = useSharedValue(0);
+    const dotScale = useSharedValue(1);
+    const reducedMotion = useReducedMotion();
+    const [skipped, setSkipped] = useState(false);
     const { width } = useWindowDimensions();
 
     useEffect(() => {
+        if (reducedMotion) {
+            opacity.value = 1;
+            scale.value = 1;
+            creatureY.value = 0;
+            textOpacity.value = 1;
+            hintOpacity.value = 1;
+            dotScale.value = 1;
+            return;
+        }
+
         opacity.value = withTiming(1, {
             duration: 450,
             easing: Easing.out(Easing.cubic),
@@ -59,9 +76,29 @@ export default function SplashStep({ onFinished }: Props) {
             withTiming(1, { duration: 500 })
         );
 
-        const timer = setTimeout(() => onFinished?.(), 1900);
+        hintOpacity.value = withDelay(
+            1200,
+            withTiming(1, { duration: 400 })
+        );
+
+        dotScale.value = withRepeat(
+            withSequence(
+                withTiming(1.5, { duration: 600, easing: Easing.out(Easing.cubic) }),
+                withTiming(1, { duration: 600, easing: Easing.inOut(Easing.cubic) })
+            ),
+            -1,
+            true
+        );
+
+        const timer = setTimeout(() => finish(), 1900);
         return () => clearTimeout(timer);
-    }, [onFinished, creatureY, opacity, scale, textOpacity]);
+    }, [onFinished, creatureY, opacity, scale, textOpacity, hintOpacity, dotScale, reducedMotion]);
+
+    const finish = () => {
+        if (skipped) return;
+        setSkipped(true);
+        onFinished?.();
+    };
 
     const creatureStyle = useAnimatedStyle(() => ({
         opacity: opacity.value,
@@ -80,12 +117,21 @@ export default function SplashStep({ onFinished }: Props) {
         ],
     }));
 
+    const hintStyle = useAnimatedStyle(() => ({
+        opacity: hintOpacity.value,
+    }));
+
+    const dotStyle = useAnimatedStyle(() => ({
+        transform: [{ scale: dotScale.value }],
+        opacity: 0.6 + (dotScale.value - 1) * 0.4,
+    }));
+
     const logoWidth = Math.min(Math.max(width * 0.32, 105), 145);
     const logoHeight = logoWidth * 0.28;
 
     return (
         <SafeAreaView style={styles.safe}>
-            <View style={styles.container}>
+            <Pressable style={styles.container} onPress={finish}>
                 <Animated.View style={[styles.creatureWrap, creatureStyle]}>
                     <View style={styles.glow} />
                     <View style={styles.creatureCard}>
@@ -108,10 +154,13 @@ export default function SplashStep({ onFinished }: Props) {
                 </Animated.View>
 
                 <View style={styles.bottom}>
-                    <View style={styles.dot} />
+                    <Animated.View style={[styles.dot, dotStyle]} />
                     <Text style={styles.loading}>GROWING YOUR WORLD</Text>
+                    <Animated.View style={[styles.hintWrap, hintStyle]}>
+                        <Text style={styles.hint}>Tap to continue</Text>
+                    </Animated.View>
                 </View>
-            </View>
+            </Pressable>
         </SafeAreaView>
     );
 }
@@ -188,5 +237,13 @@ const styles = StyleSheet.create({
         fontSize: 8,
         letterSpacing: 1.2,
         fontFamily: 'Poppins_600SemiBold',
+    },
+    hintWrap: {
+        marginTop: spacing.sm,
+    },
+    hint: {
+        color: colors.textMuted,
+        fontSize: 10,
+        fontFamily: 'Poppins_500Medium',
     },
 });

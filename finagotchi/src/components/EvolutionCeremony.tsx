@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
     Modal,
     Pressable,
@@ -8,11 +8,13 @@ import {
     useWindowDimensions,
 } from 'react-native';
 import Animated, {
-    Easing,
+    ReduceMotion,
     useAnimatedStyle,
     useSharedValue,
+    withSpring,
     withTiming,
 } from 'react-native-reanimated';
+import * as Haptics from 'expo-haptics';
 
 import {
     Stage1Egg,
@@ -21,7 +23,7 @@ import {
     Stage5Whale,
 } from './PetSprites';
 import { STAGE_NAMES, type PetStage } from '../features/pet/store';
-import { colors, spacing, typography } from '../theme/tokens';
+import { colors, spacing, springs, typography } from '../theme/tokens';
 
 type Props = {
     visible: boolean;
@@ -39,19 +41,39 @@ export default function EvolutionCeremony({
     const { width, height } = useWindowDimensions();
     const opacity = useSharedValue(0);
     const scale = useSharedValue(0.8);
+    const [isExiting, setIsExiting] = useState(false);
+
+    const enter = useCallback(() => {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        opacity.value = withTiming(1, { duration: 350 });
+        scale.value = withSpring(1, {
+            ...springs.momentum,
+            reduceMotion: ReduceMotion.System,
+        });
+    }, [opacity, scale]);
+
+    const exit = useCallback(() => {
+        setIsExiting(true);
+        opacity.value = withTiming(0, { duration: 220 });
+        scale.value = withSpring(0.92, {
+            ...springs.default,
+            reduceMotion: ReduceMotion.System,
+        });
+
+        const timer = setTimeout(() => {
+            setIsExiting(false);
+            onDismiss();
+        }, 250);
+        return () => clearTimeout(timer);
+    }, [onDismiss, opacity, scale]);
 
     useEffect(() => {
-        if (visible) {
-            opacity.value = withTiming(1, { duration: 350 });
-            scale.value = withTiming(1, {
-                duration: 500,
-                easing: Easing.out(Easing.back(1.5)),
-            });
-        } else {
+        if (visible && !isExiting) {
             opacity.value = 0;
             scale.value = 0.8;
+            enter();
         }
-    }, [visible]);
+    }, [visible, isExiting, enter, opacity, scale]);
 
     const containerStyle = useAnimatedStyle(() => ({
         opacity: opacity.value,
@@ -88,10 +110,10 @@ export default function EvolutionCeremony({
 
     return (
         <Modal
-            visible={visible}
+            visible={visible || isExiting}
             transparent
             animationType="none"
-            onRequestClose={onDismiss}
+            onRequestClose={exit}
         >
             <Animated.View
                 style={[
@@ -113,7 +135,7 @@ export default function EvolutionCeremony({
 
                     <Text style={styles.shareText}>{shareableMessage}</Text>
 
-                    <Pressable onPress={onDismiss} style={styles.button}>
+                    <Pressable onPress={exit} style={styles.button}>
                         <Text style={styles.buttonText}>Continue</Text>
                     </Pressable>
                 </Animated.View>

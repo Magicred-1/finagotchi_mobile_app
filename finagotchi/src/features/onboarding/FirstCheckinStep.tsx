@@ -1,22 +1,31 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
+    Keyboard,
+    KeyboardAvoidingView,
+    Platform,
+    Pressable,
     SafeAreaView,
+    ScrollView,
     StyleSheet,
     Text,
     TextInput,
     View,
-    Pressable,
     useWindowDimensions,
 } from 'react-native';
 import Animated, {
     Easing,
     useAnimatedStyle,
+    useReducedMotion,
     useSharedValue,
     withRepeat,
     withTiming,
 } from 'react-native-reanimated';
+import * as Haptics from 'expo-haptics';
 
+import { PressableScale } from '../../components/PressableScale';
 import { colors, radius, spacing, typography } from '../../theme/tokens';
+
+const KEYBOARD_BEHAVIOR = Platform.OS === 'ios' ? 'padding' : 'height';
 
 export type CheckinDetails = {
     amount?: number;
@@ -48,8 +57,13 @@ export default function FirstCheckinStep({
     );
 
     const pulse = useSharedValue(1);
+    const reducedMotion = useReducedMotion();
 
     useEffect(() => {
+        if (reducedMotion) {
+            pulse.value = 1;
+            return;
+        }
         pulse.value = withRepeat(
             withTiming(1.04, {
                 duration: 900,
@@ -58,15 +72,24 @@ export default function FirstCheckinStep({
             -1,
             true
         );
-    }, []);
+    }, [reducedMotion]);
 
     const pulseStyle = useAnimatedStyle(() => ({
         transform: [{ scale: pulse.value }],
     }));
 
     const isSmall = height < 700;
+    const horizontalPadding = Math.min(Math.max(width * 0.06, 24), 40);
+    const scrollRef = useRef<ScrollView>(null);
+
+    const scrollToForm = () => {
+        setTimeout(() => {
+            scrollRef.current?.scrollToEnd({ animated: true });
+        }, 150);
+    };
 
     const handleYes = () => {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
         const parsedAmount = amount ? parseFloat(amount) : NaN;
         const details: CheckinDetails | undefined =
             amount || category
@@ -87,6 +110,7 @@ export default function FirstCheckinStep({
     };
 
     const handleNo = () => {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
         onCheckIn(false);
         setReaction('neutral');
 
@@ -95,113 +119,121 @@ export default function FirstCheckinStep({
         }, 1200);
     };
 
+    const toggleCategory = (cat: string) => {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        setCategory(category === cat ? '' : cat);
+    };
+
     return (
         <SafeAreaView style={styles.safe}>
-            <View
-                style={[
-                    styles.container,
-                    {
-                        paddingHorizontal: Math.min(
-                            Math.max(width * 0.06, 24),
-                            40
-                        ),
-                        paddingVertical: isSmall ? spacing.lg : spacing.xl,
-                    },
-                ]}
+            <KeyboardAvoidingView
+                behavior={KEYBOARD_BEHAVIOR}
+                style={styles.keyboard}
+                keyboardVerticalOffset={0}
             >
-                <View style={styles.content}>
-                    <Text style={styles.emoji}>
-                        {reaction === 'happy'
-                            ? '🎉'
-                            : reaction === 'neutral'
-                            ? '🌙'
-                            : '💰'}
-                    </Text>
-
-                    <Text
-                        style={[
-                            styles.title,
-                            isSmall && styles.titleSmall,
-                        ]}
-                    >
-                        Did you save or invest today?
-                    </Text>
-
-                    <Text style={styles.body}>
-                        {creatureName} grows when you stick to your plan.
-                    </Text>
-                </View>
-
-                <View style={styles.footer}>
-                    <Animated.View style={[styles.yesButtonWrap, pulseStyle]}>
-                        <Pressable
-                            onPress={handleYes}
-                            style={styles.yesButton}
-                            disabled={reaction !== 'idle'}
-                        >
-                            <Text style={styles.yesText}>YES</Text>
-                        </Pressable>
-                    </Animated.View>
-
+                <ScrollView
+                    ref={scrollRef}
+                    style={styles.scroll}
+                    contentContainerStyle={styles.scrollContent}
+                    keyboardShouldPersistTaps="handled"
+                    keyboardDismissMode="on-drag"
+                >
                     <Pressable
-                        onPress={() => setShowDetails((s) => !s)}
-                        style={styles.detailsToggle}
+                        style={styles.dismissArea}
+                        onPress={Keyboard.dismiss}
                     >
-                        <Text style={styles.detailsToggleText}>
-                            {showDetails ? 'Hide details' : 'Add details'}
-                        </Text>
-                    </Pressable>
+                        <View style={[styles.content, { paddingHorizontal: horizontalPadding }]}>
+                            <Text style={styles.emoji}>
+                                {reaction === 'happy'
+                                    ? '🎉'
+                                    : reaction === 'neutral'
+                                    ? '🌙'
+                                    : '💰'}
+                            </Text>
 
-                    {showDetails ? (
-                        <View style={styles.detailsForm}>
-                            <TextInput
-                                value={amount}
-                                onChangeText={setAmount}
-                                placeholder="Amount (optional)"
-                                placeholderTextColor={colors.textMuted}
-                                keyboardType="decimal-pad"
-                                style={styles.input}
-                            />
+                            <Text
+                                style={[
+                                    styles.title,
+                                    isSmall && styles.titleSmall,
+                                ]}
+                            >
+                                Did you save or invest today?
+                            </Text>
 
-                            <View style={styles.chips}>
-                                {CATEGORIES.map((cat) => (
-                                    <Pressable
-                                        key={cat}
-                                        onPress={() =>
-                                            setCategory(
-                                                category === cat ? '' : cat
-                                            )
-                                        }
-                                        style={[
-                                            styles.chip,
-                                            category === cat &&
-                                                styles.chipActive,
-                                        ]}
-                                    >
-                                        <Text
-                                            style={[
-                                                styles.chipText,
-                                                category === cat &&
-                                                    styles.chipTextActive,
-                                            ]}
-                                        >
-                                            {cat}
-                                        </Text>
-                                    </Pressable>
-                                ))}
-                            </View>
+                            <Text style={styles.body}>
+                                {creatureName} grows when you stick to your plan.
+                            </Text>
                         </View>
-                    ) : null}
 
-                    <Pressable
-                        onPress={handleNo}
-                        style={styles.noButton}
-                        disabled={reaction !== 'idle'}
-                    >
-                        <Text style={styles.noText}>Not today</Text>
+                        <View style={[styles.footer, { paddingHorizontal: horizontalPadding }]}>
+                            <Animated.View style={[styles.yesButtonWrap, pulseStyle]}>
+                                <PressableScale
+                                    onPress={handleYes}
+                                    style={styles.yesButton}
+                                    disabled={reaction !== 'idle'}
+                                >
+                                    <Text style={styles.yesText}>YES</Text>
+                                </PressableScale>
+                            </Animated.View>
+
+                            <PressableScale
+                                onPress={() => setShowDetails((s) => !s)}
+                                style={styles.detailsToggle}
+                            >
+                                <Text style={styles.detailsToggleText}>
+                                    {showDetails ? 'Hide details' : 'Add details'}
+                                </Text>
+                            </PressableScale>
+
+                            {showDetails ? (
+                                <View style={styles.detailsForm}>
+                                    <TextInput
+                                        value={amount}
+                                        onChangeText={setAmount}
+                                        placeholder="Amount (optional)"
+                                        placeholderTextColor={colors.textMuted}
+                                        keyboardType="decimal-pad"
+                                        style={styles.input}
+                                        onFocus={scrollToForm}
+                                    />
+
+                                    <View style={styles.chips}>
+                                        {CATEGORIES.map((cat) => (
+                                            <PressableScale
+                                                key={cat}
+                                                onPress={() => toggleCategory(cat)}
+                                                style={[
+                                                    styles.chip,
+                                                    category === cat &&
+                                                        styles.chipActive,
+                                                ]}
+                                            >
+                                                <Text
+                                                    style={[
+                                                        styles.chipText,
+                                                        category === cat &&
+                                                            styles.chipTextActive,
+                                                    ]}
+                                                >
+                                                    {cat}
+                                                </Text>
+                                            </PressableScale>
+                                        ))}
+                                    </View>
+                                </View>
+                            ) : null}
+
+                            <PressableScale
+                                onPress={handleNo}
+                                style={styles.noButton}
+                                disabled={reaction !== 'idle'}
+                            >
+                                <Text style={styles.noText}>Not today</Text>
+                            </PressableScale>
+                        </View>
                     </Pressable>
-                </View>
-            </View>
+                </ScrollView>
+            </KeyboardAvoidingView>
         </SafeAreaView>
     );
 }
@@ -211,10 +243,17 @@ const styles = StyleSheet.create({
         flex: 1,
         backgroundColor: colors.background,
     },
-    container: {
+    keyboard: {
         flex: 1,
-        alignItems: 'center',
-        justifyContent: 'center',
+    },
+    scroll: {
+        flex: 1,
+    },
+    scrollContent: {
+        flexGrow: 1,
+    },
+    dismissArea: {
+        flex: 1,
     },
     content: {
         flex: 1,

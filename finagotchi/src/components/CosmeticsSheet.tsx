@@ -1,6 +1,5 @@
 import React from 'react';
 import {
-    Pressable,
     ScrollView,
     StyleSheet,
     Text,
@@ -10,6 +9,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 
 import { BottomSheet } from './BottomSheet';
+import { PressableScale } from './PressableScale';
 import {
     ACCESSORY_EMOJI,
     BACKGROUND_COLORS,
@@ -57,6 +57,11 @@ export default function CosmeticsSheet({ visible, onClose }: Props) {
     const accessory = usePetStore((state) => state.accessory);
     const setCosmetic = usePetStore((state) => state.setCosmetic);
 
+    const handleClose = () => {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        onClose();
+    };
+
     const selectBackground = (item: BackgroundItem) => {
         if (streak < item.unlock) return;
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -70,7 +75,23 @@ export default function CosmeticsSheet({ visible, onClose }: Props) {
     };
 
     return (
-        <BottomSheet visible={visible} onClose={onClose} title="Cosmetics">
+        <BottomSheet visible={visible} onClose={onClose}>
+            <PressableScale
+                onPress={handleClose}
+                style={styles.closeButton}
+                hitSlop={8}
+            >
+                <Ionicons
+                    name="close"
+                    size={22}
+                    color={colors.text}
+                />
+            </PressableScale>
+
+            <View style={styles.header}>
+                <Text style={styles.title}>Cosmetics</Text>
+            </View>
+
             <ScrollView
                 showsVerticalScrollIndicator={false}
                 contentContainerStyle={styles.container}
@@ -88,13 +109,13 @@ export default function CosmeticsSheet({ visible, onClose }: Props) {
                         const [top, bottom] = BACKGROUND_COLORS[item.id];
 
                         return (
-                            <Pressable
+                            <PressableScale
                                 key={item.id}
                                 onPress={() => selectBackground(item)}
-                                style={({ pressed }) => [
+                                disabled={!unlocked}
+                                style={[
                                     styles.tile,
                                     active && styles.tileActive,
-                                    pressed && styles.tilePressed,
                                     !unlocked && styles.tileLocked,
                                 ]}
                             >
@@ -136,7 +157,7 @@ export default function CosmeticsSheet({ visible, onClose }: Props) {
                                         />
                                     </View>
                                 )}
-                            </Pressable>
+                            </PressableScale>
                         );
                     })}
                 </View>
@@ -148,13 +169,13 @@ export default function CosmeticsSheet({ visible, onClose }: Props) {
                         const active = accessory === item.id;
 
                         return (
-                            <Pressable
+                            <PressableScale
                                 key={item.id}
                                 onPress={() => selectAccessory(item)}
-                                style={({ pressed }) => [
+                                disabled={!unlocked}
+                                style={[
                                     styles.tile,
                                     active && styles.tileActive,
-                                    pressed && styles.tilePressed,
                                     !unlocked && styles.tileLocked,
                                 ]}
                             >
@@ -190,7 +211,7 @@ export default function CosmeticsSheet({ visible, onClose }: Props) {
                                         />
                                     </View>
                                 )}
-                            </Pressable>
+                            </PressableScale>
                         );
                     })}
                 </View>
@@ -207,6 +228,30 @@ export default function CosmeticsSheet({ visible, onClose }: Props) {
 }
 
 const styles = StyleSheet.create({
+    header: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        marginBottom: spacing.md,
+    },
+    title: {
+        color: colors.text,
+        fontSize: typography.heading,
+        fontFamily: 'Poppins_700Bold',
+    },
+    closeButton: {
+        position: 'absolute',
+        top: 0,
+        right: 0,
+        width: 36,
+        height: 36,
+        alignItems: 'center',
+        justifyContent: 'center',
+        borderRadius: 12,
+        backgroundColor: colors.surfaceLight,
+        borderWidth: 1,
+        borderColor: 'rgba(255,255,255,0.10)',
+        zIndex: 10,
+    },
     container: {
         paddingBottom: 32,
     },
@@ -243,10 +288,6 @@ const styles = StyleSheet.create({
     tileActive: {
         borderColor: colors.primary,
         backgroundColor: 'rgba(93,226,166,0.08)',
-    },
-    tilePressed: {
-        opacity: 0.8,
-        transform: [{ scale: 0.98 }],
     },
     tileLocked: {
         opacity: 0.55,

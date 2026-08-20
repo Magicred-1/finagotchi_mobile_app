@@ -1,6 +1,5 @@
 import React, { useMemo, useState } from 'react';
 import {
-    Pressable,
     ScrollView,
     StyleSheet,
     Text,
@@ -8,8 +7,10 @@ import {
     useWindowDimensions,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import * as Haptics from 'expo-haptics';
 
 import { BottomSheet } from './BottomSheet';
+import { PressableScale } from './PressableScale';
 import { colors, radius, spacing, typography } from '../theme/tokens';
 
 type QuestCategory = 'All' | 'Daily' | 'Security' | 'Growth' | 'Social';
@@ -126,9 +127,16 @@ export default function QuestsSheet({ visible, onClose }: Props) {
         0
     );
 
+    function handleFilterPress(item: QuestCategory) {
+        if (filter === item) return;
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        setFilter(item);
+    }
+
     function handleQuestPress(quest: Quest) {
         if (quest.completed) return;
 
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
         setCompleted((current) => ({
             ...current,
             [quest.id]: true,
@@ -197,9 +205,9 @@ export default function QuestsSheet({ visible, onClose }: Props) {
                         const active = filter === item;
 
                         return (
-                            <Pressable
+                            <PressableScale
                                 key={item}
-                                onPress={() => setFilter(item)}
+                                onPress={() => handleFilterPress(item)}
                                 style={[
                                     styles.filter,
                                     active && styles.filterActive,
@@ -213,7 +221,7 @@ export default function QuestsSheet({ visible, onClose }: Props) {
                                 >
                                     {item}
                                 </Text>
-                            </Pressable>
+                            </PressableScale>
                         );
                     })}
                 </ScrollView>
@@ -237,14 +245,13 @@ export default function QuestsSheet({ visible, onClose }: Props) {
                         );
 
                         return (
-                            <Pressable
+                            <PressableScale
                                 key={quest.id}
                                 onPress={() => handleQuestPress(quest)}
-                                style={({ pressed }) => [
+                                disabled={isCompleted}
+                                activeOpacity={isCompleted ? 0.68 : 0.85}
+                                style={[
                                     styles.questCard,
-                                    pressed &&
-                                        !isCompleted &&
-                                        styles.questPressed,
                                     isCompleted && styles.questCompleted,
                                 ]}
                             >
@@ -341,7 +348,7 @@ export default function QuestsSheet({ visible, onClose }: Props) {
                                     }
                                     style={styles.questChevron}
                                 />
-                            </Pressable>
+                            </PressableScale>
                         );
                     })}
                 </View>
@@ -501,10 +508,6 @@ const styles = StyleSheet.create({
         backgroundColor: colors.background,
         borderWidth: 1,
         borderColor: colors.border,
-    },
-    questPressed: {
-        opacity: 0.78,
-        transform: [{ scale: 0.985 }],
     },
     questCompleted: {
         opacity: 0.68,

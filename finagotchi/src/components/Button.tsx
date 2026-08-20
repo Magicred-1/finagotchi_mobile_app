@@ -1,11 +1,18 @@
-import React from 'react';
+import React, { useCallback } from 'react';
 import {
     Pressable,
     StyleSheet,
     Text,
 } from 'react-native';
+import Animated, {
+    useAnimatedStyle,
+    useSharedValue,
+    withSpring,
+} from 'react-native-reanimated';
 
-import { colors, radius, spacing } from '../theme/tokens';
+import { colors, press, radius, spacing, typography } from '../theme/tokens';
+
+const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
 type Props = {
     title: string;
@@ -20,32 +27,53 @@ export function Button({
     disabled = false,
     variant = 'primary',
 }: Props) {
+    const pressed = useSharedValue(0);
+
+    const onPressIn = useCallback(() => {
+        pressed.value = withSpring(1, press.spring);
+    }, [pressed]);
+
+    const onPressOut = useCallback(() => {
+        pressed.value = withSpring(0, press.spring);
+    }, [pressed]);
+
+    const animatedStyle = useAnimatedStyle(() => ({
+        transform: [
+            {
+                scale:
+                    1 -
+                    pressed.value * (1 - press.scaleDown),
+            },
+        ],
+        opacity: 1 - pressed.value * (1 - press.opacityDown),
+    }));
+
     return (
-        <Pressable
-        onPress={onPress}
-        disabled={disabled}
-        style={[
-            styles.button,
-            variant === 'secondary' && styles.secondary,
-            disabled && styles.disabled,
-        ]}
+        <AnimatedPressable
+            onPress={onPress}
+            onPressIn={onPressIn}
+            onPressOut={onPressOut}
+            disabled={disabled}
+            style={[
+                styles.button,
+                variant === 'secondary' && styles.secondary,
+                disabled && styles.disabled,
+                animatedStyle,
+            ]}
         >
-        <Text style={[styles.text, variant === 'secondary' && styles.textSecondary]}>
-            {title}
-        </Text>
-        </Pressable>
+            <Text style={[styles.text, variant === 'secondary' && styles.textSecondary]}>
+                {title}
+            </Text>
+        </AnimatedPressable>
     );
 }
 
 const styles = StyleSheet.create({
     button: {
         backgroundColor: colors.primary,
-
         paddingVertical: spacing.md,
         paddingHorizontal: spacing.lg,
-
         borderRadius: radius.md,
-
         alignItems: 'center',
     },
 
@@ -61,8 +89,8 @@ const styles = StyleSheet.create({
 
     text: {
         color: '#07111F',
-        fontSize: 16,
-        fontWeight: '800',
+        fontSize: typography.body,
+        fontFamily: 'Poppins_800ExtraBold',
     },
 
     textSecondary: {
