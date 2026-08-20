@@ -1,19 +1,28 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
-  Pressable,
-  ScrollView,
+  BackHandler,
   StyleSheet,
   Text,
+  ToastAndroid,
   View,
   useWindowDimensions,
 } from 'react-native';
+import { ScrollView } from 'react-native-gesture-handler';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
+import Animated, {
+  runOnJS,
+  useSharedValue,
+  withSpring,
+  withTiming,
+} from 'react-native-reanimated';
 
 import { PetCanvas } from '../../src/components/PetCanvas';
-import { Slidebar } from '../../src/components/Slidebar';
+import { PressableScale } from '../../src/components/PressableScale';
+import { Sidebar, SIDEBAR_WIDTH } from '../../src/components/Sidebar';
 import EvolutionCeremony from '../../src/components/EvolutionCeremony';
 import CosmeticsSheet from '../../src/components/CosmeticsSheet';
 import QuestsSheet from '../../src/components/QuestsSheet';
@@ -27,7 +36,7 @@ import {
   usePetStore,
 } from '../../src/features/pet/store';
 import { useWalletStore } from '../../src/features/wallet/store';
-import { colors } from '../../src/theme/tokens';
+import { colors, radius, spacing, springs, tracking, typography } from '../../src/theme/tokens';
 import type { PetMood, PetReaction } from '../../src/components/PetCanvas';
 
 function getMood(
@@ -86,6 +95,11 @@ function formatCountdown(ms: number): string {
   return `${hours}h ${minutes}m ${seconds}s`;
 }
 
+function project(initialVelocity: number, decelerationRate = 0.998) {
+  'worklet';
+  return (initialVelocity / 1000) * decelerationRate / (1 - decelerationRate);
+}
+
 export default function HomeScreen() {
   const { width } = useWindowDimensions();
   const insets = useSafeAreaInsets();
@@ -98,6 +112,36 @@ export default function HomeScreen() {
   const [waitlistVisible, setWaitlistVisible] = useState(false);
   const [reaction, setReaction] = useState<PetReaction | undefined>(undefined);
   const [timeLeft, setTimeLeft] = useState('');
+  const [exitToastVisible, setExitToastVisible] = useState(false);
+
+  const lastBackPress = useRef(0);
+  const toastTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const sidebarTranslateX = useSharedValue(-SIDEBAR_WIDTH);
+  const sidebarOpacity = useSharedValue(0);
+  const exitToastOpacity = useSharedValue(0);
+
+  const openSidebarPan = Gesture.Pan()
+    .enabled(!sidebarVisible)
+    .activeOffsetX([20, 9999])
+    .failOffsetY([-15, 15])
+    .onUpdate((event) => {
+      const x = Math.max(0, event.translationX);
+      sidebarTranslateX.value = Math.min(0, -SIDEBAR_WIDTH + x);
+      sidebarOpacity.value = Math.min(1, x / SIDEBAR_WIDTH);
+    })
+    .onEnd((event) => {
+      const projectedX = event.translationX + (event.velocityX / 1000) * 0.998 / (1 - 0.998);
+      const shouldOpen =
+        projectedX > 60 || event.translationX > SIDEBAR_WIDTH * 0.3;
+
+      if (shouldOpen) {
+        runOnJS(setSidebarVisible)(true);
+      } else {
+        sidebarTranslateX.value = withSpring(-SIDEBAR_WIDTH, springs.default);
+        sidebarOpacity.value = withTiming(0, { duration: 200 });
+      }
+    });
 
   const checkIn = useCheckinStore((state) => state.checkIn);
   const hasCheckedInToday = useCheckinStore((state) => state.hasCheckedInToday());
@@ -166,6 +210,59 @@ export default function HomeScreen() {
     return () => clearInterval(interval);
   }, []);
 
+  // Double-tap back to exit, with visual feedback. Close any open sheet/sidebar first.
+  useEffect(() => {
+    const onBackPress = () => {
+      if (sidebarVisible) {
+        setSidebarVisible(false);
+        return true;
+      }
+      if (cosmeticsVisible) {
+        setCosmeticsVisible(false);
+        return true;
+      }
+      if (questsVisible) {
+        setQuestsVisible(false);
+        return true;
+      }
+      if (waitlistVisible) {
+        setWaitlistVisible(false);
+        return true;
+      }
+      if (showEvolution) {
+        setLastCelebratedStage(stage);
+        return true;
+      }
+
+      const now = Date.now();
+      if (now - lastBackPress.current < 2000) {
+        return false; // allow exit
+      }
+
+      lastBackPress.current = now;
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      if (ToastAndroid) {
+        ToastAndroid.show('Press back again to exit', ToastAndroid.SHORT);
+      }
+      setExitToastVisible(true);
+      exitToastOpacity.value = withTiming(1, { duration: 200 });
+      if (toastTimeout.current) {
+        clearTimeout(toastTimeout.current);
+      }
+      toastTimeout.current = setTimeout(() => {
+        exitToastOpacity.value = withTiming(0, { duration: 200 }, (finished) => {
+          if (finished) {
+            runOnJS(setExitToastVisible)(false);
+          }
+        });
+      }, 2000);
+      return true;
+    };
+
+    const subscription = BackHandler.addEventListener('hardwareBackPress', onBackPress);
+    return () => subscription.remove();
+  }, [sidebarVisible, cosmeticsVisible, questsVisible, waitlistVisible, showEvolution, stage]);
+
   function handleFeed() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
@@ -201,6 +298,11 @@ export default function HomeScreen() {
     setWaitlistVisible(true);
   }
 
+  function handleGames() {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    Alert.alert('Games', 'Mini-games for your Finagotchi are coming soon!');
+  }
+
   const displayName = petName || 'Finny';
   const walletLabel = walletAddress
     ? `${walletAddress.slice(0, 4)}...${walletAddress.slice(-4)}`
@@ -227,11 +329,10 @@ export default function HomeScreen() {
       >
         {/* TOP BAR */}
         <View style={[styles.topBar, isTinyDevice && styles.topBarWrap]}>
-          <Pressable
-            style={({ pressed }) => [
+          <PressableScale
+            style={[
               styles.walletDropdown,
               isTinyDevice && styles.walletDropdownSmall,
-              pressed && styles.pressed,
             ]}
           >
             <Ionicons
@@ -253,7 +354,7 @@ export default function HomeScreen() {
               size={isTinyDevice ? 12 : 14}
               color={colors.textMuted}
             />
-          </Pressable>
+          </PressableScale>
 
           <View style={styles.topBarRight}>
             <View style={[styles.currencyChip, isTinyDevice && styles.currencyChipSmall]}>
@@ -263,25 +364,16 @@ export default function HomeScreen() {
               </Text>
             </View>
 
-            {/* <View style={[styles.currencyChip, isTinyDevice && styles.currencyChipSmall]}>
-              <Ionicons name="flash-outline" size={isTinyDevice ? 12 : 14} color={colors.primary} />
-              <Text style={[styles.currencyValue, isTinyDevice && styles.currencyValueSmall]}>
-                {fp.toFixed(3)}
-              </Text>
-              <Text style={[styles.currencySymbol, isTinyDevice && styles.currencySymbolSmall]}>$FNG</Text>
-            </View> */}
-
-            <Pressable
+            <PressableScale
               onPress={() => setSidebarVisible(true)}
               hitSlop={8}
-              style={({ pressed }) => [
+              style={[
                 styles.menuButton,
                 isTinyDevice && styles.menuButtonSmall,
-                pressed && styles.pressed,
               ]}
             >
               <Ionicons name="menu" size={isTinyDevice ? 16 : 18} color={colors.text} />
-            </Pressable>
+            </PressableScale>
           </View>
         </View>
 
@@ -311,41 +403,36 @@ export default function HomeScreen() {
               <Text style={styles.timerText}>{timeLeft}</Text>
             </View>
 
-            <Pressable
+            <PressableScale
               onPress={handleNudge}
-              style={({ pressed }) => [
-                styles.iconButtonSmall,
-                pressed && styles.pressed,
-              ]}
+              style={styles.iconButtonSmall}
             >
               <Ionicons name="hand-left-outline" size={16} color={colors.text} />
-            </Pressable>
+            </PressableScale>
 
             <View style={styles.spacer} />
 
-            <Pressable
+            <PressableScale
               onPress={handlePhoto}
-              style={({ pressed }) => [
+              style={[
                 styles.secondaryButtonSmall,
                 isTinyDevice && styles.secondaryButtonSmallTiny,
-                pressed && styles.pressed,
               ]}
             >
               <Ionicons name="camera-outline" size={isTinyDevice ? 12 : 14} color={colors.text} />
               <Text style={styles.secondaryButtonText} numberOfLines={1}>Photo</Text>
-            </Pressable>
+            </PressableScale>
 
-            <Pressable
+            <PressableScale
               onPress={handleFeed}
-              style={({ pressed }) => [
+              style={[
                 styles.primaryButtonSmall,
                 isTinyDevice && styles.primaryButtonSmallTiny,
-                pressed && styles.pressed,
               ]}
             >
               <Ionicons name="nutrition-outline" size={isTinyDevice ? 12 : 14} color={colors.background} />
               <Text style={styles.primaryButtonText} numberOfLines={1}>Feed</Text>
-            </Pressable>
+            </PressableScale>
           </View>
 
           <View
@@ -409,12 +496,9 @@ export default function HomeScreen() {
 
         {/* ACTION GRID */}
         <View style={styles.actionGrid}>
-          <Pressable
+          <PressableScale
             onPress={handleCosmetics}
-            style={({ pressed }) => [
-              styles.actionTile,
-              pressed && styles.pressed,
-            ]}
+            style={styles.actionTile}
           >
             <Ionicons
               name="color-palette-outline"
@@ -422,19 +506,27 @@ export default function HomeScreen() {
               color={colors.text}
             />
             <Text style={styles.actionTileText}>Cosmetics</Text>
-          </Pressable>
+          </PressableScale>
 
 
-          <Pressable
+          <PressableScale
             onPress={handleHardware}
-            style={({ pressed }) => [
-              styles.actionTile,
-              pressed && styles.pressed,
-            ]}
+            style={styles.actionTile}
           >
             <Ionicons name="hardware-chip-outline" size={22} color={colors.text} />
             <Text style={styles.actionTileText}>Hardware</Text>
-          </Pressable>
+          </PressableScale>
+
+          <PressableScale
+            onPress={handleGames}
+            style={[styles.actionTile, styles.actionTileMuted]}
+          >
+            <Ionicons name="game-controller-outline" size={22} color={colors.textMuted} />
+            <Text style={[styles.actionTileText, styles.actionTileTextMuted]}>Games</Text>
+            <View style={styles.comingSoonBadge}>
+              <Text style={styles.comingSoonText}>Soon</Text>
+            </View>
+          </PressableScale>
         </View>
 
         {/* PROGRESS STRIP */}
@@ -461,12 +553,20 @@ export default function HomeScreen() {
         <View style={{ height: 24 }} />
       </ScrollView>
 
-      <Slidebar
+      {!sidebarVisible && (
+        <GestureDetector gesture={openSidebarPan}>
+          <View style={[styles.edgeStrip, { top: insets.top, bottom: insets.bottom }]} />
+        </GestureDetector>
+      )}
+
+      <Sidebar
         visible={sidebarVisible}
         onOpen={() => setSidebarVisible(true)}
         onClose={() => setSidebarVisible(false)}
         onOpenQuests={() => setQuestsVisible(true)}
         onOpenWaitlist={() => setWaitlistVisible(true)}
+        translateX={sidebarTranslateX}
+        opacity={sidebarOpacity}
       />
 
       <EvolutionCeremony
@@ -490,6 +590,19 @@ export default function HomeScreen() {
         visible={waitlistVisible}
         onClose={() => setWaitlistVisible(false)}
       />
+
+      {exitToastVisible && (
+        <Animated.View
+          style={[
+            styles.exitToast,
+            { opacity: exitToastOpacity },
+            { bottom: Math.max(insets.bottom, 16) + 16 },
+          ]}
+          pointerEvents="none"
+        >
+          <Text style={styles.exitToastText}>Press back again to exit</Text>
+        </Animated.View>
+      )}
     </View>
   );
 }
@@ -502,6 +615,29 @@ const styles = StyleSheet.create({
   container: {
     paddingTop: 12,
     paddingBottom: 20,
+  },
+  edgeStrip: {
+    position: 'absolute',
+    left: 0,
+    width: 20,
+    backgroundColor: 'transparent',
+    zIndex: 50,
+  },
+  exitToast: {
+    position: 'absolute',
+    alignSelf: 'center',
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.lg,
+    borderRadius: radius.pill,
+    backgroundColor: 'rgba(14,27,46,0.92)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.10)',
+    zIndex: 3000,
+  },
+  exitToastText: {
+    color: colors.text,
+    fontSize: typography.small,
+    fontFamily: 'Poppins_600SemiBold',
   },
 
   /* TOP BAR */
@@ -614,9 +750,11 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontSize: 32,
     fontFamily: 'Poppins_800ExtraBold',
+    letterSpacing: tracking.title * 32,
   },
   pointsValueSmall: {
     fontSize: 26,
+    letterSpacing: tracking.title * 26,
   },
   pointsLabel: {
     color: colors.textMuted,
@@ -838,6 +976,29 @@ const styles = StyleSheet.create({
     fontFamily: 'Poppins_700Bold',
     textAlign: 'center',
   },
+  actionTileMuted: {
+    backgroundColor: 'rgba(14,27,46,0.60)',
+    borderColor: 'rgba(255,255,255,0.04)',
+  },
+  actionTileTextMuted: {
+    color: colors.textMuted,
+  },
+  comingSoonBadge: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    paddingVertical: 3,
+    paddingHorizontal: 6,
+    borderRadius: 6,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+  },
+  comingSoonText: {
+    color: colors.textMuted,
+    fontSize: 8,
+    fontFamily: 'Poppins_800ExtraBold',
+    letterSpacing: 0.4,
+    textTransform: 'uppercase',
+  },
 
   /* PROGRESS */
   progressCard: {
@@ -860,11 +1021,13 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontSize: 13,
     fontFamily: 'Poppins_700Bold',
+    letterSpacing: tracking.small * 13,
   },
   progressPercent: {
     color: colors.primary,
     fontSize: 13,
     fontFamily: 'Poppins_800ExtraBold',
+    letterSpacing: tracking.small * 13,
   },
   progressTrack: {
     width: '100%',
@@ -883,10 +1046,5 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
     fontSize: 11,
     fontFamily: 'Poppins_500Medium',
-  },
-
-  pressed: {
-    opacity: 0.75,
-    transform: [{ scale: 0.98 }],
   },
 });

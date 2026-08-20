@@ -2,7 +2,9 @@ import React, { useEffect, useMemo } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import Animated, {
     Easing,
+    ReduceMotion,
     useAnimatedStyle,
+    useReducedMotion,
     useSharedValue,
     withRepeat,
     withSequence,
@@ -42,21 +44,26 @@ const MOOD_OVERLAYS: Record<PetMood, string> = {
 
 export function PetCanvas({ mood = 'waiting', reaction }: Props) {
     const stage = usePetStore((state) => state.stage);
+    const reducedMotion = useReducedMotion();
     const floatAnim = useSharedValue(0);
     const reactionScale = useSharedValue(1);
     const reactionRotate = useSharedValue(0);
     const reactionOpacity = useSharedValue(1);
 
     useEffect(() => {
+        if (reducedMotion) {
+            floatAnim.value = 0;
+            return;
+        }
         floatAnim.value = withRepeat(
             withTiming(-8, {
                 duration: 1200,
-                easing: Easing.inOut(Easing.ease),
+                easing: Easing.inOut(Easing.cubic),
             }),
             -1,
             true
         );
-    }, []);
+    }, [reducedMotion]);
 
     useEffect(() => {
         if (!reaction) return;
@@ -65,6 +72,10 @@ export function PetCanvas({ mood = 'waiting', reaction }: Props) {
         reactionScale.value = 1;
         reactionRotate.value = 0;
         reactionOpacity.value = 1;
+
+        if (reducedMotion) {
+            return;
+        }
 
         switch (reaction) {
             case 'jump':
@@ -105,7 +116,7 @@ export function PetCanvas({ mood = 'waiting', reaction }: Props) {
                 );
                 break;
         }
-    }, [reaction]);
+    }, [reaction, reducedMotion]);
 
     const animatedStyle = useAnimatedStyle(() => ({
         transform: [
@@ -120,19 +131,25 @@ export function PetCanvas({ mood = 'waiting', reaction }: Props) {
         opacity: mood === 'calm' ? withTiming(1, { duration: 600 }) : 0,
     }));
 
+    const overlayScale = useSharedValue(1);
+
+    useEffect(() => {
+        if (reducedMotion) {
+            overlayScale.value = 1;
+            return;
+        }
+        overlayScale.value = withRepeat(
+            withTiming(1.15, {
+                duration: 900,
+                easing: Easing.inOut(Easing.cubic),
+            }),
+            -1,
+            true
+        );
+    }, [reducedMotion, overlayScale]);
+
     const overlayPulse = useAnimatedStyle(() => ({
-        transform: [
-            {
-                scale: withRepeat(
-                    withTiming(1.15, {
-                        duration: 900,
-                        easing: Easing.inOut(Easing.cubic),
-                    }),
-                    -1,
-                    true
-                ),
-            },
-        ],
+        transform: [{ scale: overlayScale.value }],
     }));
 
     const renderPet = () => {

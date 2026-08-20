@@ -4,11 +4,12 @@ import {
     StyleSheet,
     Text,
     View,
-    Pressable,
     useWindowDimensions,
 } from 'react-native';
+import * as Haptics from 'expo-haptics';
 
 import { Button } from '../../components/Button';
+import { PressableScale } from '../../components/PressableScale';
 import {
     requestNotificationPermissions,
     scheduleDailyReminder,
@@ -34,6 +35,12 @@ export default function ReminderStep({ onFinished }: Props) {
     const { width, height } = useWindowDimensions();
 
     const isSmall = height < 700;
+
+    const handleSelect = (index: number) => {
+        if (index === selected) return;
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        setSelected(index);
+    };
 
     const handleEnable = async () => {
         setLoading(true);
@@ -85,9 +92,9 @@ export default function ReminderStep({ onFinished }: Props) {
                 <View style={styles.footer}>
                     <View style={styles.chips}>
                         {TIME_OPTIONS.map((option, index) => (
-                            <Pressable
+                            <PressableScale
                                 key={option.label}
-                                onPress={() => setSelected(index)}
+                                onPress={() => handleSelect(index)}
                                 style={[
                                     styles.chip,
                                     selected === index && styles.chipActive,
@@ -102,7 +109,7 @@ export default function ReminderStep({ onFinished }: Props) {
                                 >
                                     {option.label}
                                 </Text>
-                            </Pressable>
+                            </PressableScale>
                         ))}
                     </View>
 

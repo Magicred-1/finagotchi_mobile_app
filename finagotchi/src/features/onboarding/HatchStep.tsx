@@ -9,6 +9,7 @@ import {
 import Animated, {
     Easing,
     useAnimatedStyle,
+    useReducedMotion,
     useSharedValue,
     withSequence,
     withTiming,
@@ -30,6 +31,7 @@ export default function HatchStep({ creatureName, onFinished }: Props) {
     const eggOpacity = useSharedValue(1);
     const creatureOpacity = useSharedValue(0);
     const welcomeOpacity = useSharedValue(0);
+    const reducedMotion = useReducedMotion();
     const hatchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     const hatch = useCallback(() => {
@@ -37,19 +39,29 @@ export default function HatchStep({ creatureName, onFinished }: Props) {
 
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
+        if (reducedMotion) {
+            hatchTimerRef.current = setTimeout(() => {
+                setHatched(true);
+                eggOpacity.value = withTiming(0, { duration: 200 });
+                creatureOpacity.value = withTiming(1, { duration: 200 });
+                welcomeOpacity.value = withTiming(1, { duration: 200 });
+            }, 300);
+            return;
+        }
+
         scale.value = withSequence(
             withTiming(1.15, { duration: 200, easing: Easing.out(Easing.cubic) }),
-            withTiming(0.95, { duration: 200, easing: Easing.in(Easing.cubic) }),
+            withTiming(0.95, { duration: 200, easing: Easing.out(Easing.cubic) }),
             withTiming(1.08, { duration: 200, easing: Easing.out(Easing.cubic) }),
-            withTiming(1, { duration: 200 })
+            withTiming(1, { duration: 200, easing: Easing.out(Easing.cubic) })
         );
 
         rotate.value = withSequence(
-            withTiming(-8, { duration: 120 }),
-            withTiming(8, { duration: 120 }),
-            withTiming(-6, { duration: 120 }),
-            withTiming(6, { duration: 120 }),
-            withTiming(0, { duration: 120 })
+            withTiming(-8, { duration: 120, easing: Easing.out(Easing.cubic) }),
+            withTiming(8, { duration: 120, easing: Easing.out(Easing.cubic) }),
+            withTiming(-6, { duration: 120, easing: Easing.out(Easing.cubic) }),
+            withTiming(6, { duration: 120, easing: Easing.out(Easing.cubic) }),
+            withTiming(0, { duration: 120, easing: Easing.out(Easing.cubic) })
         );
 
         hatchTimerRef.current = setTimeout(() => {

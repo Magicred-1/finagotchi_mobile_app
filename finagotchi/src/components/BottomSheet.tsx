@@ -1,5 +1,7 @@
-import React, { useCallback, useEffect } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
+    Keyboard,
+    Platform,
     Pressable,
     StyleSheet,
     Text,
@@ -13,6 +15,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 import Animated, {
+    ReduceMotion,
     runOnJS,
     useAnimatedStyle,
     useSharedValue,
@@ -20,7 +23,7 @@ import Animated, {
     withTiming,
 } from 'react-native-reanimated';
 
-import { colors, radius, spacing, typography } from '../theme/tokens';
+import { colors, radius, spacing, springs, typography } from '../theme/tokens';
 
 type Props = {
     visible: boolean;
@@ -30,6 +33,24 @@ type Props = {
 };
 
 const DRAG_THRESHOLD = 120;
+const FLICK_VELOCITY = 500;
+
+/**
+ * Project where a gesture will come to rest given its release velocity.
+ * Apple's exponential decay projection from "Designing Fluid Interfaces".
+ */
+function project(initialVelocity: number, decelerationRate = 0.998) {
+    'worklet';
+    return (initialVelocity / 1000) * decelerationRate / (1 - decelerationRate);
+}
+
+/**
+ * Rubber-band a value past an edge so it resists instead of hard-stopping.
+ */
+function rubberband(overshoot: number, dimension: number, constant = 0.55) {
+    'worklet';
+    return (overshoot * dimension * constant) / (dimension + constant * overshoot);
+}
 
 export function BottomSheet({ visible, onClose, title, children }: Props) {
     const { width, height } = useWindowDimensions();
@@ -37,28 +58,63 @@ export function BottomSheet({ visible, onClose, title, children }: Props) {
 
     const translateY = useSharedValue(height);
     const opacity = useSharedValue(0);
+    const keyboardOffset = useSharedValue(0);
 
-    const open = useCallback(() => {
+    const [keyboardHeight, setKeyboardHeight] = useState(0);
+    const [keyboardOpen, setKeyboardOpen] = useState(false);
+
+    useEffect(() => {
+        const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+        const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+
+        const showSub = Keyboard.addListener(showEvent, (event) => {
+            setKeyboardHeight(event.endCoordinates.height);
+            setKeyboardOpen(true);
+        });
+        const hideSub = Keyboard.addListener(hideEvent, () => {
+            setKeyboardHeight(0);
+            setKeyboardOpen(false);
+        });
+
+        return () => {
+            showSub.remove();
+            hideSub.remove();
+        };
+    }, []);
+
+    useEffect(() => {
+        keyboardOffset.value = withTiming(-keyboardHeight, {
+            duration: Platform.OS === 'ios' ? 250 : 0,
+        });
+    }, [keyboardHeight, keyboardOffset]);
+
+    const open = useCallback((velocity = 0) => {
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        const isFlick = Math.abs(velocity) > FLICK_VELOCITY;
         translateY.value = withSpring(0, {
-            damping: 25,
-            stiffness: 200,
-            overshootClamping: true,
+            ...(isFlick ? springs.momentum : springs.default),
+            velocity,
+            reduceMotion: ReduceMotion.System,
         });
         opacity.value = withTiming(1, { duration: 200 });
     }, [translateY, opacity]);
 
-    const close = useCallback(() => {
-        translateY.value = withSpring(height, {
-            damping: 25,
-            stiffness: 200,
+    const close = useCallback((velocity = 0) => {
+        const isFlick = Math.abs(velocity) > FLICK_VELOCITY;
+        // Account for any active keyboard offset so the sheet fully exits
+        // the screen even when the keyboard is currently pushing it up.
+        const targetY = height - keyboardOffset.value;
+        translateY.value = withSpring(targetY, {
+            ...(isFlick ? springs.momentum : springs.default),
+            velocity,
+            reduceMotion: ReduceMotion.System,
         });
         opacity.value = withTiming(0, { duration: 200 }, (finished) => {
             if (finished) {
                 runOnJS(onClose)();
             }
         });
-    }, [height, onClose, translateY, opacity]);
+    }, [height, onClose, translateY, opacity, keyboardOffset]);
 
     useEffect(() => {
         if (visible) {
@@ -73,20 +129,25 @@ export function BottomSheet({ visible, onClose, title, children }: Props) {
         .failOffsetX([-20, 20])
         .onUpdate((event) => {
             const y = event.translationY;
-            if (y > 0) {
+            if (y >= 0) {
                 translateY.value = y;
                 opacity.value = Math.max(0, 1 - y / height);
+            } else {
+                // Pulling up past the top: apply rubber-band resistance.
+                const resisted = rubberband(-y, height * 0.35, 0.55);
+                translateY.value = -resisted;
             }
         })
         .onEnd((event) => {
+            const projectedY = event.translationY + project(event.velocityY);
             const shouldClose =
-                event.translationY > DRAG_THRESHOLD ||
-                event.velocityY > 500;
+                projectedY > DRAG_THRESHOLD ||
+                event.translationY > height * 0.45;
 
             if (shouldClose) {
-                runOnJS(close)();
+                runOnJS(close)(event.velocityY);
             } else {
-                runOnJS(open)();
+                runOnJS(open)(event.velocityY);
             }
         });
 
@@ -96,7 +157,9 @@ export function BottomSheet({ visible, onClose, title, children }: Props) {
     }));
 
     const sheetStyle = useAnimatedStyle(() => ({
-        transform: [{ translateY: translateY.value }],
+        transform: [
+            { translateY: translateY.value + keyboardOffset.value },
+        ],
     }));
 
     return (
@@ -113,7 +176,7 @@ export function BottomSheet({ visible, onClose, title, children }: Props) {
             >
                 <Pressable
                     style={StyleSheet.absoluteFill}
-                    onPress={close}
+                    onPress={() => close()}
                 />
             </Animated.View>
 
@@ -122,7 +185,9 @@ export function BottomSheet({ visible, onClose, title, children }: Props) {
                     styles.sheet,
                     {
                         paddingBottom: Math.max(insets.bottom, 16),
-                        maxHeight: height * 0.88,
+                        maxHeight: keyboardOpen
+                            ? height - keyboardHeight - 24
+                            : height * 0.88,
                     },
                     sheetStyle,
                 ]}
