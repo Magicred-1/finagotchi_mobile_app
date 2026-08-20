@@ -1,134 +1,227 @@
-import React, { useEffect } from 'react';
-import { StyleSheet, View } from 'react-native';
-
-import {
-  Atlas,
-  Canvas,
-  useImage,
-  useRectBuffer,
-  useRSXformBuffer,
-} from '@shopify/react-native-skia';
-
-import {
-  Easing,
-  useDerivedValue,
-  useSharedValue,
-  withRepeat,
-  withTiming,
+import React, { useEffect, useMemo } from 'react';
+import { StyleSheet, Text, View } from 'react-native';
+import Animated, {
+    Easing,
+    useAnimatedStyle,
+    useSharedValue,
+    withRepeat,
+    withSequence,
+    withTiming,
 } from 'react-native-reanimated';
 
+import {
+    Stage1Egg,
+    Stage2Coinling,
+    Stage3Hodler,
+    Stage5Whale,
+} from './PetSprites';
 import { usePetStore } from '../features/pet/store';
+import { colors } from '../theme/tokens';
 
-const TOTAL_COLUMNS = 9;
-const TOTAL_ROWS = 7;
-const DISPLAY_SIZE = 180; // Reduced canvas size to fit hero neatly without clipping
-const FRAME_DURATION = 180;
+export type PetMood =
+    | 'sleeping'
+    | 'waiting'
+    | 'happy'
+    | 'proud'
+    | 'calm';
 
-const STAGE_FRAMES = {
-  1: [0, 1, 2, 3],
-  2: [9, 10, 11, 12],
-  3: [27, 28, 29, 30],
-} as const;
+export type PetReaction = 'jump' | 'spin' | 'glow' | 'dance';
 
-export function PetCanvas() {
-  const stage = usePetStore((state) => state.stage);
+type Props = {
+    mood?: PetMood;
+    reaction?: PetReaction;
+};
 
-  const spriteSheet = useImage(
-    require('../../assets/sprites/pets/pet-atlas.png')
-  );
+const MOOD_OVERLAYS: Record<PetMood, string> = {
+    sleeping: '💤',
+    waiting: '⏰',
+    happy: '✨',
+    proud: '👑',
+    calm: '🌿',
+};
 
-  const animationProgress = useSharedValue(0);
-  const floatAnim = useSharedValue(0);
+export function PetCanvas({ mood = 'waiting', reaction }: Props) {
+    const stage = usePetStore((state) => state.stage);
+    const floatAnim = useSharedValue(0);
+    const reactionScale = useSharedValue(1);
+    const reactionRotate = useSharedValue(0);
+    const reactionOpacity = useSharedValue(1);
 
-  const frames = STAGE_FRAMES[stage] ?? STAGE_FRAMES[1];
+    useEffect(() => {
+        floatAnim.value = withRepeat(
+            withTiming(-8, {
+                duration: 1200,
+                easing: Easing.inOut(Easing.ease),
+            }),
+            -1,
+            true
+        );
+    }, []);
 
-  useEffect(() => {
-    animationProgress.value = 0;
-    animationProgress.value = withRepeat(
-      withTiming(1, {
-        duration: frames.length * FRAME_DURATION,
-        easing: Easing.linear,
-      }),
-      -1,
-      false
-    );
+    useEffect(() => {
+        if (!reaction) return;
 
-    return () => {
-      animationProgress.value = 0;
+        // Reset reaction values so repeated triggers animate from baseline.
+        reactionScale.value = 1;
+        reactionRotate.value = 0;
+        reactionOpacity.value = 1;
+
+        switch (reaction) {
+            case 'jump':
+                reactionScale.value = withSequence(
+                    withTiming(1.2, { duration: 180 }),
+                    withTiming(0.95, { duration: 180 }),
+                    withTiming(1.1, { duration: 180 }),
+                    withTiming(1, { duration: 180 })
+                );
+                break;
+            case 'spin':
+                reactionRotate.value = withTiming(360, {
+                    duration: 600,
+                    easing: Easing.out(Easing.cubic),
+                });
+                break;
+            case 'glow':
+                reactionOpacity.value = withSequence(
+                    withTiming(0.5, { duration: 300 }),
+                    withTiming(1, { duration: 300 }),
+                    withTiming(0.6, { duration: 300 }),
+                    withTiming(1, { duration: 300 })
+                );
+                break;
+            case 'dance':
+                reactionRotate.value = withSequence(
+                    withTiming(-12, { duration: 150 }),
+                    withTiming(12, { duration: 150 }),
+                    withTiming(-12, { duration: 150 }),
+                    withTiming(12, { duration: 150 }),
+                    withTiming(0, { duration: 150 })
+                );
+                reactionScale.value = withSequence(
+                    withTiming(1.1, { duration: 150 }),
+                    withTiming(0.95, { duration: 150 }),
+                    withTiming(1.1, { duration: 150 }),
+                    withTiming(1, { duration: 150 })
+                );
+                break;
+        }
+    }, [reaction]);
+
+    const animatedStyle = useAnimatedStyle(() => ({
+        transform: [
+            { translateY: floatAnim.value },
+            { scale: reactionScale.value },
+            { rotate: `${reactionRotate.value}deg` },
+        ],
+        opacity: reactionOpacity.value,
+    }));
+
+    const auraStyle = useAnimatedStyle(() => ({
+        opacity: mood === 'calm' ? withTiming(1, { duration: 600 }) : 0,
+    }));
+
+    const overlayPulse = useAnimatedStyle(() => ({
+        transform: [
+            {
+                scale: withRepeat(
+                    withTiming(1.15, {
+                        duration: 900,
+                        easing: Easing.inOut(Easing.cubic),
+                    }),
+                    -1,
+                    true
+                ),
+            },
+        ],
+    }));
+
+    const renderPet = () => {
+        switch (stage) {
+            case 1:
+                return <Stage1Egg size={150} />;
+            case 2:
+                return <Stage2Coinling size={150} />;
+            case 3:
+                return <Stage3Hodler size={150} />;
+            case 4:
+                return <Stage3Hodler size={150} />;
+            case 5:
+                return <Stage5Whale size={150} />;
+            default:
+                return <Stage1Egg size={150} />;
+        }
     };
-  }, [stage, frames.length]);
 
-  useEffect(() => {
-    floatAnim.value = withRepeat(
-      withTiming(-6, {
-        duration: 1200,
-        easing: Easing.inOut(Easing.ease),
-      }),
-      -1,
-      true
+    const overlay = useMemo(() => MOOD_OVERLAYS[mood], [mood]);
+
+    return (
+        <View style={styles.container}>
+            {mood === 'calm' ? (
+                <Animated.View style={[styles.aura, auraStyle]} />
+            ) : null}
+
+            <Animated.View style={[styles.petWrap, animatedStyle]}>
+                {renderPet()}
+            </Animated.View>
+
+            <Animated.View
+                style={[
+                    styles.overlay,
+                    styles[mood],
+                    overlayPulse,
+                ]}
+            >
+                <Text style={styles.overlayText}>{overlay}</Text>
+            </Animated.View>
+        </View>
     );
-
-    return () => {
-      floatAnim.value = 0;
-    };
-  }, []);
-
-  const currentFrame = useDerivedValue(() => {
-    const frameIdx = Math.floor(animationProgress.value * frames.length);
-    return frames[Math.min(frameIdx, frames.length - 1)];
-  });
-
-  const sprites = useRectBuffer(1, (value) => {
-    'worklet';
-    if (!spriteSheet) return;
-
-    const frameWidth = spriteSheet.width() / TOTAL_COLUMNS;
-    const frameHeight = spriteSheet.height() / TOTAL_ROWS;
-
-    const frame = currentFrame.value;
-    const column = frame % TOTAL_COLUMNS;
-    const row = Math.floor(frame / TOTAL_COLUMNS);
-
-    value.setXYWH(
-      column * frameWidth,
-      row * frameHeight,
-      frameWidth,
-      frameHeight
-    );
-  });
-
-  const transforms = useRSXformBuffer(1, (value) => {
-    'worklet';
-    if (!spriteSheet) return;
-
-    const frameWidth = spriteSheet.width() / TOTAL_COLUMNS;
-    const scale = DISPLAY_SIZE / frameWidth;
-
-    value.set(scale, 0, 0, floatAnim.value);
-  });
-
-  if (!spriteSheet) {
-    return <View style={styles.canvasPlaceholder} />;
-  }
-
-  return (
-    <Canvas style={styles.canvas}>
-      <Atlas
-        image={spriteSheet}
-        sprites={sprites}
-        transforms={transforms}
-      />
-    </Canvas>
-  );
 }
 
 const styles = StyleSheet.create({
-  canvas: {
-    width: DISPLAY_SIZE,
-    height: DISPLAY_SIZE,
-  },
-  canvasPlaceholder: {
-    width: DISPLAY_SIZE,
-    height: DISPLAY_SIZE,
-  },
+    container: {
+        width: 160,
+        height: 160,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    petWrap: {
+        width: 150,
+        height: 150,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    aura: {
+        position: 'absolute',
+        width: 140,
+        height: 140,
+        borderRadius: 70,
+        backgroundColor: 'rgba(114,228,90,0.18)',
+    },
+    overlay: {
+        position: 'absolute',
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    overlayText: {
+        fontSize: 22,
+    },
+    sleeping: {
+        top: 16,
+        right: 24,
+    },
+    waiting: {
+        top: 20,
+        right: 22,
+    },
+    happy: {
+        top: 12,
+        left: 18,
+    },
+    proud: {
+        top: 4,
+    },
+    calm: {
+        bottom: 14,
+        right: 22,
+    },
 });

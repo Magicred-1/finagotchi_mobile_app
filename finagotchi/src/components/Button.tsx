@@ -11,12 +11,14 @@ type Props = {
     title: string;
     onPress: () => void;
     disabled?: boolean;
+    variant?: 'primary' | 'secondary';
 };
 
 export function Button({
     title,
     onPress,
     disabled = false,
+    variant = 'primary',
 }: Props) {
     return (
         <Pressable
@@ -24,10 +26,11 @@ export function Button({
         disabled={disabled}
         style={[
             styles.button,
+            variant === 'secondary' && styles.secondary,
             disabled && styles.disabled,
         ]}
         >
-        <Text style={styles.text}>
+        <Text style={[styles.text, variant === 'secondary' && styles.textSecondary]}>
             {title}
         </Text>
         </Pressable>
@@ -46,6 +49,12 @@ const styles = StyleSheet.create({
         alignItems: 'center',
     },
 
+    secondary: {
+        backgroundColor: colors.surfaceLight,
+        borderWidth: 1,
+        borderColor: colors.border,
+    },
+
     disabled: {
         opacity: 0.4,
     },
@@ -54,5 +63,9 @@ const styles = StyleSheet.create({
         color: '#07111F',
         fontSize: 16,
         fontWeight: '800',
+    },
+
+    textSecondary: {
+        color: colors.text,
     },
 });
