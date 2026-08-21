@@ -9,13 +9,48 @@
       "distribution": "internal"
     },
     "preview": {
-      "distribution": "internal"
+      "distribution": "internal",
+      "android": {
+        "buildType": "apk"
+      },
+      "ios": {
+        "resourceClass": "m-medium"
+      }
+    },
+    "beta": {
+      "distribution": "store",
+      "autoIncrement": true,
+      "ios": {
+        "resourceClass": "m-medium"
+      }
     },
     "production": {
-      "autoIncrement": true
+      "autoIncrement": true,
+      "ios": {
+        "resourceClass": "m-medium"
+      }
     }
   },
   "submit": {
-    "production": {}
+    "beta": {
+      "ios": {
+        "appleId": "${EAS_APPLE_ID}",
+        "ascAppId": "${EAS_ASC_APP_ID}"
+      },
+      "android": {
+        "serviceAccountKeyPath": "./credentials/google-service-account.json",
+        "track": "internal"
+      }
+    },
+    "production": {
+      "ios": {
+        "appleId": "${EAS_APPLE_ID}",
+        "ascAppId": "${EAS_ASC_APP_ID}"
+      },
+      "android": {
+        "serviceAccountKeyPath": "./credentials/google-service-account.json",
+        "track": "production"
+      }
+    }
   }
 }

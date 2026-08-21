@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import {
     ScrollView,
     StyleSheet,
@@ -28,34 +28,68 @@ type Props = {
 type BackgroundItem = {
     id: PetBackground;
     name: string;
-    unlock: number; // streak required
+    unlock: number; // streak required for free items
+    price: number;  // premium price; 0 means free/unlocked by streak
 };
 
 type AccessoryItem = {
     id: PetAccessory;
     name: string;
-    unlock: number; // streak required
+    unlock: number;
+    price: number;
 };
 
 const BACKGROUNDS: BackgroundItem[] = [
-    { id: 'default', name: 'Meadow', unlock: 0 },
-    { id: 'aurora', name: 'Aurora', unlock: 3 },
-    { id: 'sunset', name: 'Sunset', unlock: 7 },
-    { id: 'midnight', name: 'Midnight', unlock: 14 },
+    { id: 'default', name: 'Meadow', unlock: 0, price: 0 },
+    { id: 'aurora', name: 'Aurora', unlock: 3, price: 0 },
+    { id: 'sunset', name: 'Sunset', unlock: 7, price: 0 },
+    { id: 'midnight', name: 'Midnight', unlock: 14, price: 0 },
+    { id: 'galaxy', name: 'Galaxy', unlock: 0, price: 1200 },
+    { id: 'gold', name: 'Golden', unlock: 0, price: 3000 },
 ];
 
 const ACCESSORIES: AccessoryItem[] = [
-    { id: 'none', name: 'None', unlock: 0 },
-    { id: 'glasses', name: 'Shades', unlock: 3 },
-    { id: 'bowtie', name: 'Bowtie', unlock: 7 },
-    { id: 'crown', name: 'Royal Crown', unlock: 14 },
+    { id: 'none', name: 'None', unlock: 0, price: 0 },
+    { id: 'glasses', name: 'Shades', unlock: 3, price: 0 },
+    { id: 'bowtie', name: 'Bowtie', unlock: 7, price: 0 },
+    { id: 'crown', name: 'Royal Crown', unlock: 14, price: 0 },
+    { id: 'halo', name: 'Halo', unlock: 0, price: 800 },
+    { id: 'diamond', name: 'Diamond', unlock: 0, price: 2500 },
 ];
 
-export default function CosmeticsSheet({ visible, onClose }: Props) {
+function formatNumber(num: number): string {
+    return Math.round(num)
+        .toString()
+        .replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+}
+
+export default function CollectiblesSheet({ visible, onClose }: Props) {
     const streak = useCheckinStore((state) => state.streak);
     const background = usePetStore((state) => state.background);
     const accessory = usePetStore((state) => state.accessory);
+    const balance = usePetStore((state) => state.balance);
+    const ownedBackgrounds = usePetStore((state) => state.ownedBackgrounds);
+    const ownedAccessories = usePetStore((state) => state.ownedAccessories);
     const setCosmetic = usePetStore((state) => state.setCosmetic);
+    const ownBackground = usePetStore((state) => state.ownBackground);
+    const ownAccessory = usePetStore((state) => state.ownAccessory);
+    const purchaseBackground = usePetStore((state) => state.purchaseBackground);
+    const purchaseAccessory = usePetStore((state) => state.purchaseAccessory);
+
+    // Streak unlocks free collectibles automatically.
+    useEffect(() => {
+        if (!visible) return;
+        BACKGROUNDS.forEach((item) => {
+            if (item.price === 0 && streak >= item.unlock) {
+                ownBackground(item.id);
+            }
+        });
+        ACCESSORIES.forEach((item) => {
+            if (item.price === 0 && streak >= item.unlock) {
+                ownAccessory(item.id);
+            }
+        });
+    }, [visible, streak, ownBackground, ownAccessory]);
 
     const handleClose = () => {
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -63,13 +97,41 @@ export default function CosmeticsSheet({ visible, onClose }: Props) {
     };
 
     const selectBackground = (item: BackgroundItem) => {
-        if (streak < item.unlock) return;
+        const isOwned = ownedBackgrounds.includes(item.id);
+        const streakUnlocked = streak >= item.unlock;
+
+        if (!isOwned) {
+            if (!streakUnlocked) return;
+            if (item.price > 0) {
+                const success = purchaseBackground(item.id, item.price);
+                if (!success) {
+                    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+                    return;
+                }
+                Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+            }
+        }
+
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
         setCosmetic({ background: item.id });
     };
 
     const selectAccessory = (item: AccessoryItem) => {
-        if (streak < item.unlock) return;
+        const isOwned = ownedAccessories.includes(item.id);
+        const streakUnlocked = streak >= item.unlock;
+
+        if (!isOwned) {
+            if (!streakUnlocked) return;
+            if (item.price > 0) {
+                const success = purchaseAccessory(item.id, item.price);
+                if (!success) {
+                    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+                    return;
+                }
+                Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+            }
+        }
+
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
         setCosmetic({ accessory: item.id });
     };
@@ -89,7 +151,11 @@ export default function CosmeticsSheet({ visible, onClose }: Props) {
             </PressableScale>
 
             <View style={styles.header}>
-                <Text style={styles.title}>Cosmetics</Text>
+                <Text style={styles.title}>Collectibles</Text>
+                <View style={styles.balancePill}>
+                    <Ionicons name="wallet-outline" size={12} color={colors.warning} />
+                    <Text style={styles.balanceText}>{formatNumber(balance)}</Text>
+                </View>
             </View>
 
             <ScrollView
@@ -97,26 +163,31 @@ export default function CosmeticsSheet({ visible, onClose }: Props) {
                 contentContainerStyle={styles.container}
             >
                 <Text style={styles.intro}>
-                    Unlock new looks by keeping your streak alive. Every cosmetic
-                    is earned — no payments required.
+                    Earn styles by keeping your streak alive, or spend your points
+                    on premium collectibles.
                 </Text>
 
                 <Text style={styles.sectionTitle}>Backgrounds</Text>
                 <View style={styles.grid}>
                     {BACKGROUNDS.map((item) => {
-                        const unlocked = streak >= item.unlock;
-                        const active = background === item.id;
+                        const isOwned = ownedBackgrounds.includes(item.id);
+                        const streakUnlocked = streak >= item.unlock;
+                        const isActive = background === item.id;
+                        const isPremium = item.price > 0;
+                        const canAfford = balance >= item.price;
+                        const isDisabled = !isOwned && (!streakUnlocked || (isPremium && !canAfford));
                         const [top, bottom] = BACKGROUND_COLORS[item.id];
 
                         return (
                             <PressableScale
                                 key={item.id}
                                 onPress={() => selectBackground(item)}
-                                disabled={!unlocked}
+                                disabled={isDisabled}
                                 style={[
                                     styles.tile,
-                                    active && styles.tileActive,
-                                    !unlocked && styles.tileLocked,
+                                    isActive && styles.tileActive,
+                                    isDisabled && styles.tileLocked,
+                                    isOwned && !isActive && styles.tileOwned,
                                 ]}
                             >
                                 <View
@@ -131,12 +202,26 @@ export default function CosmeticsSheet({ visible, onClose }: Props) {
                                 <Text
                                     style={[
                                         styles.tileLabel,
-                                        !unlocked && styles.tileLabelLocked,
+                                        isDisabled && styles.tileLabelLocked,
                                     ]}
                                 >
                                     {item.name}
                                 </Text>
-                                {!unlocked && (
+                                {!isOwned && isPremium && (
+                                    <View style={[
+                                        styles.priceBadge,
+                                        !canAfford && styles.priceBadgeDisabled,
+                                    ]}>
+                                        <Ionicons name="wallet-outline" size={9} color={canAfford ? colors.warning : colors.textMuted} />
+                                        <Text style={[
+                                            styles.priceText,
+                                            !canAfford && styles.priceTextDisabled,
+                                        ]}>
+                                            {formatNumber(item.price)}
+                                        </Text>
+                                    </View>
+                                )}
+                                {!isOwned && !isPremium && !streakUnlocked && (
                                     <View style={styles.lockBadge}>
                                         <Ionicons
                                             name="lock-closed"
@@ -148,7 +233,12 @@ export default function CosmeticsSheet({ visible, onClose }: Props) {
                                         </Text>
                                     </View>
                                 )}
-                                {active && unlocked && (
+                                {isOwned && !isActive && (
+                                    <View style={styles.ownedBadge}>
+                                        <Text style={styles.ownedText}>Owned</Text>
+                                    </View>
+                                )}
+                                {isActive && (
                                     <View style={styles.checkBadge}>
                                         <Ionicons
                                             name="checkmark"
@@ -165,18 +255,23 @@ export default function CosmeticsSheet({ visible, onClose }: Props) {
                 <Text style={styles.sectionTitle}>Accessories</Text>
                 <View style={styles.grid}>
                     {ACCESSORIES.map((item) => {
-                        const unlocked = streak >= item.unlock;
-                        const active = accessory === item.id;
+                        const isOwned = ownedAccessories.includes(item.id);
+                        const streakUnlocked = streak >= item.unlock;
+                        const isActive = accessory === item.id;
+                        const isPremium = item.price > 0;
+                        const canAfford = balance >= item.price;
+                        const isDisabled = !isOwned && (!streakUnlocked || (isPremium && !canAfford));
 
                         return (
                             <PressableScale
                                 key={item.id}
                                 onPress={() => selectAccessory(item)}
-                                disabled={!unlocked}
+                                disabled={isDisabled}
                                 style={[
                                     styles.tile,
-                                    active && styles.tileActive,
-                                    !unlocked && styles.tileLocked,
+                                    isActive && styles.tileActive,
+                                    isDisabled && styles.tileLocked,
+                                    isOwned && !isActive && styles.tileOwned,
                                 ]}
                             >
                                 <Text style={styles.emoji}>
@@ -185,12 +280,26 @@ export default function CosmeticsSheet({ visible, onClose }: Props) {
                                 <Text
                                     style={[
                                         styles.tileLabel,
-                                        !unlocked && styles.tileLabelLocked,
+                                        isDisabled && styles.tileLabelLocked,
                                     ]}
                                 >
                                     {item.name}
                                 </Text>
-                                {!unlocked && (
+                                {!isOwned && isPremium && (
+                                    <View style={[
+                                        styles.priceBadge,
+                                        !canAfford && styles.priceBadgeDisabled,
+                                    ]}>
+                                        <Ionicons name="wallet-outline" size={9} color={canAfford ? colors.warning : colors.textMuted} />
+                                        <Text style={[
+                                            styles.priceText,
+                                            !canAfford && styles.priceTextDisabled,
+                                        ]}>
+                                            {formatNumber(item.price)}
+                                        </Text>
+                                    </View>
+                                )}
+                                {!isOwned && !isPremium && !streakUnlocked && (
                                     <View style={styles.lockBadge}>
                                         <Ionicons
                                             name="lock-closed"
@@ -202,7 +311,12 @@ export default function CosmeticsSheet({ visible, onClose }: Props) {
                                         </Text>
                                     </View>
                                 )}
-                                {active && unlocked && (
+                                {isOwned && !isActive && (
+                                    <View style={styles.ownedBadge}>
+                                        <Text style={styles.ownedText}>Owned</Text>
+                                    </View>
+                                )}
+                                {isActive && (
                                     <View style={styles.checkBadge}>
                                         <Ionicons
                                             name="checkmark"
@@ -231,11 +345,28 @@ const styles = StyleSheet.create({
     header: {
         flexDirection: 'row',
         alignItems: 'center',
+        justifyContent: 'space-between',
         marginBottom: spacing.md,
     },
     title: {
         color: colors.text,
         fontSize: typography.heading,
+        fontFamily: 'Poppins_700Bold',
+    },
+    balancePill: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 5,
+        paddingVertical: 6,
+        paddingHorizontal: 10,
+        borderRadius: 12,
+        backgroundColor: 'rgba(255,209,102,0.10)',
+        borderWidth: 1,
+        borderColor: 'rgba(255,209,102,0.20)',
+    },
+    balanceText: {
+        color: colors.warning,
+        fontSize: 13,
         fontFamily: 'Poppins_700Bold',
     },
     closeButton: {
@@ -289,8 +420,11 @@ const styles = StyleSheet.create({
         borderColor: colors.primary,
         backgroundColor: 'rgba(93,226,166,0.08)',
     },
+    tileOwned: {
+        borderColor: 'rgba(255,209,102,0.35)',
+    },
     tileLocked: {
-        opacity: 0.55,
+        opacity: 0.5,
     },
     swatch: {
         width: 44,
@@ -311,6 +445,26 @@ const styles = StyleSheet.create({
     tileLabelLocked: {
         color: colors.textMuted,
     },
+    priceBadge: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 3,
+        paddingVertical: 3,
+        paddingHorizontal: 6,
+        borderRadius: 8,
+        backgroundColor: 'rgba(255,209,102,0.12)',
+    },
+    priceBadgeDisabled: {
+        backgroundColor: 'rgba(255,255,255,0.05)',
+    },
+    priceText: {
+        color: colors.warning,
+        fontSize: 9,
+        fontFamily: 'Poppins_700Bold',
+    },
+    priceTextDisabled: {
+        color: colors.textMuted,
+    },
     lockBadge: {
         flexDirection: 'row',
         alignItems: 'center',
@@ -322,6 +476,17 @@ const styles = StyleSheet.create({
     },
     lockText: {
         color: colors.textMuted,
+        fontSize: 9,
+        fontFamily: 'Poppins_700Bold',
+    },
+    ownedBadge: {
+        paddingVertical: 3,
+        paddingHorizontal: 6,
+        borderRadius: 8,
+        backgroundColor: 'rgba(93,226,166,0.12)',
+    },
+    ownedText: {
+        color: colors.primary,
         fontSize: 9,
         fontFamily: 'Poppins_700Bold',
     },
