@@ -1,4 +1,4 @@
-import 'react-native-get-random-values';
+import '../polyfills';
 
 import { useCallback, useEffect, useMemo } from 'react';
 import { Platform, Linking } from 'react-native';
@@ -13,9 +13,6 @@ import {
 import bs58 from 'bs58';
 
 import { useWalletStore } from '../features/wallet/store';
-
-// Polyfill for Solana web3.js in React Native
-(globalThis as any).Buffer = Buffer;
 
 const APP_URL = 'https://finagotchi.app';
 const CLUSTER = 'devnet';

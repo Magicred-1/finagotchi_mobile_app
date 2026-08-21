@@ -1,21 +1,6 @@
-import 'react-native-get-random-values';
+import '../src/polyfills';
 
 declare const process: { env: Record<string, string | undefined> };
-
-import { Platform } from 'react-native';
-
-if (Platform.OS === 'ios') {
-    try {
-        const webcrypto = require('isomorphic-webcrypto');
-        if (typeof globalThis.crypto === 'undefined') {
-            (globalThis as any).crypto = webcrypto;
-        } else if (!globalThis.crypto.subtle) {
-            (globalThis as any).crypto.subtle = webcrypto.subtle;
-        }
-    } catch (e) {
-        console.warn('Failed to polyfill Web Crypto:', e);
-    }
-}
 
 import React, { useEffect, useMemo } from 'react';
 import { Stack } from 'expo-router';

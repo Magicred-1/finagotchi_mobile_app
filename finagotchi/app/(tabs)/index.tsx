@@ -24,7 +24,7 @@ import { PetCanvas } from '../../src/components/PetCanvas';
 import { PressableScale } from '../../src/components/PressableScale';
 import { Sidebar, SIDEBAR_WIDTH } from '../../src/components/Sidebar';
 import EvolutionCeremony from '../../src/components/EvolutionCeremony';
-import CosmeticsSheet from '../../src/components/CosmeticsSheet';
+import CollectiblesSheet from '../../src/components/CollectiblesSheet';
 import QuestsSheet from '../../src/components/QuestsSheet';
 import WaitlistSheet from '../../src/components/WaitlistSheet';
 import { useCheckinStore } from '../../src/features/checkin/store';
@@ -100,6 +100,21 @@ function project(initialVelocity: number, decelerationRate = 0.998) {
   return (initialVelocity / 1000) * decelerationRate / (1 - decelerationRate);
 }
 
+type PetAction = {
+  id: string;
+  icon: keyof typeof Ionicons.glyphMap;
+  label: string;
+  cost: number;
+  reaction: PetReaction;
+};
+
+const PET_ACTIONS: PetAction[] = [
+  { id: 'caress', icon: 'hand-left-outline', label: 'Caress', cost: 0, reaction: 'jump' },
+  { id: 'treat', icon: 'nutrition-outline', label: 'Treat', cost: 50, reaction: 'glow' },
+  { id: 'play', icon: 'game-controller-outline', label: 'Play', cost: 100, reaction: 'dance' },
+  { id: 'train', icon: 'barbell-outline', label: 'Train', cost: 250, reaction: 'spin' },
+];
+
 export default function HomeScreen() {
   const { width } = useWindowDimensions();
   const insets = useSafeAreaInsets();
@@ -107,7 +122,7 @@ export default function HomeScreen() {
   const currentHour = now.getHours();
 
   const [sidebarVisible, setSidebarVisible] = useState(false);
-  const [cosmeticsVisible, setCosmeticsVisible] = useState(false);
+  const [collectiblesVisible, setCollectiblesVisible] = useState(false);
   const [questsVisible, setQuestsVisible] = useState(false);
   const [waitlistVisible, setWaitlistVisible] = useState(false);
   const [reaction, setReaction] = useState<PetReaction | undefined>(undefined);
@@ -157,6 +172,8 @@ export default function HomeScreen() {
   const setLastCelebratedStage = usePetStore(
     (state) => state.setLastCelebratedStage
   );
+  const balance = usePetStore((state) => state.balance);
+  const spendBalance = usePetStore((state) => state.spendBalance);
 
   const walletAddress = useWalletStore((state) => state.address);
 
@@ -217,8 +234,8 @@ export default function HomeScreen() {
         setSidebarVisible(false);
         return true;
       }
-      if (cosmeticsVisible) {
-        setCosmeticsVisible(false);
+      if (collectiblesVisible) {
+        setCollectiblesVisible(false);
         return true;
       }
       if (questsVisible) {
@@ -261,7 +278,7 @@ export default function HomeScreen() {
 
     const subscription = BackHandler.addEventListener('hardwareBackPress', onBackPress);
     return () => subscription.remove();
-  }, [sidebarVisible, cosmeticsVisible, questsVisible, waitlistVisible, showEvolution, stage]);
+  }, [sidebarVisible, collectiblesVisible, questsVisible, waitlistVisible, showEvolution, stage]);
 
   function handleFeed() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -288,9 +305,9 @@ export default function HomeScreen() {
     Alert.alert('Nudge', 'Send a nudge to a friend coming soon!');
   }
 
-  function handleCosmetics() {
+  function handleCollectibles() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    setCosmeticsVisible(true);
+    setCollectiblesVisible(true);
   }
 
   function handleHardware() {
@@ -301,6 +318,16 @@ export default function HomeScreen() {
   function handleGames() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     Alert.alert('Games', 'Mini-games for your Finagotchi are coming soon!');
+  }
+
+  function handlePetAction(action: PetAction) {
+    const success = spendBalance(action.cost);
+    if (!success) {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      return;
+    }
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    setReaction(action.reaction);
   }
 
   const displayName = petName || 'Finny';
@@ -357,13 +384,6 @@ export default function HomeScreen() {
           </PressableScale>
 
           <View style={styles.topBarRight}>
-            <View style={[styles.currencyChip, isTinyDevice && styles.currencyChipSmall]}>
-              <Ionicons name="nutrition-outline" size={isTinyDevice ? 12 : 14} color={colors.text} />
-              <Text style={[styles.currencyValue, isTinyDevice && styles.currencyValueSmall]}>
-                {formatNumber(points)}
-              </Text>
-            </View>
-
             <PressableScale
               onPress={() => setSidebarVisible(true)}
               hitSlop={8}
@@ -393,6 +413,10 @@ export default function HomeScreen() {
             <Text style={styles.pointsLabel}>points</Text>
           </View>
 
+          <View style={styles.balancePill}>
+            <Ionicons name="wallet-outline" size={12} color={colors.warning} />
+            <Text style={styles.balanceText}>{formatNumber(balance)}</Text>
+          </View>
         </View>
 
         {/* PET CARD */}
@@ -461,6 +485,55 @@ export default function HomeScreen() {
             )}
           </View>
 
+          <View style={styles.petActionsRow}>
+            {PET_ACTIONS.map((action) => {
+              const canAfford = balance >= action.cost;
+              return (
+                <PressableScale
+                  key={action.id}
+                  onPress={() => handlePetAction(action)}
+                  disabled={!canAfford}
+                  style={[
+                    styles.petActionButton,
+                    !canAfford && styles.petActionButtonDisabled,
+                  ]}
+                >
+                  <Ionicons
+                    name={action.icon}
+                    size={18}
+                    color={canAfford ? colors.text : colors.textMuted}
+                  />
+                  <Text
+                    style={[
+                      styles.petActionLabel,
+                      !canAfford && styles.petActionLabelDisabled,
+                    ]}
+                    numberOfLines={1}
+                  >
+                    {action.label}
+                  </Text>
+                  <View
+                    style={[
+                      styles.petActionPricePill,
+                      action.cost === 0 && styles.petActionPricePillFree,
+                      !canAfford && styles.petActionPricePillDisabled,
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.petActionPriceText,
+                        action.cost === 0 && styles.petActionPriceTextFree,
+                        !canAfford && styles.petActionPriceTextDisabled,
+                      ]}
+                    >
+                      {action.cost === 0 ? 'Free' : formatNumber(action.cost)}
+                    </Text>
+                  </View>
+                </PressableScale>
+              );
+            })}
+          </View>
+
           <View style={styles.petCardFooter}>
             <View style={styles.battleStat}>
               <Ionicons name="fitness-outline" size={14} color={colors.text} />
@@ -497,7 +570,7 @@ export default function HomeScreen() {
         {/* ACTION GRID */}
         <View style={styles.actionGrid}>
           <PressableScale
-            onPress={handleCosmetics}
+            onPress={handleCollectibles}
             style={styles.actionTile}
           >
             <Ionicons
@@ -505,7 +578,7 @@ export default function HomeScreen() {
               size={22}
               color={colors.text}
             />
-            <Text style={styles.actionTileText}>Cosmetics</Text>
+            <Text style={styles.actionTileText}>Collectibles</Text>
           </PressableScale>
 
 
@@ -576,9 +649,9 @@ export default function HomeScreen() {
         onDismiss={() => setLastCelebratedStage(stage)}
       />
 
-      <CosmeticsSheet
-        visible={cosmeticsVisible}
-        onClose={() => setCosmeticsVisible(false)}
+      <CollectiblesSheet
+        visible={collectiblesVisible}
+        onClose={() => setCollectiblesVisible(false)}
       />
 
       <QuestsSheet
@@ -742,7 +815,7 @@ const styles = StyleSheet.create({
   pointsMain: {
     flex: 1,
     flexDirection: 'row',
-    alignItems: 'baseline',
+    alignItems: 'center',
     gap: 6,
     minWidth: 0,
   },
@@ -760,6 +833,22 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
     fontSize: 14,
     fontFamily: 'Poppins_500Medium',
+  },
+  balancePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingVertical: 7,
+    paddingHorizontal: 11,
+    borderRadius: 12,
+    backgroundColor: 'rgba(255,209,102,0.10)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,209,102,0.20)',
+  },
+  balanceText: {
+    color: colors.warning,
+    fontSize: 13,
+    fontFamily: 'Poppins_700Bold',
   },
   rewardsPill: {
     paddingVertical: 8,
@@ -919,6 +1008,62 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontSize: 13,
     fontFamily: 'Poppins_700Bold',
+  },
+
+  /* PET ACTIONS */
+  petActionsRow: {
+    width: '100%',
+    flexDirection: 'row',
+    gap: 8,
+  },
+  petActionButton: {
+    flex: 1,
+    minWidth: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 5,
+    paddingVertical: 10,
+    paddingHorizontal: 4,
+    borderRadius: 14,
+    backgroundColor: colors.background,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+  },
+  petActionButtonDisabled: {
+    backgroundColor: 'rgba(14,27,46,0.50)',
+    borderColor: 'rgba(255,255,255,0.04)',
+  },
+  petActionLabel: {
+    color: colors.text,
+    fontSize: 11,
+    fontFamily: 'Poppins_700Bold',
+    textAlign: 'center',
+  },
+  petActionLabelDisabled: {
+    color: colors.textMuted,
+  },
+  petActionPricePill: {
+    paddingVertical: 2,
+    paddingHorizontal: 6,
+    borderRadius: 6,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+  },
+  petActionPricePillFree: {
+    backgroundColor: 'rgba(93,226,166,0.12)',
+  },
+  petActionPricePillDisabled: {
+    backgroundColor: 'rgba(255,255,255,0.05)',
+  },
+  petActionPriceText: {
+    color: colors.text,
+    fontSize: 9,
+    fontFamily: 'Poppins_800ExtraBold',
+  },
+  petActionPriceTextFree: {
+    color: colors.primary,
+  },
+  petActionPriceTextDisabled: {
+    color: colors.textMuted,
   },
 
   /* STATS GRID */

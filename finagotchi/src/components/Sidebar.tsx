@@ -52,7 +52,7 @@ type NavAction =
 const NAV_ITEMS: NavAction[] = [
     { type: 'route', label: 'My Pet', icon: 'happy-outline', href: '/(tabs)' },
     { type: 'action', label: 'Quests', icon: 'flag-outline', action: 'quests' },
-    { type: 'action', label: 'Hardware Waitlist', icon: 'cube-outline', action: 'waitlist' },
+    { type: 'action', label: 'Join Waitlist', icon: 'cube-outline', action: 'waitlist' },
 ];
 
 type Props = {
