@@ -10,11 +10,19 @@ config.resolver.assetExts = config.resolver.assetExts.filter((ext) => ext !== 'c
 config.resolver.sourceExts = ['cjs', ...config.resolver.sourceExts];
 
 // tweetnacl (via @phantom/crypto) requires Node's built-in 'crypto' module
-// for randomBytes. Hermes/JSC don't include it, so point the bare 'crypto'
-// import at our minimal JS polyfill.
-config.resolver.extraNodeModules = {
-    ...config.resolver.extraNodeModules,
-    crypto: path.resolve(__dirname, 'src/crypto-polyfill.ts'),
+// for randomBytes. Hermes/JSC don't include it, so intercept that import
+// and point it at our minimal JS polyfill.
+const cryptoPolyfillPath = path.resolve(__dirname, 'src/crypto-polyfill.ts');
+const originalResolveRequest = config.resolver.resolveRequest;
+
+config.resolver.resolveRequest = (context, moduleName, platform, info) => {
+    if (moduleName === 'crypto') {
+        return { filePath: cryptoPolyfillPath, type: 'sourceFile' };
+    }
+    if (originalResolveRequest) {
+        return originalResolveRequest(context, moduleName, platform, info);
+    }
+    return context.resolveRequest(context, moduleName, platform);
 };
 
 module.exports = config;
