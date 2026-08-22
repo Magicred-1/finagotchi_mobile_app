@@ -22,6 +22,7 @@ import {
     Stage3Hodler,
     Stage5Whale,
 } from './PetSprites';
+import CurtainOverlay from './CurtainOverlay';
 import { STAGE_NAMES, type PetStage } from '../features/pet/store';
 import { colors, spacing, springs, typography } from '../theme/tokens';
 
@@ -42,6 +43,7 @@ export default function EvolutionCeremony({
     const opacity = useSharedValue(0);
     const scale = useSharedValue(0.8);
     const [isExiting, setIsExiting] = useState(false);
+    const [showCurtain, setShowCurtain] = useState(false);
 
     const enter = useCallback(() => {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -54,6 +56,7 @@ export default function EvolutionCeremony({
 
     const exit = useCallback(() => {
         setIsExiting(true);
+        setShowCurtain(false);
         opacity.value = withTiming(0, { duration: 220 });
         scale.value = withSpring(0.92, {
             ...springs.default,
@@ -71,9 +74,13 @@ export default function EvolutionCeremony({
         if (visible && !isExiting) {
             opacity.value = 0;
             scale.value = 0.8;
-            enter();
+            setShowCurtain(true);
         }
-    }, [visible, isExiting, enter, opacity, scale]);
+    }, [visible, isExiting, opacity, scale]);
+
+    const handleCovered = useCallback(() => {
+        enter();
+    }, [enter]);
 
     const containerStyle = useAnimatedStyle(() => ({
         opacity: opacity.value,
@@ -115,6 +122,12 @@ export default function EvolutionCeremony({
             animationType="none"
             onRequestClose={exit}
         >
+            <CurtainOverlay
+                active={showCurtain}
+                onComplete={() => setShowCurtain(false)}
+                onCovered={handleCovered}
+                color={colors.primary}
+            />
             <Animated.View
                 style={[
                     styles.backdrop,
