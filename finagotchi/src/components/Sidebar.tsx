@@ -248,10 +248,11 @@ export function Sidebar({
             <GestureDetector gesture={openPan}>
                 <View
                     style={[
-                        styles.edgeStrip,
+                        styles.dragArea,
                         {
                             top: insets.top,
                             bottom: insets.bottom,
+                            width: width * 0.55,
                             opacity: visible ? 0 : 1,
                         },
                     ]}
@@ -488,10 +489,9 @@ const styles = StyleSheet.create({
         left: 0,
         zIndex: 1000,
     },
-    edgeStrip: {
+    dragArea: {
         position: 'absolute',
         left: 0,
-        width: 44,
         zIndex: 1001,
         backgroundColor: 'transparent',
     },
