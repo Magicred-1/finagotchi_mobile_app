@@ -36,8 +36,7 @@
       "expo-secure-store",
       "expo-font",
       "expo-splash-screen",
-      "expo-notifications",
-      "react-native-spline"
+      "expo-notifications"
     ],
     "extra": {
       "router": {},
