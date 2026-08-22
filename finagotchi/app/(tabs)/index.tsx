@@ -35,7 +35,6 @@ import {
   STAGE_THRESHOLDS,
   usePetStore,
 } from '../../src/features/pet/store';
-import { useWalletStore } from '../../src/features/wallet/store';
 import { colors, radius, spacing, springs, tracking, typography } from '../../src/theme/tokens';
 import type { PetMood, PetReaction } from '../../src/components/PetCanvas';
 
@@ -174,8 +173,6 @@ export default function HomeScreen() {
   );
   const balance = usePetStore((state) => state.balance);
   const spendBalance = usePetStore((state) => state.spendBalance);
-
-  const walletAddress = useWalletStore((state) => state.address);
 
   const horizontalPadding = Math.min(Math.max(width * 0.05, 16), 24);
   const isSmallDevice = width < 360;
@@ -331,9 +328,6 @@ export default function HomeScreen() {
   }
 
   const displayName = petName || 'Finny';
-  const walletLabel = walletAddress
-    ? `${walletAddress.slice(0, 4)}...${walletAddress.slice(-4)}`
-    : displayName;
 
   return (
     <View
@@ -356,32 +350,27 @@ export default function HomeScreen() {
       >
         {/* TOP BAR */}
         <View style={[styles.topBar, isTinyDevice && styles.topBarWrap]}>
-          <PressableScale
+          <View
             style={[
-              styles.walletDropdown,
-              isTinyDevice && styles.walletDropdownSmall,
+              styles.namePill,
+              isTinyDevice && styles.namePillSmall,
             ]}
           >
             <Ionicons
-              name="wallet-outline"
+              name="sparkles-outline"
               size={isTinyDevice ? 14 : 16}
-              color={colors.text}
+              color={colors.primary}
             />
             <Text
               style={[
-                styles.walletLabel,
-                isTinyDevice && styles.walletLabelSmall,
+                styles.nameText,
+                isTinyDevice && styles.nameTextSmall,
               ]}
               numberOfLines={1}
             >
-              {walletLabel}
+              {displayName}
             </Text>
-            <Ionicons
-              name="chevron-down"
-              size={isTinyDevice ? 12 : 14}
-              color={colors.textMuted}
-            />
-          </PressableScale>
+          </View>
 
           <View style={styles.topBarRight}>
             <PressableScale
@@ -725,7 +714,7 @@ const styles = StyleSheet.create({
   topBarWrap: {
     flexWrap: 'wrap',
   },
-  walletDropdown: {
+  namePill: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
@@ -736,20 +725,20 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.06)',
   },
-  walletDropdownSmall: {
+  namePillSmall: {
     paddingVertical: 6,
     paddingHorizontal: 8,
     gap: 4,
   },
-  walletLabel: {
+  nameText: {
     color: colors.text,
     fontSize: 13,
     fontFamily: 'Poppins_700Bold',
-    maxWidth: 90,
+    maxWidth: 120,
   },
-  walletLabelSmall: {
+  nameTextSmall: {
     fontSize: 11,
-    maxWidth: 60,
+    maxWidth: 90,
   },
   topBarRight: {
     flexDirection: 'row',

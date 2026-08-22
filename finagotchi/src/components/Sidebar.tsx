@@ -260,7 +260,7 @@ export function Sidebar({
                                     />
                                     <View style={styles.headerText}>
                                         <Text style={styles.name} numberOfLines={1}>
-                                            {petName ? petName : 'Finagotchi'}
+                                            {petName || 'Finny'}
                                         </Text>
                                         <Text style={styles.subtitle}>
                                             {petName ? 'Your companion' : 'Welcome'}
