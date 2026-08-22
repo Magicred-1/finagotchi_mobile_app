@@ -314,10 +314,13 @@ const subtle: SubtleCrypto = {
 } as unknown as SubtleCrypto;
 
 function installSubtleCrypto() {
-    if (typeof globalThis.crypto !== 'object' || globalThis.crypto == null) {
-        (globalThis as any).crypto = {};
+    // Make sure a global crypto object exists on every common RN global handle.
+    const globals = [globalThis, (globalThis as any).window].filter(Boolean);
+    let crypto = (globalThis as any).crypto;
+    if (typeof crypto !== 'object' || crypto == null) {
+        crypto = {};
+        (globalThis as any).crypto = crypto;
     }
-    const crypto = globalThis.crypto as any;
 
     // react-native-get-random-values should already have installed this, but
     // guard against a missing implementation so we never lose randomness.
@@ -329,8 +332,22 @@ function installSubtleCrypto() {
         };
     }
 
-    if (typeof crypto.subtle !== 'object' || crypto.subtle == null) {
+    // Always install our subtle shim unless a working WebCrypto implementation
+    // with generateKey is already present. iOS JSC/Hermes expose no subtle, and
+    // some runtimes expose a stub object that lacks the methods Phantom needs.
+    const hasWorkingSubtle =
+        typeof crypto.subtle === 'object' &&
+        crypto.subtle != null &&
+        typeof crypto.subtle.generateKey === 'function';
+    if (!hasWorkingSubtle) {
         crypto.subtle = subtle;
+    }
+
+    // Keep all common global handles in sync.
+    for (const g of globals) {
+        if (g.crypto !== crypto) {
+            g.crypto = crypto;
+        }
     }
 }
 
