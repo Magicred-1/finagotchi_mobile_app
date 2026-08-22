@@ -194,21 +194,6 @@ export default function HomeScreen() {
 
   const showEvolution = stage > lastCelebratedStage;
 
-  const points = useMemo(
-    () => streak * 12500 + totalCheckins * 350,
-    [streak, totalCheckins]
-  );
-  const fp = useMemo(
-    () => totalCheckins * 12.5 + streak * 45,
-    [totalCheckins, streak]
-  );
-
-  const attack = streak * 13 + totalCheckins;
-  const defense = longestStreak * 7 + stage * 10;
-
-  const xp = totalCheckins * 420;
-  const nextLevelXp = (stage + 1) * 5000;
-
   useEffect(() => {
     const update = () => {
       const today = new Date();
@@ -290,17 +275,6 @@ export default function HomeScreen() {
       setReaction(pickReaction());
       Alert.alert('Already fed', `${petName || 'Finny'} is happy and full.`);
     }
-  }
-
-  function handlePhoto() {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    setReaction('dance');
-    Alert.alert('Photo', 'Share your creature coming soon!');
-  }
-
-  function handleNudge() {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    Alert.alert('Nudge', 'Send a nudge to a friend coming soon!');
   }
 
   function handleCollectibles() {
@@ -401,28 +375,6 @@ export default function HomeScreen() {
           </View>
         </View>
 
-        {/* POINTS ROW */}
-        <View style={styles.pointsRow}>
-          <View style={styles.pointsMain}>
-            <Text
-              style={[
-                styles.pointsValue,
-                isSmallDevice && styles.pointsValueSmall,
-              ]}
-              adjustsFontSizeToFit
-              numberOfLines={1}
-            >
-              {formatNumber(points)}
-            </Text>
-            <Text style={styles.pointsLabel}>points</Text>
-          </View>
-
-          <View style={styles.balancePill}>
-            <Ionicons name="wallet-outline" size={12} color={colors.warning} />
-            <Text style={styles.balanceText}>{formatNumber(balance)}</Text>
-          </View>
-        </View>
-
         {/* PET CARD */}
         <View style={styles.petCard}>
           <View style={styles.petCardHeader}>
@@ -432,26 +384,6 @@ export default function HomeScreen() {
             </View>
 
             <PressableScale
-              onPress={handleNudge}
-              style={styles.iconButtonSmall}
-            >
-              <Ionicons name="hand-left-outline" size={16} color={colors.text} />
-            </PressableScale>
-
-            <View style={styles.spacer} />
-
-            <PressableScale
-              onPress={handlePhoto}
-              style={[
-                styles.secondaryButtonSmall,
-                isTinyDevice && styles.secondaryButtonSmallTiny,
-              ]}
-            >
-              <Ionicons name="camera-outline" size={isTinyDevice ? 12 : 14} color={colors.text} />
-              <Text style={styles.secondaryButtonText} numberOfLines={1}>Photo</Text>
-            </PressableScale>
-
-            <PressableScale
               onPress={handleFeed}
               style={[
                 styles.primaryButtonSmall,
@@ -459,7 +391,9 @@ export default function HomeScreen() {
               ]}
             >
               <Ionicons name="nutrition-outline" size={isTinyDevice ? 12 : 14} color={colors.background} />
-              <Text style={styles.primaryButtonText} numberOfLines={1}>Feed</Text>
+              <Text style={styles.primaryButtonText} numberOfLines={1}>
+                {isDoneToday ? 'Fed' : 'Feed'}
+              </Text>
             </PressableScale>
           </View>
 
@@ -559,40 +493,28 @@ export default function HomeScreen() {
           </View>
 
           <View style={styles.petCardFooter}>
-            <View style={styles.battleStat}>
-              <Ionicons name="fitness-outline" size={14} color={colors.text} />
-              <Text style={styles.battleStatText}>{attack}</Text>
+            <View style={styles.footerStat}>
+              <Ionicons name="flame-outline" size={14} color={colors.primary} />
+              <Text style={styles.footerStatValue}>{streak}</Text>
+              <Text style={styles.footerStatLabel}>streak</Text>
             </View>
-            <View style={styles.battleStat}>
-              <Ionicons name="shield-outline" size={14} color={colors.text} />
-              <Text style={styles.battleStatText}>{defense}</Text>
+            <View style={styles.footerStatDivider} />
+            <View style={styles.footerStat}>
+              <Ionicons name="wallet-outline" size={14} color={colors.warning} />
+              <Text style={styles.footerStatValue}>{formatNumber(balance)}</Text>
+              <Text style={styles.footerStatLabel}>coins</Text>
+            </View>
+            <View style={styles.footerStatDivider} />
+            <View style={styles.footerStat}>
+              <Ionicons name="star-outline" size={14} color={colors.textMuted} />
+              <Text style={styles.footerStatValue}>{stage}</Text>
+              <Text style={styles.footerStatLabel}>stage</Text>
             </View>
           </View>
         </View>
 
-        {/* STATS GRID */}
-        <View style={styles.statsGrid}>
-          <View style={styles.statTile}>
-            <Ionicons name="fitness-outline" size={20} color={colors.textMuted} />
-            <Text style={styles.statTileValue}>
-              {formatNumber(Math.min(xp, nextLevelXp))}
-              <Text style={styles.statTileMax}>/{formatNumber(nextLevelXp)}</Text>
-            </Text>
-          </View>
-
-          <View style={styles.statTile}>
-            <Ionicons name="star-outline" size={20} color={colors.textMuted} />
-            <Text style={styles.statTileValue}>{stage}</Text>
-          </View>
-
-          <View style={styles.statTile}>
-            <Ionicons name="timer-outline" size={20} color={colors.textMuted} />
-            <Text style={styles.statTileValue}>{streak}</Text>
-          </View>
-        </View>
-
-        {/* ACTION GRID */}
-        <View style={styles.actionGrid}>
+        {/* ACTION ROW */}
+        <View style={styles.actionRow}>
           <PressableScale
             onPress={handleCollectibles}
             style={styles.actionTile}
@@ -816,67 +738,6 @@ const styles = StyleSheet.create({
     height: 32,
   },
 
-  /* POINTS */
-  pointsRow: {
-    width: '100%',
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 18,
-    gap: 10,
-  },
-  pointsMain: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    minWidth: 0,
-  },
-  pointsValue: {
-    color: colors.text,
-    fontSize: 32,
-    fontFamily: 'Poppins_800ExtraBold',
-    letterSpacing: tracking.title * 32,
-  },
-  pointsValueSmall: {
-    fontSize: 26,
-    letterSpacing: tracking.title * 26,
-  },
-  pointsLabel: {
-    color: colors.textMuted,
-    fontSize: 14,
-    fontFamily: 'Poppins_500Medium',
-  },
-  balancePill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    paddingVertical: 7,
-    paddingHorizontal: 11,
-    borderRadius: 12,
-    backgroundColor: 'rgba(255,209,102,0.10)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,209,102,0.20)',
-  },
-  balanceText: {
-    color: colors.warning,
-    fontSize: 13,
-    fontFamily: 'Poppins_700Bold',
-  },
-  rewardsPill: {
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 14,
-    backgroundColor: 'rgba(93,226,166,0.10)',
-    borderWidth: 1,
-    borderColor: 'rgba(93,226,166,0.20)',
-  },
-  rewardsText: {
-    color: colors.primary,
-    fontSize: 12,
-    fontFamily: 'Poppins_700Bold',
-  },
-
   /* PET CARD */
   petCard: {
     width: '100%',
@@ -906,37 +767,6 @@ const styles = StyleSheet.create({
   timerText: {
     color: colors.text,
     fontSize: 11,
-    fontFamily: 'Poppins_700Bold',
-  },
-  iconButtonSmall: {
-    width: 32,
-    height: 32,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: 10,
-    backgroundColor: colors.background,
-  },
-  spacer: {
-    flex: 1,
-  },
-  secondaryButtonSmall: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    paddingVertical: 6,
-    paddingHorizontal: 10,
-    borderRadius: 12,
-    backgroundColor: colors.background,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
-  },
-  secondaryButtonSmallTiny: {
-    paddingVertical: 5,
-    paddingHorizontal: 8,
-  },
-  secondaryButtonText: {
-    color: colors.text,
-    fontSize: 12,
     fontFamily: 'Poppins_700Bold',
   },
   primaryButtonSmall: {
@@ -1007,21 +837,32 @@ const styles = StyleSheet.create({
     width: '100%',
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
-  },
-  battleStat: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    paddingVertical: 6,
-    paddingHorizontal: 10,
-    borderRadius: 12,
+    justifyContent: 'space-evenly',
+    paddingVertical: 4,
+    borderRadius: 14,
     backgroundColor: colors.background,
   },
-  battleStatText: {
+  footerStat: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 2,
+    paddingVertical: 8,
+  },
+  footerStatDivider: {
+    width: 1,
+    alignSelf: 'stretch',
+    backgroundColor: 'rgba(255,255,255,0.06)',
+  },
+  footerStatValue: {
     color: colors.text,
-    fontSize: 13,
-    fontFamily: 'Poppins_700Bold',
+    fontSize: 14,
+    fontFamily: 'Poppins_800ExtraBold',
+  },
+  footerStatLabel: {
+    color: colors.textMuted,
+    fontSize: 10,
+    fontFamily: 'Poppins_500Medium',
   },
 
   /* PET ACTIONS */
@@ -1080,38 +921,8 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
   },
 
-  /* STATS GRID */
-  statsGrid: {
-    width: '100%',
-    flexDirection: 'row',
-    gap: 10,
-    marginTop: 14,
-  },
-  statTile: {
-    flex: 1,
-    minWidth: 0,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    paddingVertical: 14,
-    borderRadius: 18,
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.06)',
-  },
-  statTileValue: {
-    color: colors.text,
-    fontSize: 15,
-    fontFamily: 'Poppins_800ExtraBold',
-  },
-  statTileMax: {
-    color: colors.textMuted,
-    fontSize: 12,
-    fontFamily: 'Poppins_600SemiBold',
-  },
-
-  /* ACTION GRID */
-  actionGrid: {
+  /* ACTION ROW */
+  actionRow: {
     width: '100%',
     flexDirection: 'row',
     gap: 10,

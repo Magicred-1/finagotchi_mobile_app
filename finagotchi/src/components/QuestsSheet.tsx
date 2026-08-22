@@ -11,91 +11,74 @@ import * as Haptics from 'expo-haptics';
 
 import { BottomSheet } from './BottomSheet';
 import { PressableScale } from './PressableScale';
+import { useWalletStore } from '../features/wallet/store';
 import { colors, radius, spacing, typography } from '../theme/tokens';
 
-type QuestCategory = 'All' | 'Daily' | 'Security' | 'Growth' | 'Social';
+type QuestCategory = 'All' | 'Wallet' | 'Bank' | 'Habits' | 'Social';
+type QuestSource = 'wallet' | 'bank' | 'habit' | 'social';
 
 type Quest = {
     id: string;
     category: Exclude<QuestCategory, 'All'>;
-    icon: string;
+    source: QuestSource;
+    icon: keyof typeof Ionicons.glyphMap;
     title: string;
     description: string;
     reward: number;
-    progress: number;
-    total: number;
     accent: string;
-    completed?: boolean;
-    urgent?: boolean;
+    /** For data-driven quests: the metric to read once wallet/bank data is indexed. */
+    requirement?: {
+        metric: 'transactions' | 'balance' | 'accounts' | 'streak';
+        target: number;
+    };
 };
 
 const QUESTS: Quest[] = [
     {
-        id: 'check-in',
-        category: 'Daily',
-        icon: '🌱',
-        title: 'Check in with Finny',
-        description: 'Keep your daily streak alive.',
+        id: 'save-streak',
+        category: 'Habits',
+        source: 'habit',
+        icon: 'leaf-outline',
+        title: 'Daily savings streak',
+        description: 'Keep your daily savings streak alive.',
         reward: 25,
-        progress: 1,
-        total: 1,
         accent: colors.primary,
-        completed: true,
     },
     {
-        id: 'wallet-review',
-        category: 'Security',
-        icon: '🛡️',
-        title: 'Review your wallet',
-        description: 'Run a quick wallet health check.',
+        id: 'wallet-activity',
+        category: 'Wallet',
+        source: 'wallet',
+        icon: 'wallet-outline',
+        title: 'On-chain activity',
+        description: 'Make one wallet transaction today.',
         reward: 75,
-        progress: 0,
-        total: 1,
         accent: '#6EA8FF',
-        urgent: true,
+        requirement: { metric: 'transactions', target: 1 },
     },
     {
-        id: 'learn',
-        category: 'Growth',
-        icon: '🧠',
-        title: 'Learn one thing',
-        description: 'Complete a 2-minute crypto lesson.',
-        reward: 50,
-        progress: 1,
-        total: 3,
-        accent: '#C08CFF',
-    },
-    {
-        id: 'security-streak',
-        category: 'Security',
-        icon: '🔐',
-        title: 'Build your security streak',
-        description: 'Complete 3 security actions this week.',
+        id: 'bank-linked',
+        category: 'Bank',
+        source: 'bank',
+        icon: 'card-outline',
+        title: 'Link a bank account',
+        description: 'Connect a bank to track saving goals.',
         reward: 150,
-        progress: 2,
-        total: 3,
         accent: '#F6C85F',
+        requirement: { metric: 'accounts', target: 1 },
     },
     {
         id: 'share',
         category: 'Social',
-        icon: '✨',
-        title: 'Show your Finny',
-        description: 'Share your creature with a friend.',
+        source: 'social',
+        icon: 'share-outline',
+        title: 'Share your Finny',
+        description: 'Show your companion to a friend.',
         reward: 40,
-        progress: 0,
-        total: 1,
         accent: '#FF8E9E',
     },
 ];
 
-const FILTERS: QuestCategory[] = [
-    'All',
-    'Daily',
-    'Security',
-    'Growth',
-    'Social',
-];
+const FILTERS: QuestCategory[] = ['All', 'Wallet', 'Bank', 'Habits', 'Social'];
 
 type Props = {
     visible: boolean;
@@ -105,25 +88,44 @@ type Props = {
 export default function QuestsSheet({ visible, onClose }: Props) {
     const { width } = useWindowDimensions();
     const [filter, setFilter] = useState<QuestCategory>('All');
-    const [completed, setCompleted] = useState<Record<string, boolean>>({});
+    const [manualCompleted, setManualCompleted] = useState<Record<string, boolean>>({});
+
+    const walletAddress = useWalletStore((state) => state.address);
+    const isWalletConnected = Boolean(walletAddress);
 
     const isSmallDevice = width < 360;
+
+    const questStatus = useMemo(() => {
+        return QUESTS.map((quest) => {
+            if (manualCompleted[quest.id]) {
+                return { ...quest, status: 'completed' as const };
+            }
+
+            if (quest.source === 'wallet') {
+                // TODO: replace with indexed wallet transaction count.
+                return { ...quest, status: isWalletConnected ? 'available' : 'locked' as const };
+            }
+
+            if (quest.source === 'bank') {
+                // TODO: replace with indexed bank account count.
+                return { ...quest, status: 'locked' as const };
+            }
+
+            return { ...quest, status: 'available' as const };
+        });
+    }, [isWalletConnected, manualCompleted]);
 
     const filteredQuests = useMemo(
         () =>
             filter === 'All'
-                ? QUESTS
-                : QUESTS.filter((quest) => quest.category === filter),
-        [filter]
+                ? questStatus
+                : questStatus.filter((quest) => quest.category === filter),
+        [filter, questStatus]
     );
 
-    const activeCompletedCount = QUESTS.filter(
-        (quest) => quest.completed || completed[quest.id]
-    ).length;
-
-    const totalRewards = QUESTS.reduce(
-        (sum, quest) =>
-            sum + (quest.completed || completed[quest.id] ? quest.reward : 0),
+    const completedCount = questStatus.filter((q) => q.status === 'completed').length;
+    const totalRewards = questStatus.reduce(
+        (sum, quest) => sum + (quest.status === 'completed' ? quest.reward : 0),
         0
     );
 
@@ -133,11 +135,12 @@ export default function QuestsSheet({ visible, onClose }: Props) {
         setFilter(item);
     }
 
-    function handleQuestPress(quest: Quest) {
-        if (quest.completed) return;
+    function handleQuestPress(quest: Quest & { status: string }) {
+        if (quest.status !== 'available') return;
+        if (quest.source !== 'habit' && quest.source !== 'social') return;
 
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-        setCompleted((current) => ({
+        setManualCompleted((current) => ({
             ...current,
             [quest.id]: true,
         }));
@@ -154,19 +157,23 @@ export default function QuestsSheet({ visible, onClose }: Props) {
                     <View style={styles.heroTop}>
                         <View style={styles.heroCopy}>
                             <Text style={styles.heroEyebrow}>
-                                TODAY'S ADVENTURE
+                                QUESTS
                             </Text>
                             <Text style={styles.heroTitle}>
-                                Keep Finny growing.
+                                Grow with good habits.
                             </Text>
                             <Text style={styles.heroSubtitle}>
-                                Complete quests that improve your wallet health
-                                and earn XP along the way.
+                                Wallet and bank quests complete automatically once
+                                your accounts are connected.
                             </Text>
                         </View>
 
                         <View style={styles.heroCreature}>
-                            <Text style={styles.heroCreatureEmoji}>🐣</Text>
+                            <Ionicons
+                                name="egg-outline"
+                                size={32}
+                                color={colors.primary}
+                            />
                         </View>
                     </View>
 
@@ -175,7 +182,7 @@ export default function QuestsSheet({ visible, onClose }: Props) {
                             Daily progress
                         </Text>
                         <Text style={styles.dailyProgressValue}>
-                            {activeCompletedCount}/{QUESTS.length}
+                            {completedCount}/{QUESTS.length}
                         </Text>
                     </View>
 
@@ -185,9 +192,7 @@ export default function QuestsSheet({ visible, onClose }: Props) {
                                 styles.progressFill,
                                 {
                                     width: `${
-                                        (activeCompletedCount /
-                                            QUESTS.length) *
-                                        100
+                                        (completedCount / QUESTS.length) * 100
                                     }%`,
                                 },
                             ]}
@@ -236,23 +241,21 @@ export default function QuestsSheet({ visible, onClose }: Props) {
 
                 <View style={styles.questList}>
                     {filteredQuests.map((quest) => {
-                        const isCompleted =
-                            quest.completed || completed[quest.id];
-                        const progress = Math.min(
-                            quest.progress +
-                                (isCompleted && !quest.completed ? 1 : 0),
-                            quest.total
-                        );
+                        const isCompleted = quest.status === 'completed';
+                        const isLocked = quest.status === 'locked';
+                        const isTappable = quest.status === 'available' &&
+                            (quest.source === 'habit' || quest.source === 'social');
 
                         return (
                             <PressableScale
                                 key={quest.id}
                                 onPress={() => handleQuestPress(quest)}
-                                disabled={isCompleted}
+                                disabled={!isTappable}
                                 activeOpacity={isCompleted ? 0.68 : 0.85}
                                 style={[
                                     styles.questCard,
                                     isCompleted && styles.questCompleted,
+                                    isLocked && styles.questLocked,
                                 ]}
                             >
                                 <View
@@ -264,9 +267,11 @@ export default function QuestsSheet({ visible, onClose }: Props) {
                                         },
                                     ]}
                                 >
-                                    <Text style={styles.questEmoji}>
-                                        {quest.icon}
-                                    </Text>
+                                    <Ionicons
+                                        name={quest.icon}
+                                        size={22}
+                                        color={quest.accent}
+                                    />
                                 </View>
 
                                 <View style={styles.questBody}>
@@ -284,10 +289,10 @@ export default function QuestsSheet({ visible, onClose }: Props) {
                                             </Text>
                                         </View>
 
-                                        {quest.urgent && !isCompleted && (
-                                            <View style={styles.urgentBadge}>
-                                                <Text style={styles.urgentText}>
-                                                    NOW
+                                        {isLocked && (
+                                            <View style={styles.lockedBadge}>
+                                                <Text style={styles.lockedText}>
+                                                    Connect
                                                 </Text>
                                             </View>
                                         )}
@@ -301,31 +306,6 @@ export default function QuestsSheet({ visible, onClose }: Props) {
                                     </Text>
 
                                     <View style={styles.questBottom}>
-                                        <View style={styles.miniProgress}>
-                                            <View
-                                                style={styles.miniProgressTrack}
-                                            >
-                                                <View
-                                                    style={[
-                                                        styles.miniProgressFill,
-                                                        {
-                                                            width: `${
-                                                                (progress /
-                                                                    quest.total) *
-                                                                100
-                                                            }%`,
-                                                            backgroundColor:
-                                                                quest.accent,
-                                                        },
-                                                    ]}
-                                                />
-                                            </View>
-
-                                            <Text style={styles.progressText}>
-                                                {progress}/{quest.total}
-                                            </Text>
-                                        </View>
-
                                         <View style={styles.xpPill}>
                                             <Text style={styles.xpText}>
                                                 +{quest.reward} XP
@@ -338,6 +318,8 @@ export default function QuestsSheet({ visible, onClose }: Props) {
                                     name={
                                         isCompleted
                                             ? 'checkmark-circle'
+                                            : isLocked
+                                            ? 'lock-closed'
                                             : 'chevron-forward'
                                     }
                                     size={22}
@@ -355,13 +337,13 @@ export default function QuestsSheet({ visible, onClose }: Props) {
 
                 {/* FOOTER */}
                 <View style={styles.footer}>
-                    <Text style={styles.footerEmoji}>🐾</Text>
+                    <Ionicons name="sparkles-outline" size={20} color={colors.primary} />
                     <Text style={styles.footerTitle}>
                         Every good habit makes Finny stronger.
                     </Text>
                     <Text style={styles.footerText}>
-                        Quests reward healthy wallet behavior — not how much
-                        money you hold.
+                        Wallet and bank quests will unlock once those accounts
+                        are connected.
                     </Text>
                 </View>
             </ScrollView>
@@ -418,9 +400,6 @@ const styles = StyleSheet.create({
         backgroundColor: 'rgba(93,226,166,0.10)',
         borderWidth: 1,
         borderColor: 'rgba(93,226,166,0.20)',
-    },
-    heroCreatureEmoji: {
-        fontSize: 39,
     },
     dailyProgressHeader: {
         marginTop: 18,
@@ -512,6 +491,11 @@ const styles = StyleSheet.create({
     questCompleted: {
         opacity: 0.68,
     },
+    questLocked: {
+        opacity: 0.55,
+        backgroundColor: 'rgba(255,255,255,0.02)',
+        borderColor: 'rgba(255,255,255,0.04)',
+    },
     questIcon: {
         width: 48,
         height: 48,
@@ -519,9 +503,6 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         justifyContent: 'center',
         borderWidth: 1,
-    },
-    questEmoji: {
-        fontSize: 25,
     },
     questBody: {
         flex: 1,
@@ -548,20 +529,21 @@ const styles = StyleSheet.create({
         fontSize: 13,
         fontFamily: 'Poppins_700Bold',
     },
-    urgentBadge: {
-        marginLeft: 5,
+    lockedBadge: {
+        marginLeft: 6,
         paddingHorizontal: 6,
         paddingVertical: 3,
         borderRadius: 6,
-        backgroundColor: 'rgba(255,142,158,0.10)',
+        backgroundColor: 'rgba(255,255,255,0.06)',
         borderWidth: 1,
-        borderColor: 'rgba(255,142,158,0.22)',
+        borderColor: 'rgba(255,255,255,0.10)',
     },
-    urgentText: {
-        color: '#FF8E9E',
+    lockedText: {
+        color: colors.textMuted,
         fontSize: 7,
-        letterSpacing: 0.6,
+        letterSpacing: 0.5,
         fontFamily: 'Poppins_800ExtraBold',
+        textTransform: 'uppercase',
     },
     questDescription: {
         marginTop: 2,
@@ -575,30 +557,6 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'space-between',
-    },
-    miniProgress: {
-        flex: 1,
-        flexDirection: 'row',
-        alignItems: 'center',
-        marginRight: 8,
-    },
-    miniProgressTrack: {
-        flex: 1,
-        maxWidth: 90,
-        height: 4,
-        borderRadius: 2,
-        overflow: 'hidden',
-        backgroundColor: 'rgba(255,255,255,0.07)',
-    },
-    miniProgressFill: {
-        height: '100%',
-        borderRadius: 2,
-    },
-    progressText: {
-        marginLeft: 5,
-        color: colors.textMuted,
-        fontSize: 8,
-        fontFamily: 'Poppins_500Medium',
     },
     xpPill: {
         paddingHorizontal: 7,
@@ -618,10 +576,6 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         marginTop: 24,
         paddingHorizontal: 20,
-    },
-    footerEmoji: {
-        fontSize: 20,
-        marginBottom: 5,
     },
     footerTitle: {
         color: colors.text,
