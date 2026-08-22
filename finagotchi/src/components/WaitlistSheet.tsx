@@ -18,6 +18,7 @@ import Animated, {
     withSpring,
     withTiming,
 } from 'react-native-reanimated';
+import { WebView } from 'react-native-webview';
 import * as Haptics from 'expo-haptics';
 
 import { BottomSheet } from './BottomSheet';
@@ -57,11 +58,10 @@ const BULLETS = [
 const STAGGER_DELAY = 55;
 
 /**
- * A stylised 3D hardware placeholder. Layered surfaces, specular highlights,
- * a soft shadow and a gentle floating motion sell the idea of a physical
- * device until the real 3D model is ready.
+ * Static fallback device placeholder used when the live Spline scene cannot
+ * be rendered inside the WebView.
  */
-function HardwarePlaceholder() {
+function StaticHardwarePlaceholder() {
     const { width } = useWindowDimensions();
     const float = useSharedValue(0);
     const rotate = useSharedValue(0);
@@ -137,6 +137,134 @@ function HardwarePlaceholder() {
             </Animated.View>
 
             <View style={[styles.deviceShadow, { width: size * 0.72 }]} />
+        </View>
+    );
+}
+
+const SPLINE_HTML = `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+  <style>
+    html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: transparent; }
+    canvas { display: block; width: 100%; height: 100%; outline: none; }
+  </style>
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://esm.sh/three@0.160.0",
+        "three/addons/": "https://esm.sh/three@0.160.0/examples/jsm/",
+        "@splinetool/loader": "https://esm.sh/@splinetool/loader@1.0.0"
+      }
+    }
+  </script>
+</head>
+<body>
+  <script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+    import SplineLoader from '@splinetool/loader';
+
+    const camera = new THREE.OrthographicCamera(
+      window.innerWidth / -2,
+      window.innerWidth / 2,
+      window.innerHeight / 2,
+      window.innerHeight / -2,
+      -50000,
+      10000
+    );
+    camera.position.set(0, 0, 0);
+    camera.quaternion.setFromEuler(new THREE.Euler(0, 0, 0));
+
+    const scene = new THREE.Scene();
+
+    const loader = new SplineLoader();
+    loader.load(
+      'https://prod.spline.design/8YReQFIixZ2wcn8o/scene.splinecode',
+      (splineScene) => {
+        scene.add(splineScene);
+      },
+      undefined,
+      (err) => {
+        window.ReactNativeWebView?.postMessage?.(JSON.stringify({ type: 'error', message: err?.message || 'load failed' }));
+      }
+    );
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setAnimationLoop(animate);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    document.body.appendChild(renderer.domElement);
+
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFShadowMap;
+
+    scene.background = new THREE.Color('#1c1c1c');
+    renderer.setClearAlpha(0);
+
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.125;
+
+    window.addEventListener('resize', onWindowResize);
+    function onWindowResize() {
+      camera.left = window.innerWidth / -2;
+      camera.right = window.innerWidth / 2;
+      camera.top = window.innerHeight / 2;
+      camera.bottom = window.innerHeight / -2;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    }
+
+    function animate(time) {
+      controls.update();
+      renderer.render(scene, camera);
+    }
+  </script>
+</body>
+</html>
+`;
+
+/**
+ * Live 3D hardware placeholder rendered via a WebView running the supplied
+ * Three.js + Spline scene. Falls back to the static placeholder if the scene
+ * fails to load.
+ */
+function HardwarePlaceholder() {
+    const [hasError, setHasError] = useState(false);
+
+    if (hasError) {
+        return <StaticHardwarePlaceholder />;
+    }
+
+    return (
+        <View style={styles.placeholderStage}>
+            <View style={styles.webviewWrap}>
+                <WebView
+                    source={{ html: SPLINE_HTML }}
+                    style={styles.webview}
+                    originWhitelist={['*']}
+                    scrollEnabled={false}
+                    bounces={false}
+                    javaScriptEnabled
+                    domStorageEnabled
+                    allowsInlineMediaPlayback
+                    onError={() => setHasError(true)}
+                    onHttpError={() => setHasError(true)}
+                    onMessage={(event) => {
+                        try {
+                            const data = JSON.parse(event.nativeEvent.data);
+                            if (data?.type === 'error') {
+                                setHasError(true);
+                            }
+                        } catch {
+                            // ignore non-JSON messages
+                        }
+                    }}
+                />
+            </View>
         </View>
     );
 }
@@ -428,6 +556,17 @@ const styles = StyleSheet.create({
         justifyContent: 'flex-end',
         height: 220,
         marginBottom: spacing.md,
+    },
+    webviewWrap: {
+        width: '100%',
+        height: 220,
+        borderRadius: 24,
+        overflow: 'hidden',
+        backgroundColor: colors.background,
+    },
+    webview: {
+        flex: 1,
+        backgroundColor: 'transparent',
     },
     device: {
         backgroundColor: colors.background,
