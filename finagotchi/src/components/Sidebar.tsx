@@ -67,6 +67,7 @@ type Props = {
 
 export function Sidebar({
     visible,
+    onOpen,
     onClose,
     onOpenQuests,
     onOpenWaitlist,
@@ -126,6 +127,30 @@ export function Sidebar({
             animateClose();
         }
     }, [visible, animateOpen, animateClose]);
+
+    // Drag from the left edge of the screen to open the sidebar.
+    const openPan = Gesture.Pan()
+        .enabled(!visible)
+        .activeOffsetX([20, 9999])
+        .failOffsetY([-15, 15])
+        .onUpdate((event) => {
+            const x = Math.max(0, event.translationX);
+            translateX.value = Math.min(0, -SIDEBAR_WIDTH + x);
+            opacity.value = Math.min(1, x / SIDEBAR_WIDTH);
+        })
+        .onEnd((event) => {
+            const projectedX = event.translationX + project(event.velocityX);
+            const shouldOpen =
+                projectedX > SWIPE_THRESHOLD ||
+                event.translationX > SIDEBAR_WIDTH * 0.3;
+
+            if (shouldOpen) {
+                runOnJS(onOpen)();
+            } else {
+                translateX.value = withSpring(-SIDEBAR_WIDTH, springs.default);
+                opacity.value = withTiming(0, { duration: 200 });
+            }
+        });
 
     // Swipe the sidebar left to close.
     const sidebarPan = Gesture.Pan()
@@ -217,6 +242,20 @@ export function Sidebar({
 
     return (
         <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
+            <GestureDetector gesture={openPan}>
+                <View
+                    style={[
+                        styles.edgeStrip,
+                        {
+                            top: insets.top,
+                            bottom: insets.bottom,
+                            opacity: visible ? 0 : 1,
+                        },
+                    ]}
+                    pointerEvents={visible ? 'none' : 'auto'}
+                />
+            </GestureDetector>
+
             <View
                 style={[styles.container, { width, height }]}
                 pointerEvents={visible ? 'auto' : 'none'}
@@ -445,6 +484,13 @@ const styles = StyleSheet.create({
         top: 0,
         left: 0,
         zIndex: 1000,
+    },
+    edgeStrip: {
+        position: 'absolute',
+        left: 0,
+        width: 20,
+        zIndex: 1001,
+        backgroundColor: 'transparent',
     },
     backdrop: {
         backgroundColor: 'rgba(0,0,0,0.55)',
