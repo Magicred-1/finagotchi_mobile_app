@@ -378,11 +378,22 @@ export default function HomeScreen() {
 
           <View style={styles.topBarRight}>
             <PressableScale
+              onPress={() => setQuestsVisible(true)}
+              hitSlop={8}
+              style={[
+                styles.headerIconButton,
+                isTinyDevice && styles.headerIconButtonSmall,
+              ]}
+            >
+              <Ionicons name="flag-outline" size={isTinyDevice ? 16 : 18} color={colors.text} />
+            </PressableScale>
+
+            <PressableScale
               onPress={() => setSidebarVisible(true)}
               hitSlop={8}
               style={[
-                styles.menuButton,
-                isTinyDevice && styles.menuButtonSmall,
+                styles.headerIconButton,
+                isTinyDevice && styles.headerIconButtonSmall,
               ]}
             >
               <Ionicons name="menu" size={isTinyDevice ? 16 : 18} color={colors.text} />
@@ -790,7 +801,7 @@ const styles = StyleSheet.create({
   currencySymbolSmall: {
     fontSize: 9,
   },
-  menuButton: {
+  headerIconButton: {
     width: 36,
     height: 36,
     alignItems: 'center',
@@ -800,7 +811,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.06)',
   },
-  menuButtonSmall: {
+  headerIconButtonSmall: {
     width: 32,
     height: 32,
   },
