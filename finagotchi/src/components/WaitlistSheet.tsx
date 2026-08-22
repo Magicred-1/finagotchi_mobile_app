@@ -149,78 +149,32 @@ const SPLINE_HTML = `
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
   <style>
     html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: transparent; }
-    canvas { display: block; width: 100%; height: 100%; outline: none; }
+    spline-viewer { display: block; width: 100%; height: 100%; }
   </style>
-  <script type="importmap">
-    {
-      "imports": {
-        "three": "https://esm.sh/three@0.160.0",
-        "three/addons/": "https://esm.sh/three@0.160.0/examples/jsm/",
-        "@splinetool/loader": "https://esm.sh/@splinetool/loader@1.0.0"
-      }
-    }
-  </script>
 </head>
 <body>
+  <script type="module" src="https://unpkg.com/@splinetool/viewer/build/spline-viewer.js"></script>
+  <spline-viewer
+    url="https://prod.spline.design/8YReQFIixZ2wcn8o/scene.splinecode"
+    loading-anim-type="none"
+    events-target="global"
+  ></spline-viewer>
   <script type="module">
-    import * as THREE from 'three';
-    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-    import SplineLoader from '@splinetool/loader';
-
-    const camera = new THREE.OrthographicCamera(
-      window.innerWidth / -2,
-      window.innerWidth / 2,
-      window.innerHeight / 2,
-      window.innerHeight / -2,
-      -50000,
-      10000
-    );
-    camera.position.set(0, 0, 0);
-    camera.quaternion.setFromEuler(new THREE.Euler(0, 0, 0));
-
-    const scene = new THREE.Scene();
-
-    const loader = new SplineLoader();
-    loader.load(
-      'https://prod.spline.design/8YReQFIixZ2wcn8o/scene.splinecode',
-      (splineScene) => {
-        scene.add(splineScene);
-      },
-      undefined,
-      (err) => {
-        window.ReactNativeWebView?.postMessage?.(JSON.stringify({ type: 'error', message: err?.message || 'load failed' }));
-      }
-    );
-
-    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-    renderer.setSize(window.innerWidth, window.innerHeight);
-    renderer.setAnimationLoop(animate);
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-    document.body.appendChild(renderer.domElement);
-
-    renderer.shadowMap.enabled = true;
-    renderer.shadowMap.type = THREE.PCFShadowMap;
-
-    scene.background = new THREE.Color('#1c1c1c');
-    renderer.setClearAlpha(0);
-
-    const controls = new OrbitControls(camera, renderer.domElement);
-    controls.enableDamping = true;
-    controls.dampingFactor = 0.125;
-
-    window.addEventListener('resize', onWindowResize);
-    function onWindowResize() {
-      camera.left = window.innerWidth / -2;
-      camera.right = window.innerWidth / 2;
-      camera.top = window.innerHeight / 2;
-      camera.bottom = window.innerHeight / -2;
-      camera.updateProjectionMatrix();
-      renderer.setSize(window.innerWidth, window.innerHeight);
+    const viewer = document.querySelector('spline-viewer');
+    let reported = false;
+    function report(state) {
+      if (reported) return;
+      reported = true;
+      window.ReactNativeWebView?.postMessage?.(JSON.stringify({ type: state }));
     }
-
-    function animate(time) {
-      controls.update();
-      renderer.render(scene, camera);
+    if (viewer) {
+      viewer.addEventListener('load-start', () => report('loading'));
+      viewer.addEventListener('load-complete', () => report('loaded'));
+      viewer.addEventListener('load-error', () => report('error'));
+      // Fallback if events never fire.
+      setTimeout(() => report('timeout'), 12000);
+    } else {
+      report('error');
     }
   </script>
 </body>
@@ -228,12 +182,13 @@ const SPLINE_HTML = `
 `;
 
 /**
- * Live 3D hardware placeholder rendered via a WebView running the supplied
- * Three.js + Spline scene. Falls back to the static placeholder if the scene
- * fails to load.
+ * Live 3D hardware placeholder rendered via a WebView running the Spline
+ * viewer for the supplied scene. Falls back to the static placeholder if the
+ * scene fails to load.
  */
 function HardwarePlaceholder() {
     const [hasError, setHasError] = useState(false);
+    const [isLoading, setIsLoading] = useState(true);
 
     if (hasError) {
         return <StaticHardwarePlaceholder />;
@@ -242,22 +197,44 @@ function HardwarePlaceholder() {
     return (
         <View style={styles.placeholderStage}>
             <View style={styles.webviewWrap}>
+                {isLoading ? (
+                    <View style={styles.loader}>
+                        <Ionicons
+                            name="cube-outline"
+                            size={32}
+                            color={colors.textMuted}
+                        />
+                    </View>
+                ) : null}
                 <WebView
                     source={{ html: SPLINE_HTML }}
-                    style={styles.webview}
+                    style={[styles.webview, isLoading && styles.webviewHidden]}
                     originWhitelist={['*']}
                     scrollEnabled={false}
                     bounces={false}
                     javaScriptEnabled
                     domStorageEnabled
                     allowsInlineMediaPlayback
+                    mediaPlaybackRequiresUserAction={false}
                     onError={() => setHasError(true)}
                     onHttpError={() => setHasError(true)}
+                    onLoadEnd={() => {
+                        // The Spline viewer still needs time to fetch the scene,
+                        // so we rely on its load-complete message to hide the loader.
+                    }}
                     onMessage={(event) => {
                         try {
                             const data = JSON.parse(event.nativeEvent.data);
-                            if (data?.type === 'error') {
-                                setHasError(true);
+                            switch (data?.type) {
+                                case 'loaded':
+                                    setIsLoading(false);
+                                    break;
+                                case 'error':
+                                case 'timeout':
+                                    setHasError(true);
+                                    break;
+                                default:
+                                    break;
                             }
                         } catch {
                             // ignore non-JSON messages
@@ -567,6 +544,16 @@ const styles = StyleSheet.create({
     webview: {
         flex: 1,
         backgroundColor: 'transparent',
+    },
+    webviewHidden: {
+        opacity: 0,
+    },
+    loader: {
+        ...StyleSheet.absoluteFillObject,
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: colors.background,
+        zIndex: 1,
     },
     device: {
         backgroundColor: colors.background,
