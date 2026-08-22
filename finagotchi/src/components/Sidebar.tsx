@@ -89,6 +89,13 @@ export function Sidebar({
     const opacity = externalOpacity ?? internalOpacity;
     const contentShift = useSharedValue(16);
 
+    const dragStartX = useSharedValue(0);
+    const dragStartY = useSharedValue(0);
+
+    const OPEN_ZONE_RATIO = 0.55;
+    const ACTIVATE_DX = 12;
+    const FAIL_DY = 10;
+
     const animateOpen = useCallback((velocity = 0) => {
         const isFlick = Math.abs(velocity) > FLICK_VELOCITY;
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -128,19 +135,49 @@ export function Sidebar({
         }
     }, [visible, animateOpen, animateClose]);
 
-    // Drag from the left edge of the screen to open the sidebar.
+    // Drag from the left/center of the screen to open the sidebar.
+    // Uses manual activation so taps and vertical scrolling pass through to
+    // buttons and lists that sit underneath the full-screen overlay.
     const openPan = Gesture.Pan()
         .enabled(!visible)
-        .activeOffsetX([10, 9999])
-        .failOffsetY([-20, 20])
+        .manualActivation(true)
         .shouldCancelWhenOutside(false)
-        .hitSlop({ left: 20 })
+        .onTouchesDown((event, stateManager) => {
+            'worklet';
+            const touch = event.allTouches[0];
+            if (touch && touch.absoluteX < width * OPEN_ZONE_RATIO) {
+                dragStartX.value = touch.absoluteX;
+                dragStartY.value = touch.absoluteY;
+            } else {
+                stateManager.fail();
+            }
+        })
+        .onTouchesMove((event, stateManager) => {
+            'worklet';
+            const touch = event.allTouches[0];
+            if (!touch) return;
+
+            const dx = touch.absoluteX - dragStartX.value;
+            const dy = touch.absoluteY - dragStartY.value;
+
+            if (dx > ACTIVATE_DX && Math.abs(dy) < FAIL_DY) {
+                stateManager.activate();
+            } else if (Math.abs(dy) > FAIL_DY || dx < -ACTIVATE_DX) {
+                stateManager.fail();
+            }
+        })
+        .onTouchesUp((_event, stateManager) => {
+            'worklet';
+            stateManager.fail();
+        })
         .onUpdate((event) => {
+            'worklet';
             const x = Math.max(0, event.translationX);
             translateX.value = Math.min(0, -SIDEBAR_WIDTH + x);
             opacity.value = Math.min(1, x / SIDEBAR_WIDTH);
         })
         .onEnd((event) => {
+            'worklet';
             const projectedX = event.translationX + project(event.velocityX);
             const shouldOpen =
                 projectedX > SWIPE_THRESHOLD ||
@@ -248,11 +285,10 @@ export function Sidebar({
             <GestureDetector gesture={openPan}>
                 <View
                     style={[
-                        styles.dragArea,
+                        styles.dragOverlay,
                         {
-                            top: insets.top,
-                            bottom: insets.bottom,
-                            width: width * 0.55,
+                            width,
+                            height,
                             opacity: visible ? 0 : 1,
                         },
                     ]}
@@ -489,9 +525,10 @@ const styles = StyleSheet.create({
         left: 0,
         zIndex: 1000,
     },
-    dragArea: {
+    dragOverlay: {
         position: 'absolute',
         left: 0,
+        top: 0,
         zIndex: 1001,
         backgroundColor: 'transparent',
     },
