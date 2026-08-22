@@ -18,7 +18,7 @@ import Animated, {
     withSpring,
     withTiming,
 } from 'react-native-reanimated';
-import { SplineView } from 'react-native-spline';
+import { WebView } from 'react-native-webview';
 import * as Haptics from 'expo-haptics';
 
 import { BottomSheet } from './BottomSheet';
@@ -59,7 +59,7 @@ const STAGGER_DELAY = 55;
 
 /**
  * Static fallback device placeholder used when the live Spline scene cannot
- * be rendered by react-native-spline.
+ * be rendered inside the WebView.
  */
 function StaticHardwarePlaceholder() {
     const { width } = useWindowDimensions();
@@ -142,16 +142,50 @@ function StaticHardwarePlaceholder() {
 }
 
 const SPLINE_SCENE_URL =
-    'https://build.spline.design/8YReQFIixZ2wcn8o/scene.splineswift';
+    'https://prod.spline.design/8YReQFIixZ2wcn8o/scene.splinecode';
+
+const SPLINE_HTML = `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+  <style>
+    html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: transparent; }
+    spline-viewer { display: block; width: 100%; height: 100%; }
+  </style>
+  <script type="module" src="https://unpkg.com/@splinetool/viewer@1.9.82/build/spline-viewer.js"></script>
+</head>
+<body>
+  <spline-viewer
+    url="${SPLINE_SCENE_URL}"
+    loading-anim-type="none"
+    events-target="global"
+  ></spline-viewer>
+  <script type="module">
+    const viewer = document.querySelector('spline-viewer');
+    let reported = false;
+    function report(state, detail) {
+      if (reported) return;
+      reported = true;
+      window.ReactNativeWebView?.postMessage?.(JSON.stringify({ type: state, detail }));
+    }
+    if (viewer) {
+      viewer.addEventListener('load-start', () => report('loading'));
+      viewer.addEventListener('load-complete', () => report('loaded'));
+      viewer.addEventListener('load-error', (e) => report('error', e?.message || 'unknown'));
+      setTimeout(() => report('timeout'), 15000);
+    } else {
+      report('error', 'viewer not found');
+    }
+  </script>
+</body>
+</html>
+`;
 
 /**
- * Live 3D hardware placeholder rendered natively via react-native-spline.
- * Falls back to the static placeholder if the scene fails to load.
- *
- * NOTE: this requires the scene to be exported from Spline as Swift
- * (Export → Code → Swift). The .splineswift URL above is derived from the
- * originally supplied .splinecode URL. If it does not load, re-export the
- * scene as Swift and replace SPLINE_SCENE_URL.
+ * Live 3D hardware placeholder rendered via a WebView running the Spline
+ * viewer. Falls back to the static placeholder if the scene fails to load.
  */
 function HardwarePlaceholder() {
     const [hasError, setHasError] = useState(false);
@@ -166,7 +200,7 @@ function HardwarePlaceholder() {
                 console.warn('[WaitlistSheet] Spline scene timed out:', SPLINE_SCENE_URL);
                 setHasError(true);
             }
-        }, 12000);
+        }, 15000);
         return () => clearTimeout(timer);
     }, [retryKey, isLoaded]);
 
@@ -198,19 +232,47 @@ function HardwarePlaceholder() {
                         <Text style={styles.splineLoaderText}>Loading 3D scene...</Text>
                     </View>
                 ) : null}
-                <SplineView
+                <WebView
                     key={retryKey}
-                    url={SPLINE_SCENE_URL}
+                    source={{ html: SPLINE_HTML }}
                     style={[
-                        styles.splineView,
-                        !isLoaded && styles.splineViewHidden,
+                        styles.webview,
+                        !isLoaded && styles.webviewHidden,
                     ]}
-                    onLoad={(event) => {
-                        console.log('[WaitlistSheet] Spline scene loaded:', event.nativeEvent.url);
-                        setIsLoaded(true);
+                    originWhitelist={['*']}
+                    scrollEnabled={false}
+                    bounces={false}
+                    javaScriptEnabled
+                    domStorageEnabled
+                    allowsInlineMediaPlayback
+                    mediaPlaybackRequiresUserAction={false}
+                    onError={(error) => {
+                        console.warn('[WaitlistSheet] WebView error:', error.nativeEvent);
+                        setHasError(true);
                     }}
-                    onSplineEvent={(event) => {
-                        // Forward events if needed.
+                    onHttpError={(error) => {
+                        console.warn('[WaitlistSheet] WebView HTTP error:', error.nativeEvent);
+                        setHasError(true);
+                    }}
+                    onMessage={(event) => {
+                        try {
+                            const data = JSON.parse(event.nativeEvent.data);
+                            switch (data?.type) {
+                                case 'loaded':
+                                    console.log('[WaitlistSheet] Spline scene loaded');
+                                    setIsLoaded(true);
+                                    break;
+                                case 'error':
+                                case 'timeout':
+                                    console.warn('[WaitlistSheet] Spline load failed:', data.detail);
+                                    setHasError(true);
+                                    break;
+                                default:
+                                    break;
+                            }
+                        } catch {
+                            // ignore non-JSON messages
+                        }
                     }}
                 />
             </View>
@@ -500,11 +562,11 @@ const styles = StyleSheet.create({
         overflow: 'hidden',
         backgroundColor: colors.background,
     },
-    splineView: {
+    webview: {
         width: '100%',
         height: '100%',
     },
-    splineViewHidden: {
+    webviewHidden: {
         opacity: 0,
     },
     splineLoader: {
