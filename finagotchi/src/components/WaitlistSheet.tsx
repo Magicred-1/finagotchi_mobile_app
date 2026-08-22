@@ -149,21 +149,26 @@ const SPLINE_HTML = `
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover" />
   <style>
     html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: transparent; }
-    spline-viewer { display: block; width: 100%; height: 100%; }
+    spline-viewer { display: block; width: 100%; height: 100%; outline: none; }
   </style>
   <script type="module" src="https://unpkg.com/@splinetool/viewer@1.9.82/build/spline-viewer.js"></script>
 </head>
 <body>
   <spline-viewer
+    id="spline-viewer"
     url="${SPLINE_SCENE_URL}"
-    loading-anim-type="none"
+    width="100%"
+    height="100%"
+    loading="eager"
+    loading-anim="true"
+    loading-anim-type="spinner-small-light"
     events-target="global"
   ></spline-viewer>
   <script type="module">
-    const viewer = document.querySelector('spline-viewer');
+    const viewer = document.getElementById('spline-viewer');
     let reported = false;
     function report(state, detail) {
       if (reported) return;
@@ -171,10 +176,12 @@ const SPLINE_HTML = `
       window.ReactNativeWebView?.postMessage?.(JSON.stringify({ type: state, detail }));
     }
     if (viewer) {
-      viewer.addEventListener('load-start', () => report('loading'));
-      viewer.addEventListener('load-complete', () => report('loaded'));
-      viewer.addEventListener('load-error', (e) => report('error', e?.message || 'unknown'));
-      setTimeout(() => report('timeout'), 15000);
+      viewer.addEventListener('load-start', (e) => report('loading', e?.detail?.url));
+      viewer.addEventListener('load-complete', (e) => report('loaded', e?.detail?.url));
+      viewer.addEventListener('load-error', (e) => report('error', e?.detail?.url || e?.message || 'unknown'));
+      viewer.addEventListener('context-loss', () => report('error', 'webgl context lost'));
+      // Fallback if no lifecycle event fires at all.
+      setTimeout(() => report('timeout'), 20000);
     } else {
       report('error', 'viewer not found');
     }
@@ -200,7 +207,7 @@ function HardwarePlaceholder() {
                 console.warn('[WaitlistSheet] Spline scene timed out:', SPLINE_SCENE_URL);
                 setHasError(true);
             }
-        }, 15000);
+        }, 20000);
         return () => clearTimeout(timer);
     }, [retryKey, isLoaded]);
 
@@ -234,7 +241,7 @@ function HardwarePlaceholder() {
                 ) : null}
                 <WebView
                     key={retryKey}
-                    source={{ html: SPLINE_HTML }}
+                    source={{ html: SPLINE_HTML, baseUrl: 'https://prod.spline.design' }}
                     style={[
                         styles.webview,
                         !isLoaded && styles.webviewHidden,
@@ -246,6 +253,10 @@ function HardwarePlaceholder() {
                     domStorageEnabled
                     allowsInlineMediaPlayback
                     mediaPlaybackRequiresUserAction={false}
+                    mixedContentMode="always"
+                    allowFileAccess
+                    allowFileAccessFromFileURLs
+                    allowUniversalAccessFromFileURLs
                     onError={(error) => {
                         console.warn('[WaitlistSheet] WebView error:', error.nativeEvent);
                         setHasError(true);
