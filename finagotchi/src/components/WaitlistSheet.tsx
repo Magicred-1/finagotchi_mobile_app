@@ -19,7 +19,6 @@ import Animated, {
     withSpring,
     withTiming,
 } from 'react-native-reanimated';
-import { WebView } from 'react-native-webview';
 import * as Haptics from 'expo-haptics';
 
 import { BottomSheet } from './BottomSheet';
@@ -100,89 +99,11 @@ function StaticHardwarePlaceholder() {
     );
 }
 
-const SPLINE_SCENE_URL =
-    'https://my.spline.design/aicompanionrobot-jRH618SnkW0iqjPN4nTZuzWQ/';
-
 /**
- * Live 3D hardware placeholder rendered via a WebView running the Spline
- * viewer. Falls back to the static placeholder if the scene fails to load.
+ * Hardware placeholder showing the companion robot image.
  */
 function HardwarePlaceholder() {
-    const [hasError, setHasError] = useState(false);
-    const [isLoaded, setIsLoaded] = useState(false);
-    const [retryKey, setRetryKey] = useState(0);
-
-    useEffect(() => {
-        setHasError(false);
-        setIsLoaded(false);
-        const timer = setTimeout(() => {
-            if (!isLoaded) {
-                console.warn('[WaitlistSheet] Spline scene timed out:', SPLINE_SCENE_URL);
-                setHasError(true);
-            }
-        }, 20000);
-        return () => clearTimeout(timer);
-    }, [retryKey, isLoaded]);
-
-    if (hasError) {
-        return (
-            <View style={styles.placeholderStage}>
-                <StaticHardwarePlaceholder />
-                <PressableScale
-                    onPress={() => setRetryKey((k) => k + 1)}
-                    style={styles.splineRetryPill}
-                >
-                    <Ionicons name="refresh" size={14} color={colors.text} />
-                    <Text style={styles.splineRetryText}>Retry 3D scene</Text>
-                </PressableScale>
-            </View>
-        );
-    }
-
-    return (
-        <View style={styles.placeholderStage}>
-            <View style={styles.splineWrap}>
-                {!isLoaded ? (
-                    <View style={styles.splineLoader}>
-                        <Ionicons
-                            name="cube-outline"
-                            size={32}
-                            color={colors.textMuted}
-                        />
-                        <Text style={styles.splineLoaderText}>Loading 3D scene...</Text>
-                    </View>
-                ) : null}
-                <WebView
-                    key={retryKey}
-                    source={{ uri: SPLINE_SCENE_URL }}
-                    style={[
-                        styles.webview,
-                        !isLoaded && styles.webviewHidden,
-                    ]}
-                    originWhitelist={['*']}
-                    scrollEnabled={false}
-                    bounces={false}
-                    javaScriptEnabled
-                    domStorageEnabled
-                    allowsInlineMediaPlayback
-                    mediaPlaybackRequiresUserAction={false}
-                    mixedContentMode="always"
-                    onLoadEnd={() => {
-                        console.log('[WaitlistSheet] Spline page finished loading');
-                        setIsLoaded(true);
-                    }}
-                    onError={(error) => {
-                        console.warn('[WaitlistSheet] WebView error:', error.nativeEvent);
-                        setHasError(true);
-                    }}
-                    onHttpError={(error) => {
-                        console.warn('[WaitlistSheet] WebView HTTP error:', error.nativeEvent);
-                        setHasError(true);
-                    }}
-                />
-            </View>
-        </View>
-    );
+    return <StaticHardwarePlaceholder />;
 }
 
 export default function WaitlistSheet({ visible, onClose }: Props) {
@@ -459,51 +380,6 @@ const styles = StyleSheet.create({
         justifyContent: 'flex-end',
         height: 220,
         marginBottom: spacing.md,
-    },
-    splineWrap: {
-        width: '100%',
-        height: 220,
-        borderRadius: 24,
-        overflow: 'hidden',
-        backgroundColor: colors.background,
-    },
-    webview: {
-        width: '100%',
-        height: '100%',
-    },
-    webviewHidden: {
-        opacity: 0,
-    },
-    splineLoader: {
-        ...StyleSheet.absoluteFillObject,
-        alignItems: 'center',
-        justifyContent: 'center',
-        gap: spacing.sm,
-        backgroundColor: colors.background,
-        zIndex: 1,
-    },
-    splineLoaderText: {
-        color: colors.textMuted,
-        fontSize: typography.small,
-        fontFamily: 'Poppins_600SemiBold',
-    },
-    splineRetryPill: {
-        position: 'absolute',
-        bottom: 8,
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 6,
-        paddingVertical: 6,
-        paddingHorizontal: 12,
-        borderRadius: 12,
-        backgroundColor: colors.surface,
-        borderWidth: 1,
-        borderColor: 'rgba(255,255,255,0.08)',
-    },
-    splineRetryText: {
-        color: colors.text,
-        fontSize: typography.small,
-        fontFamily: 'Poppins_600SemiBold',
     },
     hardwareImageWrap: {
         alignItems: 'center',
