@@ -113,6 +113,7 @@ export default function WaitlistSheet({ visible, onClose }: Props) {
     const [email, setEmail] = useState('');
     const [status, setStatus] = useState<'idle' | 'success' | 'error'>('idle');
     const [error, setError] = useState<string | null>(null);
+    const [loading, setLoading] = useState(false);
 
     const placeholderOpacity = useSharedValue(0);
     const placeholderScale = useSharedValue(0.88);
@@ -218,17 +219,59 @@ export default function WaitlistSheet({ visible, onClose }: Props) {
         }, 150);
     };
 
-    const handleSubmit = () => {
-        const success = addEntry(email);
+    const handleSubmit = async () => {
+        const normalized = email.trim().toLowerCase();
 
-        if (success) {
-            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-            setStatus('success');
-            setError(null);
-        } else {
+        if (!normalized || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalized)) {
             Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
             setStatus('error');
             setError('Please enter a valid email address.');
+            return;
+        }
+
+        setLoading(true);
+        setError(null);
+
+        try {
+            const response = await fetch(
+                'https://www.finagotchi.app/api/waitlist',
+                {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        email: normalized,
+                        source: 'Mobile App',
+                    }),
+                }
+            );
+
+            const data = (await response.json()) as {
+                ok: boolean;
+                message?: string;
+                error?: string;
+            };
+
+            if (data.ok) {
+                addEntry(normalized);
+                Haptics.notificationAsync(
+                    Haptics.NotificationFeedbackType.Success
+                );
+                setStatus('success');
+            } else {
+                Haptics.notificationAsync(
+                    Haptics.NotificationFeedbackType.Error
+                );
+                setStatus('error');
+                setError(
+                    data.error || 'Could not submit your email. Try again.'
+                );
+            }
+        } catch {
+            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+            setStatus('error');
+            setError('Network error. Please check your connection.');
+        } finally {
+            setLoading(false);
         }
     };
 
@@ -308,8 +351,9 @@ export default function WaitlistSheet({ visible, onClose }: Props) {
                             ) : null}
 
                             <Button
-                                title="Join the waitlist"
+                                title={loading ? 'Joining…' : 'Join the waitlist'}
                                 onPress={handleSubmit}
+                                disabled={loading}
                             />
 
                             <PressableScale
