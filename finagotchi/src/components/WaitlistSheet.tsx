@@ -142,53 +142,7 @@ function StaticHardwarePlaceholder() {
 }
 
 const SPLINE_SCENE_URL =
-    'https://prod.spline.design/8YReQFIixZ2wcn8o/scene.splinecode';
-
-const SPLINE_HTML = `
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover" />
-  <style>
-    html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: transparent; }
-    spline-viewer { display: block; width: 100%; height: 100%; outline: none; }
-  </style>
-  <script type="module" src="https://unpkg.com/@splinetool/viewer@1.9.82/build/spline-viewer.js"></script>
-</head>
-<body>
-  <spline-viewer
-    id="spline-viewer"
-    url="${SPLINE_SCENE_URL}"
-    width="100%"
-    height="100%"
-    loading="eager"
-    loading-anim="true"
-    loading-anim-type="spinner-small-light"
-    events-target="global"
-  ></spline-viewer>
-  <script type="module">
-    const viewer = document.getElementById('spline-viewer');
-    let reported = false;
-    function report(state, detail) {
-      if (reported) return;
-      reported = true;
-      window.ReactNativeWebView?.postMessage?.(JSON.stringify({ type: state, detail }));
-    }
-    if (viewer) {
-      viewer.addEventListener('load-start', (e) => report('loading', e?.detail?.url));
-      viewer.addEventListener('load-complete', (e) => report('loaded', e?.detail?.url));
-      viewer.addEventListener('load-error', (e) => report('error', e?.detail?.url || e?.message || 'unknown'));
-      viewer.addEventListener('context-loss', () => report('error', 'webgl context lost'));
-      // Fallback if no lifecycle event fires at all.
-      setTimeout(() => report('timeout'), 20000);
-    } else {
-      report('error', 'viewer not found');
-    }
-  </script>
-</body>
-</html>
-`;
+    'https://my.spline.design/aicompanionrobot-jRH618SnkW0iqjPN4nTZuzWQ/';
 
 /**
  * Live 3D hardware placeholder rendered via a WebView running the Spline
@@ -241,7 +195,7 @@ function HardwarePlaceholder() {
                 ) : null}
                 <WebView
                     key={retryKey}
-                    source={{ html: SPLINE_HTML, baseUrl: 'https://prod.spline.design' }}
+                    source={{ uri: SPLINE_SCENE_URL }}
                     style={[
                         styles.webview,
                         !isLoaded && styles.webviewHidden,
@@ -254,9 +208,10 @@ function HardwarePlaceholder() {
                     allowsInlineMediaPlayback
                     mediaPlaybackRequiresUserAction={false}
                     mixedContentMode="always"
-                    allowFileAccess
-                    allowFileAccessFromFileURLs
-                    allowUniversalAccessFromFileURLs
+                    onLoadEnd={() => {
+                        console.log('[WaitlistSheet] Spline page finished loading');
+                        setIsLoaded(true);
+                    }}
                     onError={(error) => {
                         console.warn('[WaitlistSheet] WebView error:', error.nativeEvent);
                         setHasError(true);
@@ -264,26 +219,6 @@ function HardwarePlaceholder() {
                     onHttpError={(error) => {
                         console.warn('[WaitlistSheet] WebView HTTP error:', error.nativeEvent);
                         setHasError(true);
-                    }}
-                    onMessage={(event) => {
-                        try {
-                            const data = JSON.parse(event.nativeEvent.data);
-                            switch (data?.type) {
-                                case 'loaded':
-                                    console.log('[WaitlistSheet] Spline scene loaded');
-                                    setIsLoaded(true);
-                                    break;
-                                case 'error':
-                                case 'timeout':
-                                    console.warn('[WaitlistSheet] Spline load failed:', data.detail);
-                                    setHasError(true);
-                                    break;
-                                default:
-                                    break;
-                            }
-                        } catch {
-                            // ignore non-JSON messages
-                        }
                     }}
                 />
             </View>
