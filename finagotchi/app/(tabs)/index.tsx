@@ -10,20 +10,18 @@ import {
   useWindowDimensions,
 } from 'react-native';
 import { ScrollView } from 'react-native-gesture-handler';
-import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 import Animated, {
   runOnJS,
   useSharedValue,
-  withSpring,
   withTiming,
 } from 'react-native-reanimated';
 
 import { PetCanvas } from '../../src/components/PetCanvas';
 import { PressableScale } from '../../src/components/PressableScale';
-import { Sidebar, SIDEBAR_WIDTH } from '../../src/components/Sidebar';
+import { Sidebar } from '../../src/components/Sidebar';
 import EvolutionCeremony from '../../src/components/EvolutionCeremony';
 import CollectiblesSheet from '../../src/components/CollectiblesSheet';
 import QuestsSheet from '../../src/components/QuestsSheet';
@@ -36,7 +34,7 @@ import {
   STAGE_THRESHOLDS,
   usePetStore,
 } from '../../src/features/pet/store';
-import { colors, radius, spacing, springs, tracking, typography } from '../../src/theme/tokens';
+import { colors, radius, spacing, tracking, typography } from '../../src/theme/tokens';
 import type { PetMood, PetReaction } from '../../src/components/PetCanvas';
 
 function getMood(
@@ -132,31 +130,7 @@ export default function HomeScreen() {
   const lastBackPress = useRef(0);
   const toastTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const sidebarTranslateX = useSharedValue(-SIDEBAR_WIDTH);
-  const sidebarOpacity = useSharedValue(0);
   const exitToastOpacity = useSharedValue(0);
-
-  const openSidebarPan = Gesture.Pan()
-    .enabled(!sidebarVisible)
-    .activeOffsetX([20, 9999])
-    .failOffsetY([-15, 15])
-    .onUpdate((event) => {
-      const x = Math.max(0, event.translationX);
-      sidebarTranslateX.value = Math.min(0, -SIDEBAR_WIDTH + x);
-      sidebarOpacity.value = Math.min(1, x / SIDEBAR_WIDTH);
-    })
-    .onEnd((event) => {
-      const projectedX = event.translationX + (event.velocityX / 1000) * 0.998 / (1 - 0.998);
-      const shouldOpen =
-        projectedX > 60 || event.translationX > SIDEBAR_WIDTH * 0.3;
-
-      if (shouldOpen) {
-        runOnJS(setSidebarVisible)(true);
-      } else {
-        sidebarTranslateX.value = withSpring(-SIDEBAR_WIDTH, springs.default);
-        sidebarOpacity.value = withTiming(0, { duration: 200 });
-      }
-    });
 
   const checkIn = useCheckinStore((state) => state.checkIn);
   const hasCheckedInToday = useCheckinStore((state) => state.hasCheckedInToday());
@@ -551,20 +525,12 @@ export default function HomeScreen() {
         <View style={{ height: 24 }} />
       </ScrollView>
 
-      {!sidebarVisible && (
-        <GestureDetector gesture={openSidebarPan}>
-          <View style={[styles.edgeStrip, { top: insets.top, bottom: insets.bottom }]} />
-        </GestureDetector>
-      )}
-
       <Sidebar
         visible={sidebarVisible}
         onOpen={() => setSidebarVisible(true)}
         onClose={() => setSidebarVisible(false)}
         onOpenQuests={() => setQuestsVisible(true)}
         onOpenWaitlist={() => setWaitlistVisible(true)}
-        translateX={sidebarTranslateX}
-        opacity={sidebarOpacity}
       />
 
       <EvolutionCeremony
@@ -613,13 +579,6 @@ const styles = StyleSheet.create({
   container: {
     paddingTop: 12,
     paddingBottom: 20,
-  },
-  edgeStrip: {
-    position: 'absolute',
-    left: 0,
-    width: 20,
-    backgroundColor: 'transparent',
-    zIndex: 50,
   },
   exitToast: {
     position: 'absolute',
