@@ -18,7 +18,7 @@ import Animated, {
     withSpring,
     withTiming,
 } from 'react-native-reanimated';
-import { WebView } from 'react-native-webview';
+import { SplineView } from 'react-native-spline';
 import * as Haptics from 'expo-haptics';
 
 import { BottomSheet } from './BottomSheet';
@@ -59,7 +59,7 @@ const STAGGER_DELAY = 55;
 
 /**
  * Static fallback device placeholder used when the live Spline scene cannot
- * be rendered inside the WebView.
+ * be rendered by react-native-spline.
  */
 function StaticHardwarePlaceholder() {
     const { width } = useWindowDimensions();
@@ -141,54 +141,30 @@ function StaticHardwarePlaceholder() {
     );
 }
 
-const SPLINE_HTML = `
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
-  <style>
-    html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: transparent; }
-    spline-viewer { display: block; width: 100%; height: 100%; }
-  </style>
-</head>
-<body>
-  <script type="module" src="https://unpkg.com/@splinetool/viewer/build/spline-viewer.js"></script>
-  <spline-viewer
-    url="https://prod.spline.design/8YReQFIixZ2wcn8o/scene.splinecode"
-    loading-anim-type="none"
-    events-target="global"
-  ></spline-viewer>
-  <script type="module">
-    const viewer = document.querySelector('spline-viewer');
-    let reported = false;
-    function report(state) {
-      if (reported) return;
-      reported = true;
-      window.ReactNativeWebView?.postMessage?.(JSON.stringify({ type: state }));
-    }
-    if (viewer) {
-      viewer.addEventListener('load-start', () => report('loading'));
-      viewer.addEventListener('load-complete', () => report('loaded'));
-      viewer.addEventListener('load-error', () => report('error'));
-      // Fallback if events never fire.
-      setTimeout(() => report('timeout'), 12000);
-    } else {
-      report('error');
-    }
-  </script>
-</body>
-</html>
-`;
+const SPLINE_SCENE_URL =
+    'https://build.spline.design/8YReQFIixZ2wcn8o/scene.splineswift';
 
 /**
- * Live 3D hardware placeholder rendered via a WebView running the Spline
- * viewer for the supplied scene. Falls back to the static placeholder if the
- * scene fails to load.
+ * Live 3D hardware placeholder rendered natively via react-native-spline.
+ * Falls back to the static placeholder if the scene fails to load.
+ *
+ * NOTE: this requires the scene to be exported from Spline as Swift
+ * (Export → Code → Swift). The .splineswift URL above is derived from the
+ * originally supplied .splinecode URL. If it does not load, re-export the
+ * scene as Swift and replace SPLINE_SCENE_URL.
  */
 function HardwarePlaceholder() {
     const [hasError, setHasError] = useState(false);
-    const [isLoading, setIsLoading] = useState(true);
+    const [isLoaded, setIsLoaded] = useState(false);
+
+    useEffect(() => {
+        const timer = setTimeout(() => {
+            if (!isLoaded) {
+                setHasError(true);
+            }
+        }, 12000);
+        return () => clearTimeout(timer);
+    }, [isLoaded]);
 
     if (hasError) {
         return <StaticHardwarePlaceholder />;
@@ -196,49 +172,13 @@ function HardwarePlaceholder() {
 
     return (
         <View style={styles.placeholderStage}>
-            <View style={styles.webviewWrap}>
-                {isLoading ? (
-                    <View style={styles.loader}>
-                        <Ionicons
-                            name="cube-outline"
-                            size={32}
-                            color={colors.textMuted}
-                        />
-                    </View>
-                ) : null}
-                <WebView
-                    source={{ html: SPLINE_HTML }}
-                    style={[styles.webview, isLoading && styles.webviewHidden]}
-                    originWhitelist={['*']}
-                    scrollEnabled={false}
-                    bounces={false}
-                    javaScriptEnabled
-                    domStorageEnabled
-                    allowsInlineMediaPlayback
-                    mediaPlaybackRequiresUserAction={false}
-                    onError={() => setHasError(true)}
-                    onHttpError={() => setHasError(true)}
-                    onLoadEnd={() => {
-                        // The Spline viewer still needs time to fetch the scene,
-                        // so we rely on its load-complete message to hide the loader.
-                    }}
-                    onMessage={(event) => {
-                        try {
-                            const data = JSON.parse(event.nativeEvent.data);
-                            switch (data?.type) {
-                                case 'loaded':
-                                    setIsLoading(false);
-                                    break;
-                                case 'error':
-                                case 'timeout':
-                                    setHasError(true);
-                                    break;
-                                default:
-                                    break;
-                            }
-                        } catch {
-                            // ignore non-JSON messages
-                        }
+            <View style={styles.splineWrap}>
+                <SplineView
+                    url={SPLINE_SCENE_URL}
+                    style={styles.splineView}
+                    onLoad={() => setIsLoaded(true)}
+                    onSplineEvent={(event) => {
+                        // Forward events if needed.
                     }}
                 />
             </View>
@@ -250,7 +190,6 @@ export default function WaitlistSheet({ visible, onClose }: Props) {
     const addEntry = useWaitlistStore((state) => state.addEntry);
     const scrollRef = useRef<ScrollView>(null);
 
-    const [name, setName] = useState('');
     const [email, setEmail] = useState('');
     const [status, setStatus] = useState<'idle' | 'success' | 'error'>('idle');
     const [error, setError] = useState<string | null>(null);
@@ -360,8 +299,7 @@ export default function WaitlistSheet({ visible, onClose }: Props) {
     };
 
     const handleSubmit = () => {
-        const trimmedName = name.trim();
-        const success = addEntry(email, trimmedName || undefined);
+        const success = addEntry(email);
 
         if (success) {
             Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -375,7 +313,6 @@ export default function WaitlistSheet({ visible, onClose }: Props) {
     };
 
     const handleClose = () => {
-        setName('');
         setEmail('');
         setStatus('idle');
         setError(null);
@@ -433,16 +370,6 @@ export default function WaitlistSheet({ visible, onClose }: Props) {
                         </Animated.View>
 
                         <Animated.View style={[styles.form, formStyle]}>
-                            <TextInput
-                                value={name}
-                                onChangeText={setName}
-                                placeholder="Name (optional)"
-                                placeholderTextColor={colors.textMuted}
-                                style={styles.input}
-                                autoCapitalize="words"
-                                onFocus={scrollToInput}
-                            />
-
                             <TextInput
                                 value={email}
                                 onChangeText={setEmail}
@@ -534,26 +461,15 @@ const styles = StyleSheet.create({
         height: 220,
         marginBottom: spacing.md,
     },
-    webviewWrap: {
+    splineWrap: {
         width: '100%',
         height: 220,
         borderRadius: 24,
         overflow: 'hidden',
         backgroundColor: colors.background,
     },
-    webview: {
+    splineView: {
         flex: 1,
-        backgroundColor: 'transparent',
-    },
-    webviewHidden: {
-        opacity: 0,
-    },
-    loader: {
-        ...StyleSheet.absoluteFillObject,
-        alignItems: 'center',
-        justifyContent: 'center',
-        backgroundColor: colors.background,
-        zIndex: 1,
     },
     device: {
         backgroundColor: colors.background,
