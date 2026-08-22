@@ -93,7 +93,7 @@ export default function EvolutionCeremony({
     const stageName = STAGE_NAMES[stage] ?? STAGE_NAMES[1];
 
     const shareableMessage = useMemo(() => {
-        return `${petName || 'My Finagotchi'} evolved into ${
+        return `${petName || 'My Finny'} evolved into ${
             stageName.split('•')[0].trim()
         }! 🔥 #Finagotchi`;
     }, [petName, stageName]);
