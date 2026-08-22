@@ -472,6 +472,26 @@ export default function HomeScreen() {
             {(mood === 'happy' || mood === 'proud') && (
               <Text style={styles.floatingHeart}>❤️</Text>
             )}
+
+            <View style={styles.sceneProgress}>
+              <View style={styles.sceneProgressHeader}>
+                <Text style={styles.sceneProgressTitle}>{displayName}'s evolution</Text>
+                <Text style={styles.sceneProgressPercent}>
+                  {Math.round(progressPercent)}%
+                </Text>
+              </View>
+              <View style={styles.sceneProgressTrack}>
+                <View
+                  style={[
+                    styles.sceneProgressFill,
+                    { width: `${progressPercent}%` },
+                  ]}
+                />
+              </View>
+              <Text style={styles.sceneProgressStage}>
+                {STAGE_NAMES[stage] ?? STAGE_NAMES[1]}
+              </Text>
+            </View>
           </View>
 
           <View style={styles.petActionsRow}>
@@ -589,27 +609,6 @@ export default function HomeScreen() {
               <Text style={styles.comingSoonText}>Soon</Text>
             </View>
           </PressableScale>
-        </View>
-
-        {/* PROGRESS STRIP */}
-        <View style={styles.progressCard}>
-          <View style={styles.progressHeader}>
-            <Text style={styles.progressTitle}>{displayName}'s evolution</Text>
-            <Text style={styles.progressPercent}>
-              {Math.round(progressPercent)}%
-            </Text>
-          </View>
-          <View style={styles.progressTrack}>
-            <View
-              style={[
-                styles.progressFill,
-                { width: `${progressPercent}%` },
-              ]}
-            />
-          </View>
-          <Text style={styles.progressStage}>
-            {STAGE_NAMES[stage] ?? STAGE_NAMES[1]}
-          </Text>
         </View>
 
         <View style={{ height: 24 }} />
@@ -942,6 +941,7 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     alignItems: 'center',
     justifyContent: 'center',
+    position: 'relative',
   },
   sky: {
     position: 'absolute',
@@ -1134,51 +1134,53 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
   },
 
-  /* PROGRESS */
-  progressCard: {
-    width: '100%',
-    marginTop: 14,
-    padding: 16,
-    borderRadius: 20,
-    backgroundColor: colors.surface,
+  /* PROGRESS (inside pet scene) */
+  sceneProgress: {
+    position: 'absolute',
+    left: 12,
+    right: 12,
+    bottom: 12,
+    padding: 12,
+    borderRadius: 16,
+    backgroundColor: 'rgba(7,17,31,0.78)',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.06)',
+    borderColor: 'rgba(255,255,255,0.08)',
   },
-  progressHeader: {
+  sceneProgressHeader: {
     width: '100%',
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 10,
+    marginBottom: 8,
   },
-  progressTitle: {
+  sceneProgressTitle: {
     color: colors.text,
-    fontSize: 13,
+    fontSize: 12,
     fontFamily: 'Poppins_700Bold',
-    letterSpacing: tracking.small * 13,
+    letterSpacing: tracking.small * 12,
   },
-  progressPercent: {
+  sceneProgressPercent: {
     color: colors.primary,
-    fontSize: 13,
+    fontSize: 12,
     fontFamily: 'Poppins_800ExtraBold',
-    letterSpacing: tracking.small * 13,
+    letterSpacing: tracking.small * 12,
   },
-  progressTrack: {
+  sceneProgressTrack: {
     width: '100%',
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: 'rgba(255,255,255,0.07)',
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: 'rgba(255,255,255,0.10)',
     overflow: 'hidden',
   },
-  progressFill: {
+  sceneProgressFill: {
     height: '100%',
-    borderRadius: 4,
+    borderRadius: 3,
     backgroundColor: colors.primary,
   },
-  progressStage: {
-    marginTop: 8,
+  sceneProgressStage: {
+    marginTop: 6,
     color: colors.textMuted,
-    fontSize: 11,
+    fontSize: 10,
     fontFamily: 'Poppins_500Medium',
   },
 });
