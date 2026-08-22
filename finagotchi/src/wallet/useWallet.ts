@@ -114,7 +114,19 @@ export function useWallet(): Wallet {
     }, [connectStore, setSession]);
 
     const connectIOS = useCallback(async () => {
-        const result = await phantomConnect({ provider: 'google' });
+        if (typeof phantomConnect !== 'function') {
+            throw new Error(
+                `Phantom connect hook is not a function (got ${typeof phantomConnect}). Ensure PhantomProvider is mounted.`
+            );
+        }
+
+        let result;
+        try {
+            result = await phantomConnect({ provider: 'google' });
+        } catch (err) {
+            console.error('[useWallet] phantomConnect error:', err);
+            throw err;
+        }
 
         if (!result?.addresses?.[0]?.address) {
             throw new Error('Phantom did not return a wallet address');
