@@ -131,8 +131,10 @@ export function Sidebar({
     // Drag from the left edge of the screen to open the sidebar.
     const openPan = Gesture.Pan()
         .enabled(!visible)
-        .activeOffsetX([20, 9999])
-        .failOffsetY([-15, 15])
+        .activeOffsetX([10, 9999])
+        .failOffsetY([-20, 20])
+        .shouldCancelWhenOutside(false)
+        .hitSlop({ left: 20 })
         .onUpdate((event) => {
             const x = Math.max(0, event.translationX);
             translateX.value = Math.min(0, -SIDEBAR_WIDTH + x);
@@ -142,7 +144,7 @@ export function Sidebar({
             const projectedX = event.translationX + project(event.velocityX);
             const shouldOpen =
                 projectedX > SWIPE_THRESHOLD ||
-                event.translationX > SIDEBAR_WIDTH * 0.3;
+                event.translationX > SWIPE_THRESHOLD;
 
             if (shouldOpen) {
                 runOnJS(onOpen)();
@@ -156,6 +158,7 @@ export function Sidebar({
     const sidebarPan = Gesture.Pan()
         .minDistance(20)
         .failOffsetY([-20, 20])
+        .shouldCancelWhenOutside(false)
         .onUpdate((event) => {
             const x = event.translationX;
             if (x <= 0) {
@@ -488,7 +491,7 @@ const styles = StyleSheet.create({
     edgeStrip: {
         position: 'absolute',
         left: 0,
-        width: 20,
+        width: 44,
         zIndex: 1001,
         backgroundColor: 'transparent',
     },
