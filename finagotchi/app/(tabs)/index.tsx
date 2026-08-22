@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
   BackHandler,
+  Image,
   StyleSheet,
   Text,
   ToastAndroid,
@@ -356,10 +357,13 @@ export default function HomeScreen() {
               isTinyDevice && styles.namePillSmall,
             ]}
           >
-            <Ionicons
-              name="sparkles-outline"
-              size={isTinyDevice ? 14 : 16}
-              color={colors.primary}
+            <Image
+              source={require('../../assets/icon.png')}
+              style={[
+                styles.nameIcon,
+                isTinyDevice && styles.nameIconSmall,
+              ]}
+              resizeMode="contain"
             />
             <Text
               style={[
@@ -728,6 +732,16 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     paddingHorizontal: 8,
     gap: 4,
+  },
+  nameIcon: {
+    width: 22,
+    height: 22,
+    borderRadius: 6,
+  },
+  nameIconSmall: {
+    width: 18,
+    height: 18,
+    borderRadius: 4,
   },
   nameText: {
     color: colors.text,
