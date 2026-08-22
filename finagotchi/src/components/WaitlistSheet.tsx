@@ -156,27 +156,59 @@ const SPLINE_SCENE_URL =
 function HardwarePlaceholder() {
     const [hasError, setHasError] = useState(false);
     const [isLoaded, setIsLoaded] = useState(false);
+    const [retryKey, setRetryKey] = useState(0);
 
     useEffect(() => {
+        setHasError(false);
+        setIsLoaded(false);
         const timer = setTimeout(() => {
             if (!isLoaded) {
+                console.warn('[WaitlistSheet] Spline scene timed out:', SPLINE_SCENE_URL);
                 setHasError(true);
             }
         }, 12000);
         return () => clearTimeout(timer);
-    }, [isLoaded]);
+    }, [retryKey, isLoaded]);
 
     if (hasError) {
-        return <StaticHardwarePlaceholder />;
+        return (
+            <View style={styles.placeholderStage}>
+                <StaticHardwarePlaceholder />
+                <PressableScale
+                    onPress={() => setRetryKey((k) => k + 1)}
+                    style={styles.splineRetryPill}
+                >
+                    <Ionicons name="refresh" size={14} color={colors.text} />
+                    <Text style={styles.splineRetryText}>Retry 3D scene</Text>
+                </PressableScale>
+            </View>
+        );
     }
 
     return (
         <View style={styles.placeholderStage}>
             <View style={styles.splineWrap}>
+                {!isLoaded ? (
+                    <View style={styles.splineLoader}>
+                        <Ionicons
+                            name="cube-outline"
+                            size={32}
+                            color={colors.textMuted}
+                        />
+                        <Text style={styles.splineLoaderText}>Loading 3D scene...</Text>
+                    </View>
+                ) : null}
                 <SplineView
+                    key={retryKey}
                     url={SPLINE_SCENE_URL}
-                    style={styles.splineView}
-                    onLoad={() => setIsLoaded(true)}
+                    style={[
+                        styles.splineView,
+                        !isLoaded && styles.splineViewHidden,
+                    ]}
+                    onLoad={(event) => {
+                        console.log('[WaitlistSheet] Spline scene loaded:', event.nativeEvent.url);
+                        setIsLoaded(true);
+                    }}
                     onSplineEvent={(event) => {
                         // Forward events if needed.
                     }}
@@ -469,7 +501,42 @@ const styles = StyleSheet.create({
         backgroundColor: colors.background,
     },
     splineView: {
-        flex: 1,
+        width: '100%',
+        height: '100%',
+    },
+    splineViewHidden: {
+        opacity: 0,
+    },
+    splineLoader: {
+        ...StyleSheet.absoluteFillObject,
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: spacing.sm,
+        backgroundColor: colors.background,
+        zIndex: 1,
+    },
+    splineLoaderText: {
+        color: colors.textMuted,
+        fontSize: typography.small,
+        fontFamily: 'Poppins_600SemiBold',
+    },
+    splineRetryPill: {
+        position: 'absolute',
+        bottom: 8,
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+        paddingVertical: 6,
+        paddingHorizontal: 12,
+        borderRadius: 12,
+        backgroundColor: colors.surface,
+        borderWidth: 1,
+        borderColor: 'rgba(255,255,255,0.08)',
+    },
+    splineRetryText: {
+        color: colors.text,
+        fontSize: typography.small,
+        fontFamily: 'Poppins_600SemiBold',
     },
     device: {
         backgroundColor: colors.background,
