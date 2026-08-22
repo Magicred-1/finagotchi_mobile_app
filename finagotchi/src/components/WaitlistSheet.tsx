@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
+    Image,
     ScrollView,
     StyleSheet,
     Text,
@@ -58,85 +59,43 @@ const BULLETS = [
 const STAGGER_DELAY = 55;
 
 /**
- * Static fallback device placeholder used when the live Spline scene cannot
+ * Static fallback device placeholder shown when the live Spline scene cannot
  * be rendered inside the WebView.
  */
 function StaticHardwarePlaceholder() {
     const { width } = useWindowDimensions();
     const float = useSharedValue(0);
-    const rotate = useSharedValue(0);
 
     useEffect(() => {
         float.value = withRepeat(
-            withTiming(-12, {
+            withTiming(-10, {
                 duration: 2600,
                 easing: Easing.inOut(Easing.cubic),
             }),
             -1,
             true
         );
-        rotate.value = withRepeat(
-            withTiming(3, {
-                duration: 3200,
-                easing: Easing.inOut(Easing.sin),
-            }),
-            -1,
-            true
-        );
-    }, [float, rotate]);
+    }, [float]);
 
     const animatedStyle = useAnimatedStyle(() => ({
-        transform: [
-            { translateY: float.value },
-            { rotateX: `${rotate.value}deg` },
-            { rotateY: `${rotate.value * 0.6}deg` },
-        ],
+        transform: [{ translateY: float.value }],
     }));
 
-    const size = Math.min(width * 0.36, 160);
+    const size = Math.min(width * 0.5, 200);
 
     return (
         <View style={styles.placeholderStage}>
-            <Animated.View
-                style={[
-                    styles.device,
-                    {
-                        width: size,
-                        height: size * 1.25,
-                        borderRadius: size * 0.24,
-                    },
-                    shadows.large,
-                    animatedStyle,
-                ]}
-            >
-                {/* Side depth layer */}
-                <View
+            <Animated.View style={[styles.hardwareImageWrap, animatedStyle]}>
+                <Image
+                    source={require('../../assets/hardware-companion.png')}
                     style={[
-                        styles.deviceSide,
-                        {
-                            width: size,
-                            height: size * 1.25,
-                            borderRadius: size * 0.24,
-                        },
+                        styles.hardwareImage,
+                        { width: size, height: size },
                     ]}
+                    resizeMode="contain"
                 />
-
-                <View style={styles.deviceBezel}>
-                    <View style={styles.deviceScreen}>
-                        <View style={styles.screenGlare} />
-                        <View style={styles.screenGlow} />
-                        <Ionicons
-                            name="hardware-chip-outline"
-                            size={size * 0.3}
-                            color={colors.primary}
-                        />
-                        <View style={styles.led} />
-                    </View>
-                    <View style={styles.deviceHomeBar} />
-                </View>
             </Animated.View>
-
-            <View style={[styles.deviceShadow, { width: size * 0.72 }]} />
+            <View style={[styles.deviceShadow, { width: size * 0.6 }]} />
         </View>
     );
 }
@@ -546,71 +505,12 @@ const styles = StyleSheet.create({
         fontSize: typography.small,
         fontFamily: 'Poppins_600SemiBold',
     },
-    device: {
-        backgroundColor: colors.background,
-        borderWidth: 1,
-        borderColor: 'rgba(255,255,255,0.14)',
-        padding: 10,
-        overflow: 'visible',
-    },
-    deviceSide: {
-        position: 'absolute',
-        left: 6,
-        top: 6,
-        backgroundColor: 'rgba(0,0,0,0.35)',
-        zIndex: -1,
-    },
-    deviceBezel: {
-        flex: 1,
-        borderRadius: 24,
-        overflow: 'hidden',
-        backgroundColor: colors.surfaceLight,
-        borderWidth: 1,
-        borderColor: colors.border,
-    },
-    deviceScreen: {
-        flex: 1,
+    hardwareImageWrap: {
         alignItems: 'center',
         justifyContent: 'center',
-        overflow: 'hidden',
     },
-    screenGlare: {
-        position: 'absolute',
-        top: -28,
-        right: -28,
-        width: 110,
-        height: 110,
-        borderRadius: 55,
-        backgroundColor: 'rgba(255,255,255,0.06)',
-    },
-    screenGlow: {
-        position: 'absolute',
-        top: '40%',
-        left: '30%',
-        width: 80,
-        height: 80,
-        borderRadius: 40,
-        backgroundColor: 'rgba(114,228,90,0.10)',
-    },
-    led: {
-        position: 'absolute',
-        bottom: 12,
-        width: 6,
-        height: 6,
-        borderRadius: 3,
-        backgroundColor: colors.primary,
-        shadowColor: colors.primary,
-        shadowOffset: { width: 0, height: 0 },
-        shadowOpacity: 0.6,
-        shadowRadius: 6,
-    },
-    deviceHomeBar: {
-        alignSelf: 'center',
-        width: '34%',
-        height: 4,
-        borderRadius: 2,
-        backgroundColor: 'rgba(255,255,255,0.15)',
-        marginBottom: 10,
+    hardwareImage: {
+        resizeMode: 'contain',
     },
     deviceShadow: {
         position: 'absolute',
