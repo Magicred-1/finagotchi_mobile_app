@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect } from 'react';
+import React, { useCallback, useEffect, useRef } from 'react';
 import {
     Alert,
     Image,
@@ -34,6 +34,7 @@ import { colors, spacing, springs, typography } from '../theme/tokens';
 export const SIDEBAR_WIDTH = 300;
 const SWIPE_THRESHOLD = 60;
 const FLICK_VELOCITY = 650;
+const EDGE_SWIPE_WIDTH = 32;
 
 function truncateAddress(address: string | null) {
     if (!address) return '';
@@ -92,11 +93,16 @@ export function Sidebar({
     const dragStartX = useSharedValue(0);
     const dragStartY = useSharedValue(0);
 
-    const OPEN_ZONE_RATIO = 0.55;
+    const onCloseRef = useRef(onClose);
+    useEffect(() => {
+        onCloseRef.current = onClose;
+    }, [onClose]);
+
     const ACTIVATE_DX = 12;
     const FAIL_DY = 10;
 
     const animateOpen = useCallback((velocity = 0) => {
+        if (translateX.value >= -1 && opacity.value >= 0.99) return;
         const isFlick = Math.abs(velocity) > FLICK_VELOCITY;
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
         translateX.value = withSpring(0, {
@@ -112,6 +118,7 @@ export function Sidebar({
     }, [translateX, opacity, contentShift]);
 
     const animateClose = useCallback((velocity = 0) => {
+        if (translateX.value <= -SIDEBAR_WIDTH + 1 && opacity.value <= 0.01) return;
         const isFlick = Math.abs(velocity) > FLICK_VELOCITY;
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
         translateX.value = withSpring(-SIDEBAR_WIDTH, {
@@ -121,11 +128,11 @@ export function Sidebar({
         });
         opacity.value = withTiming(0, { duration: 220 }, (finished) => {
             if (finished) {
-                runOnJS(onClose)();
+                runOnJS(onCloseRef.current)();
             }
         });
         contentShift.value = withTiming(16, { duration: 180 });
-    }, [onClose, translateX, opacity, contentShift]);
+    }, [translateX, opacity, contentShift]);
 
     useEffect(() => {
         if (visible) {
@@ -145,7 +152,7 @@ export function Sidebar({
         .onTouchesDown((event, stateManager) => {
             'worklet';
             const touch = event.allTouches[0];
-            if (touch && touch.absoluteX < width * OPEN_ZONE_RATIO) {
+            if (touch && touch.absoluteX < EDGE_SWIPE_WIDTH) {
                 dragStartX.value = touch.absoluteX;
                 dragStartY.value = touch.absoluteY;
             } else {
@@ -287,7 +294,7 @@ export function Sidebar({
                     style={[
                         styles.dragOverlay,
                         {
-                            width,
+                            width: EDGE_SWIPE_WIDTH,
                             height,
                             opacity: visible ? 0 : 1,
                         },

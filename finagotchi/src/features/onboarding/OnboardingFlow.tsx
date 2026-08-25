@@ -13,13 +13,12 @@ import ConnectWalletStep from './ConnectWalletStep';
 import NameCreatureStep from './NameCreatureStep';
 import MintStep from './MintStep';
 import HatchStep from './HatchStep';
-import FirstCheckinStep from './FirstCheckinStep';
 import ReminderStep from './ReminderStep';
 
 import { useWallet } from '../../wallet/useWallet';
 import { useWalletStore } from '../../features/wallet/store';
 import { usePetStore } from '../../features/pet/store';
-import { useCheckinStore } from '../../features/checkin/store';
+
 import { generateFakeMintAddress } from '../../wallet/useWallet';
 
 type Step =
@@ -28,7 +27,6 @@ type Step =
     | 'name'
     | 'mint'
     | 'hatch'
-    | 'firstCheckin'
     | 'reminder';
 
 type Props = {
@@ -42,7 +40,6 @@ const STEP_ORDER: Step[] = [
     'name',
     'mint',
     'hatch',
-    'firstCheckin',
     'reminder',
 ];
 
@@ -65,7 +62,6 @@ export default function OnboardingFlow({
     const wallet = useWallet();
     const walletAddress = useWalletStore((state) => state.address);
     const mintCreature = usePetStore((state) => state.mintCreature);
-    const checkIn = useCheckinStore((state) => state.checkIn);
 
     const opacity = useSharedValue(1);
     const translateX = useSharedValue(0);
@@ -120,19 +116,14 @@ export default function OnboardingFlow({
             return;
         }
         if (
-            (step === 'mint' ||
-                step === 'hatch' ||
-                step === 'firstCheckin' ||
-                step === 'reminder') &&
+            (step === 'mint' || step === 'hatch' || step === 'reminder') &&
             !creatureName
         ) {
             setStep('name');
             return;
         }
         if (
-            (step === 'hatch' ||
-                step === 'firstCheckin' ||
-                step === 'reminder') &&
+            (step === 'hatch' || step === 'reminder') &&
             !usePetStore.getState().mintAddress
         ) {
             setStep('mint');
@@ -154,7 +145,7 @@ export default function OnboardingFlow({
         }
 
         // Simulate network/blockchain delay for the MVP demo mint.
-        await new Promise((resolve) => setTimeout(resolve, 2500));
+        await new Promise((resolve) => setTimeout(resolve, 1200));
 
         const fakeMintAddress = generateFakeMintAddress();
         mintCreature(creatureName, fakeMintAddress);
@@ -163,17 +154,6 @@ export default function OnboardingFlow({
     };
 
     const handleHatchFinished = () => {
-        setStep('firstCheckin');
-    };
-
-    const handleFirstCheckin = (
-        saved: boolean,
-        details?: { amount?: number; category?: string }
-    ) => {
-        checkIn(saved, details);
-    };
-
-    const handleFirstCheckinFinished = () => {
         setStep('reminder');
     };
 
@@ -212,14 +192,6 @@ export default function OnboardingFlow({
                     <HatchStep
                         creatureName={creatureName}
                         onFinished={handleHatchFinished}
-                    />
-                );
-            case 'firstCheckin':
-                return (
-                    <FirstCheckinStep
-                        creatureName={creatureName}
-                        onCheckIn={handleFirstCheckin}
-                        onFinished={handleFirstCheckinFinished}
                     />
                 );
             case 'reminder':

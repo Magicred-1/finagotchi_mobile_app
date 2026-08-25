@@ -8,6 +8,7 @@ import {
 } from 'react-native';
 
 import { Button } from '../../components/Button';
+import { RadialPet } from '../../components/RadialPet';
 import { colors, spacing, typography } from '../../theme/tokens';
 
 type Props = {
@@ -52,14 +53,9 @@ export default function ConnectWalletStep({ platform, onConnect }: Props) {
                 ]}
             >
                 <View style={styles.content}>
-                    <Text
-                        style={[
-                            styles.creature,
-                            isSmall && styles.creatureSmall,
-                        ]}
-                    >
-                        🐣
-                    </Text>
+                    <View style={[styles.creatureWrap, isSmall && styles.creatureWrapSmall]}>
+                        <RadialPet stage="egg" mood="calm" size={isSmall ? 96 : 128} />
+                    </View>
                     <Text
                         style={[
                             styles.title,
@@ -120,13 +116,17 @@ const styles = StyleSheet.create({
         justifyContent: 'center',
         width: '100%',
     },
-    creature: {
-        fontSize: 96,
-        marginBottom: spacing.lg,
-    },
-    creatureSmall: {
-        fontSize: 72,
+    creatureWrap: {
+        width: 128,
+        height: 128,
         marginBottom: spacing.md,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    creatureWrapSmall: {
+        width: 96,
+        height: 96,
+        marginBottom: spacing.sm,
     },
     title: {
         color: colors.text,

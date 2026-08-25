@@ -1,219 +1,234 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
-    Modal,
-    Pressable,
-    StyleSheet,
-    Text,
-    View,
-    useWindowDimensions,
+  Modal,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+  useWindowDimensions,
 } from 'react-native';
-import Animated, {
-    ReduceMotion,
-    useAnimatedStyle,
-    useSharedValue,
-    withSpring,
-    withTiming,
-} from 'react-native-reanimated';
-import * as Haptics from 'expo-haptics';
+import Svg, { G } from 'react-native-svg';
 
+import { FinagotchiEngine, type StateId } from '../engine/engine';
+import { usePetAnimator } from '../hooks/usePetAnimator';
 import {
-    Stage1Egg,
-    Stage2Coinling,
-    Stage3Hodler,
-    Stage5Whale,
-} from './PetSprites';
+  usePetStore,
+  type PetStage as NumericStage,
+  STAGE_NAMES,
+} from '../features/pet/store';
+import { colors, spacing, typography } from '../theme/tokens';
 import CurtainOverlay from './CurtainOverlay';
-import { STAGE_NAMES, type PetStage } from '../features/pet/store';
-import { colors, spacing, springs, typography } from '../theme/tokens';
+import { PetBody } from './PetBody';
+import { PetEyes } from './PetEyes';
+import { SparkleParticle } from './SparkleParticle';
 
 type Props = {
-    visible: boolean;
-    stage: PetStage;
-    petName: string | null;
-    onDismiss: () => void;
+  visible: boolean;
+  stage: NumericStage;
+  petName: string | null;
+  onDismiss: () => void;
 };
 
-export default function EvolutionCeremony({
-    visible,
-    stage,
-    petName,
-    onDismiss,
-}: Props) {
-    const { width, height } = useWindowDimensions();
-    const opacity = useSharedValue(0);
-    const scale = useSharedValue(0.8);
-    const [isExiting, setIsExiting] = useState(false);
-    const [showCurtain, setShowCurtain] = useState(false);
+const DURATION = 3000;
+const GLOW_EXPAND_END = 500;
+const PARTICLE_START = 1500;
+const PARTICLE_END = 3000;
+const SETTLE_START = 2500;
 
-    const enter = useCallback(() => {
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-        opacity.value = withTiming(1, { duration: 350 });
-        scale.value = withSpring(1, {
-            ...springs.momentum,
-            reduceMotion: ReduceMotion.System,
-        });
-    }, [opacity, scale]);
+const STAGE_TO_RADIAL: Record<NumericStage, StateId> = {
+  1: 'egg',
+  2: 'coinling',
+  3: 'coinling',
+  4: 'hodler',
+  5: 'whale',
+};
 
-    const exit = useCallback(() => {
-        setIsExiting(true);
-        setShowCurtain(false);
-        opacity.value = withTiming(0, { duration: 220 });
-        scale.value = withSpring(0.92, {
-            ...springs.default,
-            reduceMotion: ReduceMotion.System,
-        });
+export default function EvolutionCeremony({ visible, stage, petName, onDismiss }: Props) {
+  const { width, height } = useWindowDimensions();
+  const frame = usePetAnimator();
+  const timeMs = frame * 33;
+  const t = timeMs / 1000;
 
-        const timer = setTimeout(() => {
-            setIsExiting(false);
-            onDismiss();
-        }, 250);
-        return () => clearTimeout(timer);
-    }, [onDismiss, opacity, scale]);
+  const lastCelebratedStage = usePetStore((state) => state.lastCelebratedStage);
+  const [isExiting, setIsExiting] = useState(false);
+  const [showCurtain, setShowCurtain] = useState(false);
 
-    useEffect(() => {
-        if (visible && !isExiting) {
-            opacity.value = 0;
-            scale.value = 0.8;
-            setShowCurtain(true);
-        }
-    }, [visible, isExiting, opacity, scale]);
+  const engineRef = useRef<FinagotchiEngine | null>(null);
+  if (!engineRef.current) {
+    engineRef.current = new FinagotchiEngine({
+      scale: 80,
+      initial: STAGE_TO_RADIAL[lastCelebratedStage],
+    });
+  }
+  const engine = engineRef.current;
 
-    const handleCovered = useCallback(() => {
-        enter();
-    }, [enter]);
+  const ceremonyStarted = useRef(false);
+  const hasCompleted = useRef(false);
 
-    const containerStyle = useAnimatedStyle(() => ({
-        opacity: opacity.value,
-    }));
+  useEffect(() => {
+    if (visible && !ceremonyStarted.current) {
+      ceremonyStarted.current = true;
+      setShowCurtain(true);
+      engine.setState(STAGE_TO_RADIAL[lastCelebratedStage], 0);
+      engine.evolve(0);
+    }
+    if (!visible && ceremonyStarted.current) {
+      ceremonyStarted.current = false;
+      hasCompleted.current = false;
+    }
+  }, [visible, engine, lastCelebratedStage, stage]);
 
-    const contentStyle = useAnimatedStyle(() => ({
-        transform: [{ scale: scale.value }],
-    }));
+  const ceremonyTimeMs = visible || isExiting ? timeMs : 0;
+  const ceremonyT = ceremonyTimeMs / 1000;
 
-    const stageName = STAGE_NAMES[stage] ?? STAGE_NAMES[1];
+  useEffect(() => {
+    if (!hasCompleted.current && ceremonyTimeMs >= DURATION) {
+      hasCompleted.current = true;
+      onDismiss();
+    }
+  }, [ceremonyTimeMs, onDismiss]);
 
-    const shareableMessage = useMemo(() => {
-        return `${petName || 'My Finny'} evolved into ${
-            stageName.split('•')[0].trim()
-        }! 🔥 #Finagotchi`;
-    }, [petName, stageName]);
+  const frameData = useMemo(() => engine.sample(ceremonyT), [engine, ceremonyT]);
 
-    const renderPet = () => {
-        switch (stage) {
-            case 1:
-                return <Stage1Egg size={160} />;
-            case 2:
-                return <Stage2Coinling size={160} />;
-            case 3:
-                return <Stage3Hodler size={160} />;
-            case 4:
-                return <Stage3Hodler size={160} />;
-            case 5:
-                return <Stage5Whale size={160} />;
-            default:
-                return <Stage1Egg size={160} />;
-        }
-    };
+  const glowProgress = Math.min(1, ceremonyTimeMs / GLOW_EXPAND_END);
+  const glowOpacity =
+    glowProgress < 0.5
+      ? glowProgress * 1.4
+      : Math.max(0, 0.7 - ((ceremonyTimeMs - SETTLE_START) / (DURATION - SETTLE_START)) * 0.7);
 
-    return (
-        <Modal
-            visible={visible || isExiting}
-            transparent
-            animationType="none"
-            onRequestClose={exit}
-        >
-            <CurtainOverlay
-                active={showCurtain}
-                onComplete={() => setShowCurtain(false)}
-                onCovered={handleCovered}
-                color={colors.primary}
-            />
-            <Animated.View
-                style={[
-                    styles.backdrop,
-                    { width, height },
-                    containerStyle,
-                ]}
-            >
-                <View style={styles.spotlight} />
+  const particleProgress = useMemo(() => {
+    if (ceremonyTimeMs < PARTICLE_START) return 0;
+    if (ceremonyTimeMs > PARTICLE_END) return 1;
+    return (ceremonyTimeMs - PARTICLE_START) / (PARTICLE_END - PARTICLE_START);
+  }, [ceremonyTimeMs]);
 
-                <Animated.View style={[styles.content, contentStyle]}>
-                    <Text style={styles.evolved}>I evolved!</Text>
+  const exit = () => {
+    setIsExiting(true);
+    setShowCurtain(false);
+  };
 
-                    <View style={styles.petWrap}>{renderPet()}</View>
+  const size = 160;
+  const particleCount = 10;
 
-                    <Text style={styles.stageName}>
-                        {stageName.split('•')[0].trim()}
-                    </Text>
+  const stageName = STAGE_NAMES[stage] ?? STAGE_NAMES[1];
+  const shareableMessage = `${petName || 'My Finny'} evolved into ${
+    stageName.split('•')[0].trim()
+  }! 🔥 #Finagotchi`;
 
-                    <Text style={styles.shareText}>{shareableMessage}</Text>
+  return (
+    <Modal visible={visible || isExiting} transparent animationType="none" onRequestClose={exit}>
+      <CurtainOverlay
+        active={showCurtain}
+        onComplete={() => setShowCurtain(false)}
+        onCovered={() => {}}
+        color={colors.primary}
+      />
+      <View style={[styles.backdrop, { width, height }]}>
+        <View style={styles.spotlight} />
 
-                    <Pressable onPress={exit} style={styles.button}>
-                        <Text style={styles.buttonText}>Continue</Text>
-                    </Pressable>
-                </Animated.View>
-            </Animated.View>
-        </Modal>
-    );
+        <View style={styles.content}>
+          <Text style={styles.evolved}>I evolved!</Text>
+
+          <View style={styles.petWrap}>
+            <Svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} style={styles.svg}>
+              <G transform={`translate(${size / 2}, ${size / 2})`}>
+                <PetBody
+                  bodyPath={frameData.bodyPath}
+                  color={frameData.color}
+                  glowColor={frameData.glowColor}
+                  bodyAlpha={frameData.bodyAlpha}
+                  size={size}
+                  timeMs={ceremonyTimeMs}
+                />
+                <PetEyes eyes={frameData.eyes} />
+
+                {particleProgress > 0
+                  ? Array.from({ length: particleCount }, (_, i) => (
+                      <SparkleParticle
+                        key={i}
+                        index={i}
+                        total={particleCount}
+                        progress={particleProgress}
+                        size={size}
+                      />
+                    ))
+                  : null}
+              </G>
+            </Svg>
+          </View>
+
+          <Text style={styles.stageName}>{stageName.split('•')[0].trim()}</Text>
+          <Text style={styles.shareText}>{shareableMessage}</Text>
+
+          <Pressable onPress={exit} style={styles.button}>
+            <Text style={styles.buttonText}>Continue</Text>
+          </Pressable>
+        </View>
+      </View>
+    </Modal>
+  );
 }
 
 const styles = StyleSheet.create({
-    backdrop: {
-        flex: 1,
-        alignItems: 'center',
-        justifyContent: 'center',
-        backgroundColor: 'rgba(7,17,31,0.92)',
-        paddingHorizontal: 28,
-    },
-    spotlight: {
-        position: 'absolute',
-        width: 260,
-        height: 260,
-        borderRadius: 130,
-        backgroundColor: 'rgba(114,228,90,0.08)',
-    },
-    content: {
-        width: '100%',
-        maxWidth: 320,
-        alignItems: 'center',
-    },
-    evolved: {
-        color: colors.primary,
-        fontSize: typography.heading,
-        fontFamily: 'Poppins_800ExtraBold',
-        marginBottom: spacing.lg,
-    },
-    petWrap: {
-        width: 180,
-        height: 180,
-        alignItems: 'center',
-        justifyContent: 'center',
-        marginBottom: spacing.lg,
-    },
-    stageName: {
-        color: colors.text,
-        fontSize: typography.title,
-        fontFamily: 'Poppins_700Bold',
-        textAlign: 'center',
-    },
-    shareText: {
-        marginTop: spacing.sm,
-        color: colors.textMuted,
-        fontSize: typography.body,
-        fontFamily: 'Poppins_500Medium',
-        textAlign: 'center',
-        lineHeight: 22,
-    },
-    button: {
-        marginTop: spacing.xl,
-        paddingVertical: spacing.md,
-        paddingHorizontal: spacing.xl,
-        borderRadius: 999,
-        backgroundColor: colors.primary,
-    },
-    buttonText: {
-        color: colors.background,
-        fontSize: typography.body,
-        fontFamily: 'Poppins_700Bold',
-    },
+  backdrop: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(7,17,31,0.92)',
+    paddingHorizontal: 28,
+  },
+  spotlight: {
+    position: 'absolute',
+    width: 260,
+    height: 260,
+    borderRadius: 130,
+    backgroundColor: 'rgba(114,228,90,0.08)',
+  },
+  content: {
+    width: '100%',
+    maxWidth: 320,
+    alignItems: 'center',
+  },
+  evolved: {
+    color: colors.primary,
+    fontSize: typography.heading,
+    fontFamily: 'Poppins_800ExtraBold',
+    marginBottom: spacing.lg,
+  },
+  petWrap: {
+    width: 180,
+    height: 180,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: spacing.lg,
+  },
+  svg: {
+    backgroundColor: 'transparent',
+  },
+  stageName: {
+    color: colors.text,
+    fontSize: typography.title,
+    fontFamily: 'Poppins_700Bold',
+    textAlign: 'center',
+  },
+  shareText: {
+    marginTop: spacing.sm,
+    color: colors.textMuted,
+    fontSize: typography.body,
+    fontFamily: 'Poppins_500Medium',
+    textAlign: 'center',
+    lineHeight: 22,
+  },
+  button: {
+    marginTop: spacing.xl,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.xl,
+    borderRadius: 999,
+    backgroundColor: colors.primary,
+  },
+  buttonText: {
+    color: colors.background,
+    fontSize: typography.body,
+    fontFamily: 'Poppins_700Bold',
+  },
 });

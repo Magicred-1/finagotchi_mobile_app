@@ -19,6 +19,7 @@ import Animated, {
     withTiming,
 } from 'react-native-reanimated';
 
+import { RadialPet } from '../../components/RadialPet';
 import { colors, spacing, typography } from '../../theme/tokens';
 
 type Props = {
@@ -26,12 +27,11 @@ type Props = {
 };
 
 export default function SplashStep({ onFinished }: Props) {
-    const scale = useSharedValue(0.72);
     const opacity = useSharedValue(0);
-    const creatureY = useSharedValue(14);
+    const scale = useSharedValue(0.6);
+    const floatY = useSharedValue(0);
     const textOpacity = useSharedValue(0);
     const hintOpacity = useSharedValue(0);
-    const dotScale = useSharedValue(1);
     const reducedMotion = useReducedMotion();
     const [skipped, setSkipped] = useState(false);
     const { width } = useWindowDimensions();
@@ -40,59 +40,59 @@ export default function SplashStep({ onFinished }: Props) {
         if (reducedMotion) {
             opacity.value = 1;
             scale.value = 1;
-            creatureY.value = 0;
+            floatY.value = 0;
             textOpacity.value = 1;
             hintOpacity.value = 1;
-            dotScale.value = 1;
             return;
         }
 
         opacity.value = withTiming(1, {
-            duration: 450,
+            duration: 500,
             easing: Easing.out(Easing.cubic),
         });
 
         scale.value = withSequence(
-            withTiming(1.08, {
-                duration: 550,
-                easing: Easing.out(Easing.back(1.5)),
+            withTiming(1.12, {
+                duration: 650,
+                easing: Easing.out(Easing.back(1.7)),
             }),
-            withTiming(1, { duration: 220 })
-        );
-
-        creatureY.value = withSequence(
-            withTiming(-7, {
-                duration: 500,
+            withTiming(1, {
+                duration: 300,
                 easing: Easing.out(Easing.cubic),
-            }),
-            withTiming(0, {
-                duration: 420,
-                easing: Easing.inOut(Easing.cubic),
             })
         );
 
+        floatY.value = withDelay(
+            700,
+            withRepeat(
+                withSequence(
+                    withTiming(-8, {
+                        duration: 1600,
+                        easing: Easing.inOut(Easing.sin),
+                    }),
+                    withTiming(8, {
+                        duration: 1600,
+                        easing: Easing.inOut(Easing.sin),
+                    })
+                ),
+                -1,
+                true
+            )
+        );
+
         textOpacity.value = withDelay(
-            450,
-            withTiming(1, { duration: 500 })
+            500,
+            withTiming(1, { duration: 600 })
         );
 
         hintOpacity.value = withDelay(
-            1200,
+            1100,
             withTiming(1, { duration: 400 })
         );
 
-        dotScale.value = withRepeat(
-            withSequence(
-                withTiming(1.5, { duration: 600, easing: Easing.out(Easing.cubic) }),
-                withTiming(1, { duration: 600, easing: Easing.inOut(Easing.cubic) })
-            ),
-            -1,
-            true
-        );
-
-        const timer = setTimeout(() => finish(), 1900);
+        const timer = setTimeout(() => finish(), 1200);
         return () => clearTimeout(timer);
-    }, [onFinished, creatureY, opacity, scale, textOpacity, hintOpacity, dotScale, reducedMotion]);
+    }, [onFinished, opacity, scale, floatY, textOpacity, hintOpacity, reducedMotion]);
 
     const finish = () => {
         if (skipped) return;
@@ -103,7 +103,7 @@ export default function SplashStep({ onFinished }: Props) {
     const creatureStyle = useAnimatedStyle(() => ({
         opacity: opacity.value,
         transform: [
-            { translateY: creatureY.value },
+            { translateY: floatY.value },
             { scale: scale.value },
         ],
     }));
@@ -112,7 +112,7 @@ export default function SplashStep({ onFinished }: Props) {
         opacity: textOpacity.value,
         transform: [
             {
-                translateY: (1 - textOpacity.value) * 8,
+                translateY: (1 - textOpacity.value) * 10,
             },
         ],
     }));
@@ -121,22 +121,14 @@ export default function SplashStep({ onFinished }: Props) {
         opacity: hintOpacity.value,
     }));
 
-    const dotStyle = useAnimatedStyle(() => ({
-        transform: [{ scale: dotScale.value }],
-        opacity: 0.6 + (dotScale.value - 1) * 0.4,
-    }));
-
-    const logoWidth = Math.min(Math.max(width * 0.32, 105), 145);
+    const logoWidth = Math.min(Math.max(width * 0.34, 110), 155);
     const logoHeight = logoWidth * 0.28;
 
     return (
         <SafeAreaView style={styles.safe}>
             <Pressable style={styles.container} onPress={finish}>
                 <Animated.View style={[styles.creatureWrap, creatureStyle]}>
-                    <View style={styles.glow} />
-                    <View style={styles.creatureCard}>
-                        <Text style={styles.creature}>🐣</Text>
-                    </View>
+                    <RadialPet stage="egg" mood="calm" size={160} />
                 </Animated.View>
 
                 <Animated.View style={[styles.brand, textStyle]}>
@@ -154,10 +146,8 @@ export default function SplashStep({ onFinished }: Props) {
                 </Animated.View>
 
                 <View style={styles.bottom}>
-                    <Animated.View style={[styles.dot, dotStyle]} />
-                    <Text style={styles.loading}>GROWING YOUR WORLD</Text>
                     <Animated.View style={[styles.hintWrap, hintStyle]}>
-                        <Text style={styles.hint}>Tap to continue</Text>
+                        <Text style={styles.hint}>Tap anywhere to continue</Text>
                     </Animated.View>
                 </View>
             </Pressable>
@@ -177,73 +167,35 @@ const styles = StyleSheet.create({
         paddingHorizontal: 28,
     },
     creatureWrap: {
-        width: 154,
-        height: 154,
+        width: 200,
+        height: 200,
         alignItems: 'center',
         justifyContent: 'center',
-    },
-    glow: {
-        position: 'absolute',
-        width: 142,
-        height: 142,
-        borderRadius: 71,
-        backgroundColor: 'rgba(93,226,166,0.08)',
-    },
-    creatureCard: {
-        width: 112,
-        height: 112,
-        borderRadius: 34,
-        alignItems: 'center',
-        justifyContent: 'center',
-        backgroundColor: colors.surface,
-        borderWidth: 1,
-        borderColor: 'rgba(93,226,166,0.22)',
-        shadowColor: colors.primary,
-        shadowOpacity: 0.16,
-        shadowRadius: 28,
-        shadowOffset: { width: 0, height: 10 },
-        elevation: 10,
-    },
-    creature: {
-        fontSize: 64,
     },
     brand: {
         alignItems: 'center',
-        marginTop: 14,
+        marginTop: spacing.lg,
     },
     tagline: {
         maxWidth: 280,
-        marginTop: 5,
+        marginTop: 6,
         color: colors.textMuted,
-        fontSize: 11,
-        lineHeight: 17,
+        fontSize: 12,
+        lineHeight: 18,
         textAlign: 'center',
         fontFamily: 'Poppins_500Medium',
     },
     bottom: {
         position: 'absolute',
-        bottom: 28,
+        bottom: 32,
         alignItems: 'center',
-    },
-    dot: {
-        width: 5,
-        height: 5,
-        borderRadius: 3,
-        marginBottom: 8,
-        backgroundColor: colors.primary,
-    },
-    loading: {
-        color: colors.textMuted,
-        fontSize: 8,
-        letterSpacing: 1.2,
-        fontFamily: 'Poppins_600SemiBold',
     },
     hintWrap: {
         marginTop: spacing.sm,
     },
     hint: {
         color: colors.textMuted,
-        fontSize: 10,
+        fontSize: 11,
         fontFamily: 'Poppins_500Medium',
     },
 });

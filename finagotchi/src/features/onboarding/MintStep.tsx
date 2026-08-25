@@ -15,6 +15,7 @@ import Animated, {
 } from 'react-native-reanimated';
 
 import { Button } from '../../components/Button';
+import { RadialPet } from '../../components/RadialPet';
 import { colors, spacing, typography } from '../../theme/tokens';
 
 type Props = {
@@ -91,14 +92,18 @@ export default function MintStep({
                 ]}
             >
                 <View style={styles.content}>
-                    <Text
+                    <View
                         style={[
-                            styles.creature,
-                            isSmall && styles.creatureSmall,
+                            styles.creatureWrap,
+                            isSmall && styles.creatureWrapSmall,
                         ]}
                     >
-                        🐣
-                    </Text>
+                        <RadialPet
+                            stage="egg"
+                            mood="calm"
+                            size={isSmall ? 96 : 128}
+                        />
+                    </View>
                     <Text
                         style={[
                             styles.title,
@@ -126,7 +131,11 @@ export default function MintStep({
                             <Animated.View
                                 style={[styles.spinner, spinnerStyle]}
                             >
-                                <Text style={styles.spinnerEmoji}>✦</Text>
+                                <RadialPet
+                                    stage="egg"
+                                    mood="waiting"
+                                    size={40}
+                                />
                             </Animated.View>
                             <Text style={styles.mintingText}>
                                 Minting your NFT...
@@ -135,9 +144,18 @@ export default function MintStep({
                     ) : null}
 
                     {status === 'success' ? (
-                        <Text style={styles.success}>
-                            🎉 {creatureName} has been minted!
-                        </Text>
+                        <View style={styles.success}>
+                            <View style={styles.successPet}>
+                                <RadialPet
+                                    stage="egg"
+                                    mood="excited"
+                                    size={64}
+                                />
+                            </View>
+                            <Text style={styles.successText}>
+                                {creatureName} has been minted!
+                            </Text>
+                        </View>
                     ) : null}
 
                     {status === 'error' && error ? (
@@ -179,13 +197,17 @@ const styles = StyleSheet.create({
         justifyContent: 'center',
         width: '100%',
     },
-    creature: {
-        fontSize: 96,
-        marginBottom: spacing.lg,
-    },
-    creatureSmall: {
-        fontSize: 72,
+    creatureWrap: {
+        width: 128,
+        height: 128,
         marginBottom: spacing.md,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    creatureWrapSmall: {
+        width: 96,
+        height: 96,
+        marginBottom: spacing.sm,
     },
     title: {
         color: colors.text,
@@ -230,10 +252,6 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         justifyContent: 'center',
     },
-    spinnerEmoji: {
-        fontSize: 32,
-        color: colors.primary,
-    },
     mintingText: {
         color: colors.primary,
         fontSize: typography.body,
@@ -241,6 +259,16 @@ const styles = StyleSheet.create({
     },
     success: {
         marginTop: spacing.xl,
+        alignItems: 'center',
+        gap: spacing.sm,
+    },
+    successPet: {
+        width: 64,
+        height: 64,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    successText: {
         color: colors.primary,
         fontSize: typography.heading,
         fontFamily: 'Poppins_700Bold',
