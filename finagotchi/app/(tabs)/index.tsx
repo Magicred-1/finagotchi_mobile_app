@@ -238,8 +238,6 @@ export default function HomeScreen() {
   }, [sidebarVisible, collectiblesVisible, questsVisible, waitlistVisible, showEvolution, stage]);
 
   function handleFeed() {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-
     if (!isDoneToday) {
       const result = checkIn(true);
       if (result.success) {
@@ -385,7 +383,7 @@ export default function HomeScreen() {
             />
             <View style={styles.ground} />
             <View style={styles.petWrap}>
-              <PetCanvas mood={mood} reaction={reaction} />
+              {!showEvolution && <PetCanvas mood={mood} reaction={reaction} />}
               {accessory !== 'none' && (
                 <Text style={styles.accessory}>
                   {ACCESSORY_EMOJI[accessory]}

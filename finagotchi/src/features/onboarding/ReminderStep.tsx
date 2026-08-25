@@ -10,6 +10,7 @@ import * as Haptics from 'expo-haptics';
 
 import { Button } from '../../components/Button';
 import { PressableScale } from '../../components/PressableScale';
+import { RadialPet } from '../../components/RadialPet';
 import {
     requestNotificationPermissions,
     scheduleDailyReminder,
@@ -73,7 +74,9 @@ export default function ReminderStep({ onFinished }: Props) {
                 ]}
             >
                 <View style={styles.content}>
-                    <Text style={styles.emoji}>🔔</Text>
+                    <View style={styles.petWrap}>
+                        <RadialPet stage="egg" mood="calm" size={128} />
+                    </View>
 
                     <Text
                         style={[
@@ -144,9 +147,12 @@ const styles = StyleSheet.create({
         justifyContent: 'center',
         width: '100%',
     },
-    emoji: {
-        fontSize: 80,
-        marginBottom: spacing.lg,
+    petWrap: {
+        width: 128,
+        height: 128,
+        marginBottom: spacing.md,
+        alignItems: 'center',
+        justifyContent: 'center',
     },
     title: {
         color: colors.text,

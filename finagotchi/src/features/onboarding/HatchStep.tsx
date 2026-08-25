@@ -16,7 +16,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import * as Haptics from 'expo-haptics';
 
-import { Stage1Egg, Stage2Coinling } from '../../components/PetSprites';
+import { RadialPet } from '../../components/RadialPet';
 import { colors, spacing, typography } from '../../theme/tokens';
 
 type Props = {
@@ -70,7 +70,7 @@ export default function HatchStep({ creatureName, onFinished }: Props) {
             creatureOpacity.value = withTiming(1, { duration: 400 });
             welcomeOpacity.value = withTiming(1, { duration: 400 });
         }, 800);
-    }, [hatched, scale, rotate, eggOpacity, creatureOpacity, welcomeOpacity]);
+    }, [hatched, scale, rotate, eggOpacity, creatureOpacity, welcomeOpacity, reducedMotion]);
 
     useEffect(() => {
         if (!hatched) return;
@@ -101,18 +101,14 @@ export default function HatchStep({ creatureName, onFinished }: Props) {
     const creatureStyle = useAnimatedStyle(() => ({
         opacity: creatureOpacity.value,
         transform: [
-            {
-                scale: creatureOpacity.value,
-            },
+            { scale: creatureOpacity.value },
         ],
     }));
 
     const welcomeStyle = useAnimatedStyle(() => ({
         opacity: welcomeOpacity.value,
         transform: [
-            {
-                translateY: (1 - welcomeOpacity.value) * 12,
-            },
+            { translateY: (1 - welcomeOpacity.value) * 12 },
         ],
     }));
 
@@ -125,7 +121,7 @@ export default function HatchStep({ creatureName, onFinished }: Props) {
                     disabled={hatched}
                 >
                     <Animated.View style={[styles.petWrap, eggStyle]}>
-                        <Stage1Egg size={180} />
+                        <RadialPet stage="egg" mood="calm" size={200} />
                     </Animated.View>
 
                     <Animated.View
@@ -136,7 +132,7 @@ export default function HatchStep({ creatureName, onFinished }: Props) {
                         ]}
                         pointerEvents="none"
                     >
-                        <Stage2Coinling size={180} />
+                        <RadialPet stage="coinling" mood="happy" size={200} />
                     </Animated.View>
 
                     {!hatched ? (
@@ -151,7 +147,13 @@ export default function HatchStep({ creatureName, onFinished }: Props) {
 
                 {hatched ? (
                     <Animated.View style={[styles.welcomeWrap, welcomeStyle]}>
-                        <Text style={styles.welcomeEmoji}>✨</Text>
+                        <View style={styles.welcomePet}>
+                            <RadialPet
+                                stage="coinling"
+                                mood="excited"
+                                size={72}
+                            />
+                        </View>
                         <Text style={styles.welcomeTitle}>
                             Welcome, {creatureName}!
                         </Text>
@@ -181,8 +183,8 @@ const styles = StyleSheet.create({
         justifyContent: 'center',
     },
     petWrap: {
-        width: 200,
-        height: 200,
+        width: 220,
+        height: 220,
         alignItems: 'center',
         justifyContent: 'center',
     },
@@ -211,9 +213,12 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         paddingHorizontal: 28,
     },
-    welcomeEmoji: {
-        fontSize: 48,
+    welcomePet: {
+        width: 72,
+        height: 72,
         marginBottom: spacing.sm,
+        alignItems: 'center',
+        justifyContent: 'center',
     },
     welcomeTitle: {
         color: colors.text,

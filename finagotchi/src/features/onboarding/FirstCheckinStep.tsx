@@ -23,6 +23,7 @@ import Animated, {
 import * as Haptics from 'expo-haptics';
 
 import { PressableScale } from '../../components/PressableScale';
+import { RadialPet } from '../../components/RadialPet';
 import { colors, radius, spacing, typography } from '../../theme/tokens';
 
 const KEYBOARD_BEHAVIOR = Platform.OS === 'ios' ? 'padding' : 'height';
@@ -42,6 +43,15 @@ type Props = {
 };
 
 const CATEGORIES = ['Savings', 'Investment', 'Other'];
+
+const MOOD_BY_REACTION: Record<
+    'idle' | 'happy' | 'neutral',
+    'calm' | 'excited' | 'sleepy'
+> = {
+    idle: 'calm',
+    happy: 'excited',
+    neutral: 'sleepy',
+};
 
 export default function FirstCheckinStep({
     creatureName,
@@ -143,13 +153,13 @@ export default function FirstCheckinStep({
                         onPress={Keyboard.dismiss}
                     >
                         <View style={[styles.content, { paddingHorizontal: horizontalPadding }]}>
-                            <Text style={styles.emoji}>
-                                {reaction === 'happy'
-                                    ? '🎉'
-                                    : reaction === 'neutral'
-                                    ? '🌙'
-                                    : '💰'}
-                            </Text>
+                            <View style={styles.petWrap}>
+                                <RadialPet
+                                    stage="egg"
+                                    mood={MOOD_BY_REACTION[reaction]}
+                                    size={128}
+                                />
+                            </View>
 
                             <Text
                                 style={[
@@ -261,9 +271,12 @@ const styles = StyleSheet.create({
         justifyContent: 'center',
         width: '100%',
     },
-    emoji: {
-        fontSize: 80,
-        marginBottom: spacing.lg,
+    petWrap: {
+        width: 128,
+        height: 128,
+        marginBottom: spacing.md,
+        alignItems: 'center',
+        justifyContent: 'center',
     },
     title: {
         color: colors.text,
