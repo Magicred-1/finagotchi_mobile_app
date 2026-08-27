@@ -1,8 +1,10 @@
 import React, { useCallback } from 'react';
 import {
+    ActivityIndicator,
     Pressable,
     StyleSheet,
     Text,
+    View,
 } from 'react-native';
 import Animated, {
     useAnimatedStyle,
@@ -18,14 +20,18 @@ type Props = {
     title: string;
     onPress: () => void;
     disabled?: boolean;
+    loading?: boolean;
     variant?: 'primary' | 'secondary';
+    icon?: React.ReactNode;
 };
 
 export function Button({
     title,
     onPress,
     disabled = false,
+    loading = false,
     variant = 'primary',
+    icon,
 }: Props) {
     const pressed = useSharedValue(0);
 
@@ -48,22 +54,41 @@ export function Button({
         opacity: 1 - pressed.value * (1 - press.opacityDown),
     }));
 
+    const isDisabled = disabled || loading;
+    const spinnerColor = variant === 'primary' ? '#07111F' : colors.text;
+
     return (
         <AnimatedPressable
             onPress={onPress}
             onPressIn={onPressIn}
             onPressOut={onPressOut}
-            disabled={disabled}
+            disabled={isDisabled}
             style={[
                 styles.button,
                 variant === 'secondary' && styles.secondary,
-                disabled && styles.disabled,
+                isDisabled && styles.disabled,
                 animatedStyle,
             ]}
         >
-            <Text style={[styles.text, variant === 'secondary' && styles.textSecondary]}>
-                {title}
-            </Text>
+            <View style={styles.content}>
+                {loading ? (
+                    <ActivityIndicator
+                        size="small"
+                        color={spinnerColor}
+                        style={styles.lead}
+                    />
+                ) : (
+                    icon && <View style={styles.lead}>{icon}</View>
+                )}
+                <Text
+                    style={[
+                        styles.text,
+                        variant === 'secondary' && styles.textSecondary,
+                    ]}
+                >
+                    {title}
+                </Text>
+            </View>
         </AnimatedPressable>
     );
 }
@@ -75,6 +100,7 @@ const styles = StyleSheet.create({
         paddingHorizontal: spacing.lg,
         borderRadius: radius.md,
         alignItems: 'center',
+        minHeight: 48,
     },
 
     secondary: {
@@ -85,6 +111,16 @@ const styles = StyleSheet.create({
 
     disabled: {
         opacity: 0.4,
+    },
+
+    content: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+
+    lead: {
+        marginRight: spacing.sm,
     },
 
     text: {

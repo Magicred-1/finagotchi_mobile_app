@@ -137,8 +137,6 @@ export default function EvolutionCeremony({ visible, stage, petName, onDismiss }
                   color={frameData.color}
                   glowColor={frameData.glowColor}
                   bodyAlpha={frameData.bodyAlpha}
-                  size={size}
-                  timeMs={ceremonyTimeMs}
                 />
                 <PetEyes eyes={frameData.eyes} />
 

@@ -19,8 +19,6 @@ import { useWallet } from '../../wallet/useWallet';
 import { useWalletStore } from '../../features/wallet/store';
 import { usePetStore } from '../../features/pet/store';
 
-import { generateFakeMintAddress } from '../../wallet/useWallet';
-
 type Step =
     | 'splash'
     | 'connect'
@@ -130,8 +128,29 @@ export default function OnboardingFlow({
         }
     }, [step, walletAddress, creatureName]);
 
-    const handleConnect = async () => {
-        await wallet.connect();
+    const handlePasskey = async () => {
+        await wallet.connectWithPasskey();
+    };
+
+    const handleGoogle = async () => {
+        await wallet.connectWithGoogle();
+    };
+
+    const handleRequestEmailOtp = async (email: string) => {
+        return wallet.requestEmailOtp(email);
+    };
+
+    const handleVerifyEmailOtp = async (
+        email: string,
+        otp: string,
+        otpId: string,
+        otpEncryptionTargetBundle: string
+    ) => {
+        await wallet.verifyEmailOtp(email, otp, otpId, otpEncryptionTargetBundle);
+    };
+
+    const handleMwa = async () => {
+        await wallet.connectWithMwa();
     };
 
     const handleNameSubmit = (name: string) => {
@@ -144,11 +163,8 @@ export default function OnboardingFlow({
             throw new Error('Wallet not connected');
         }
 
-        // Simulate network/blockchain delay for the MVP demo mint.
-        await new Promise((resolve) => setTimeout(resolve, 1200));
-
-        const fakeMintAddress = generateFakeMintAddress();
-        mintCreature(creatureName, fakeMintAddress);
+        const { mintAddress } = await wallet.mintCreatureNft(creatureName);
+        mintCreature(creatureName, mintAddress);
 
         setStep('hatch');
     };
@@ -174,7 +190,12 @@ export default function OnboardingFlow({
                 return (
                     <ConnectWalletStep
                         platform={Platform.OS as 'ios' | 'android' | 'web'}
-                        onConnect={handleConnect}
+                        isSeeker={wallet.isSeeker}
+                        onConnectPasskey={handlePasskey}
+                        onConnectGoogle={handleGoogle}
+                        onRequestEmailOtp={handleRequestEmailOtp}
+                        onVerifyEmailOtp={handleVerifyEmailOtp}
+                        onConnectMwa={handleMwa}
                     />
                 );
             case 'name':

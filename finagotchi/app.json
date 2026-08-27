@@ -15,6 +15,12 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.magicred1.finagotchi",
+      "associatedDomains": [
+        "applinks:finagotchi.app",
+        "webcredentials:finagotchi.app",
+        "applinks:www.finagotchi.app",
+        "webcredentials:www.finagotchi.app"
+      ],
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false
       }
@@ -26,7 +32,17 @@
       },
       "predictiveBackGestureEnabled": false,
       "softwareKeyboardLayoutMode": "resize",
-      "package": "com.magicred1.finagotchi"
+      "package": "com.magicred1.finagotchi",
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "category": ["BROWSABLE", "DEFAULT"],
+          "data": [
+            { "scheme": "https", "host": "finagotchi.app" },
+            { "scheme": "https", "host": "www.finagotchi.app" }
+          ]
+        }
+      ]
     },
     "web": {
       "favicon": "./assets/icon.png"
@@ -36,7 +52,18 @@
       "expo-secure-store",
       "expo-font",
       "expo-splash-screen",
-      "expo-notifications"
+      "expo-notifications",
+      [
+        "expo-build-properties",
+        {
+          "ios": {
+            "newArchEnabled": true
+          },
+          "android": {
+            "newArchEnabled": true
+          }
+        }
+      ]
     ],
     "extra": {
       "router": {},

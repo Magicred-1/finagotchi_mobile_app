@@ -63,6 +63,15 @@ export interface Frame {
 }
 
 const NO_LOOK: Look = { yaw: 0, pitch: 0, mix: 0, wander: 1 };
+const NO_LIVELINESS = {
+  dYaw: 0,
+  dPitch: 0,
+  dRoll: 0,
+  lid: 1,
+  driftX: 0,
+  driftY: 0,
+  breath: 1,
+};
 
 const STATE_DEFS: Record<StateId, StateDef> = {
   egg: {
@@ -320,14 +329,14 @@ export class FinagotchiEngine {
     return blendPose(origin, pose, easings.easeOutQuint(clamp(since / def.morph)));
   }
 
-  /** Pure function of time. Render this frame, or any other t, identically. */
-  sample(now: number): Frame {
-    const R = this.scale;
-    const def = STATE_DEFS[this.cur];
-    if (!def) throw new Error(`Unknown state: ${this.cur}`);
-
-    const shape = this.shapeAtTime(now);
-    const expr = this.exprAtTime(now);
+  private composeFrame(
+    R: number,
+    def: StateDef,
+    now: number,
+    shape: number[] | null,
+    expr: BotExpression | null,
+    includeLiveliness: boolean
+  ): Frame {
     let pose = this.posed(def, Math.max(0, now - this.tCur), shape, expr);
 
     const since = now - this.tCur;
@@ -338,8 +347,10 @@ export class FinagotchiEngine {
     }
 
     const alive = pose.eyeAlpha > 0.01;
-    const look = this.lookAtTime(now);
-    const life = liveliness(now, { ...this.liveOpt, wander: alive ? look.wander : 0 });
+    const look = includeLiveliness ? this.lookAtTime(now) : NO_LOOK;
+    const life = includeLiveliness
+      ? liveliness(now, { ...this.liveOpt, wander: alive ? look.wander : 0 })
+      : NO_LIVELINESS;
 
     const gaze: HeadGaze = {
       yaw: lerp(pose.gaze.yaw, look.yaw, look.mix) + life.dYaw,
@@ -397,6 +408,31 @@ export class FinagotchiEngine {
       glowColor: pose.glowColor,
       eyes,
     };
+  }
+
+  /** Pure function of time. Render this frame, or any other t, identically. */
+  sample(now: number): Frame {
+    const R = this.scale;
+    const def = STATE_DEFS[this.cur];
+    if (!def) throw new Error(`Unknown state: ${this.cur}`);
+
+    const shape = this.shapeAtTime(now);
+    const expr = this.exprAtTime(now);
+    return this.composeFrame(R, def, now, shape, expr, true);
+  }
+
+  /**
+   * Fast path for callers that only need a still frame (no liveliness, blink,
+   * gaze drift, or breath). Used by RadialPet when the creature is not moving.
+   */
+  sampleStatic(now = 0): Frame {
+    const R = this.scale;
+    const def = STATE_DEFS[this.cur];
+    if (!def) throw new Error(`Unknown state: ${this.cur}`);
+
+    const shape = this.shapeAtTime(now);
+    const expr = this.exprAtTime(now);
+    return this.composeFrame(R, def, now, shape, expr, false);
   }
 
   /** Advance to the next lifecycle stage. */

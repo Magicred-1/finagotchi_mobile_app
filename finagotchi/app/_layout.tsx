@@ -5,10 +5,7 @@ declare const process: { env: Record<string, string | undefined> };
 import React, { useEffect, useMemo } from 'react';
 import { Stack } from 'expo-router';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
-import {
-  PhantomProvider,
-  AddressType,
-} from '@phantom/react-native-sdk';
+import { TurnkeyProvider } from '@turnkey/react-native-wallet-kit';
 import * as SplashScreen from 'expo-splash-screen';
 
 import OnboardingFlow from '../src/features/onboarding/OnboardingFlow';
@@ -29,25 +26,49 @@ import {
 
 SplashScreen.preventAutoHideAsync();
 
-// Register your app at https://dashboard.phantom.app to get a real App ID.
-const PHANTOM_APP_ID =
-  process.env.EXPO_PUBLIC_PHANTOM_APP_ID ?? 'YOUR_PHANTOM_APP_ID';
+const TURNKEY_ORGANIZATION_ID =
+  process.env.EXPO_PUBLIC_TURNKEY_ORGANIZATION_ID ?? '';
+const TURNKEY_AUTH_PROXY_CONFIG_ID =
+  process.env.EXPO_PUBLIC_TURNKEY_AUTH_PROXY_CONFIG_ID ?? '';
+const TURNKEY_RPID = process.env.EXPO_PUBLIC_TURNKEY_RPID ?? '';
+const GOOGLE_WEB_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID;
+const APPLE_IOS_BUNDLE_ID = process.env.EXPO_PUBLIC_APPLE_IOS_BUNDLE_ID;
+const APPLE_SERVICES_ID = process.env.EXPO_PUBLIC_APPLE_SERVICES_ID;
 
 export default function RootLayout() {
   return (
-    <PhantomProvider
+    <TurnkeyProvider
       config={{
-        appId: PHANTOM_APP_ID,
-        scheme: 'finagotchi',
-        addressTypes: [AddressType.solana],
-        providers: ['google', 'apple'],
-        authOptions: {
-          redirectUrl: 'finagotchi://phantom-auth-callback',
+        organizationId: TURNKEY_ORGANIZATION_ID,
+        authProxyConfigId: TURNKEY_AUTH_PROXY_CONFIG_ID,
+        passkeyConfig: {
+          rpId: TURNKEY_RPID,
+          rpName: 'Finagotchi',
+        },
+        auth: {
+          passkey: true,
+          otp: { email: true },
+          oauth: {
+            appScheme: 'finagotchi',
+            ...(GOOGLE_WEB_CLIENT_ID && {
+              google: {
+                primaryClientId: { webClientId: GOOGLE_WEB_CLIENT_ID },
+              },
+            }),
+            ...(APPLE_IOS_BUNDLE_ID && {
+              apple: {
+                primaryClientId: {
+                  iosBundleId: APPLE_IOS_BUNDLE_ID,
+                  serviceId: APPLE_SERVICES_ID,
+                },
+              },
+            }),
+          },
         },
       }}
     >
       <AppContent />
-    </PhantomProvider>
+    </TurnkeyProvider>
   );
 }
 
@@ -71,7 +92,7 @@ function AppContent() {
   const walletAddress = useWalletStore((state) => state.address);
   const mintAddress = usePetStore((state) => state.mintAddress);
 
-  // Keep the wallet hook mounted so it syncs Phantom SDK state to our store.
+  // Keep the wallet hook mounted so it syncs wallet state to our store.
   useWallet();
 
   // Wallet connection and creature mint are mandatory. If any required state

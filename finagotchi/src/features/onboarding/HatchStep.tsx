@@ -12,9 +12,11 @@ import Animated, {
     useReducedMotion,
     useSharedValue,
     withSequence,
+    withSpring,
     withTiming,
 } from 'react-native-reanimated';
 import * as Haptics from 'expo-haptics';
+import Svg, { Path } from 'react-native-svg';
 
 import { RadialPet } from '../../components/RadialPet';
 import { colors, spacing, typography } from '../../theme/tokens';
@@ -25,128 +27,216 @@ type Props = {
 };
 
 export default function HatchStep({ creatureName, onFinished }: Props) {
-    const [hatched, setHatched] = useState(false);
-    const scale = useSharedValue(1);
-    const rotate = useSharedValue(0);
-    const eggOpacity = useSharedValue(1);
-    const creatureOpacity = useSharedValue(0);
-    const welcomeOpacity = useSharedValue(0);
+    const [cracked, setCracked] = useState(false);
+    const [showWelcome, setShowWelcome] = useState(false);
     const reducedMotion = useReducedMotion();
-    const hatchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const hatchingRef = useRef(false);
+    const timersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+
+    const eggOpacity = useSharedValue(1);
+    const eggScale = useSharedValue(1);
+    const eggRotate = useSharedValue(0);
+
+    const creatureOpacity = useSharedValue(0);
+    const creatureScale = useSharedValue(0.4);
+    const creatureRotate = useSharedValue(0);
+
+    const crackOpacity = useSharedValue(0);
+    const crackScale = useSharedValue(1);
+
+    const burstOpacity = useSharedValue(0);
+    const burstScale = useSharedValue(0.3);
+
+    const welcomeOpacity = useSharedValue(0);
+    const welcomeTranslateY = useSharedValue(24);
+
+    const clearTimers = useCallback(() => {
+        timersRef.current.forEach(clearTimeout);
+        timersRef.current = [];
+    }, []);
 
     const hatch = useCallback(() => {
-        if (hatched) return;
+        if (hatchingRef.current || cracked) return;
+        hatchingRef.current = true;
+        setCracked(true);
 
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
 
         if (reducedMotion) {
-            hatchTimerRef.current = setTimeout(() => {
-                setHatched(true);
-                eggOpacity.value = withTiming(0, { duration: 200 });
-                creatureOpacity.value = withTiming(1, { duration: 200 });
-                welcomeOpacity.value = withTiming(1, { duration: 200 });
-            }, 300);
+            eggOpacity.value = 0;
+            creatureOpacity.value = 1;
+            creatureScale.value = 1;
+            const t1 = setTimeout(() => {
+                setShowWelcome(true);
+                welcomeOpacity.value = withTiming(1, { duration: 300 });
+                welcomeTranslateY.value = withTiming(0, { duration: 300 });
+            }, 600);
+            timersRef.current = [t1];
             return;
         }
 
-        scale.value = withSequence(
-            withTiming(1.15, { duration: 200, easing: Easing.out(Easing.cubic) }),
-            withTiming(0.95, { duration: 200, easing: Easing.out(Easing.cubic) }),
-            withTiming(1.08, { duration: 200, easing: Easing.out(Easing.cubic) }),
-            withTiming(1, { duration: 200, easing: Easing.out(Easing.cubic) })
+        // Egg shakes and cracks.
+        eggRotate.value = withSequence(
+            withTiming(-14, { duration: 70, easing: Easing.out(Easing.cubic) }),
+            withTiming(14, { duration: 70, easing: Easing.out(Easing.cubic) }),
+            withTiming(-16, { duration: 70, easing: Easing.out(Easing.cubic) }),
+            withTiming(16, { duration: 70, easing: Easing.out(Easing.cubic) }),
+            withTiming(0, { duration: 90, easing: Easing.out(Easing.cubic) })
         );
 
-        rotate.value = withSequence(
-            withTiming(-8, { duration: 120, easing: Easing.out(Easing.cubic) }),
-            withTiming(8, { duration: 120, easing: Easing.out(Easing.cubic) }),
-            withTiming(-6, { duration: 120, easing: Easing.out(Easing.cubic) }),
-            withTiming(6, { duration: 120, easing: Easing.out(Easing.cubic) }),
-            withTiming(0, { duration: 120, easing: Easing.out(Easing.cubic) })
+        eggScale.value = withSequence(
+            withTiming(1.08, { duration: 90, easing: Easing.out(Easing.cubic) }),
+            withTiming(0.96, { duration: 90, easing: Easing.out(Easing.cubic) }),
+            withTiming(1.12, { duration: 90, easing: Easing.out(Easing.cubic) }),
+            withTiming(0.94, { duration: 90, easing: Easing.out(Easing.cubic) }),
+            withTiming(1, { duration: 120, easing: Easing.out(Easing.cubic) })
         );
 
-        hatchTimerRef.current = setTimeout(() => {
-            setHatched(true);
-            eggOpacity.value = withTiming(0, { duration: 250 });
-            creatureOpacity.value = withTiming(1, { duration: 400 });
-            welcomeOpacity.value = withTiming(1, { duration: 400 });
-        }, 800);
-    }, [hatched, scale, rotate, eggOpacity, creatureOpacity, welcomeOpacity, reducedMotion]);
+        crackOpacity.value = withTiming(1, { duration: 200, easing: Easing.out(Easing.quad) });
+        crackScale.value = withSequence(
+            withTiming(1.06, { duration: 120 }),
+            withTiming(1, { duration: 150 })
+        );
+
+        // The shell bursts open and the creature springs out.
+        const t1 = setTimeout(() => {
+            eggOpacity.value = withTiming(0, { duration: 220 });
+            eggScale.value = withTiming(0.78, { duration: 220, easing: Easing.out(Easing.cubic) });
+
+            creatureOpacity.value = withTiming(1, { duration: 260 });
+            creatureScale.value = withSpring(1, { damping: 10, stiffness: 120 });
+            creatureRotate.value = withSequence(
+                withTiming(-12, { duration: 160, easing: Easing.out(Easing.cubic) }),
+                withTiming(0, { duration: 280, easing: Easing.out(Easing.cubic) })
+            );
+
+            burstOpacity.value = withTiming(1, { duration: 180 });
+            burstScale.value = withSpring(1.8, { damping: 11, stiffness: 130 });
+        }, 520);
+
+        // Sparkle burst fades.
+        const t2 = setTimeout(() => {
+            burstOpacity.value = withTiming(0, { duration: 450 });
+        }, 1300);
+
+        // Welcome message slides in.
+        const t3 = setTimeout(() => {
+            setShowWelcome(true);
+            welcomeOpacity.value = withTiming(1, { duration: 450 });
+            welcomeTranslateY.value = withTiming(0, { duration: 450, easing: Easing.out(Easing.cubic) });
+        }, 1650);
+
+        timersRef.current = [t1, t2, t3];
+    }, [cracked, reducedMotion, eggOpacity, eggScale, eggRotate, creatureOpacity, creatureScale, creatureRotate, crackOpacity, crackScale, burstOpacity, burstScale, welcomeOpacity, welcomeTranslateY]);
 
     useEffect(() => {
-        if (!hatched) return;
+        if (!showWelcome) return;
 
         const timer = setTimeout(() => {
             onFinished();
-        }, 1500);
+        }, 1800);
 
         return () => clearTimeout(timer);
-    }, [hatched, onFinished]);
+    }, [showWelcome, onFinished]);
 
     useEffect(() => {
-        return () => {
-            if (hatchTimerRef.current) {
-                clearTimeout(hatchTimerRef.current);
-            }
-        };
-    }, []);
+        return () => clearTimers();
+    }, [clearTimers]);
 
     const eggStyle = useAnimatedStyle(() => ({
         opacity: eggOpacity.value,
         transform: [
-            { scale: scale.value },
-            { rotate: `${rotate.value}deg` },
+            { scale: eggScale.value },
+            { rotate: `${eggRotate.value}deg` },
         ],
     }));
 
     const creatureStyle = useAnimatedStyle(() => ({
         opacity: creatureOpacity.value,
         transform: [
-            { scale: creatureOpacity.value },
+            { scale: creatureScale.value },
+            { rotate: `${creatureRotate.value}deg` },
         ],
+    }));
+
+    const crackStyle = useAnimatedStyle(() => ({
+        opacity: crackOpacity.value,
+        transform: [{ scale: crackScale.value }],
+    }));
+
+    const burstStyle = useAnimatedStyle(() => ({
+        opacity: burstOpacity.value,
+        transform: [{ scale: burstScale.value }],
     }));
 
     const welcomeStyle = useAnimatedStyle(() => ({
         opacity: welcomeOpacity.value,
-        transform: [
-            { translateY: (1 - welcomeOpacity.value) * 12 },
-        ],
+        transform: [{ translateY: welcomeTranslateY.value }],
     }));
 
     return (
         <SafeAreaView style={styles.safe}>
             <View style={styles.container}>
-                <Pressable
-                    onPress={hatch}
-                    style={styles.stage}
-                    disabled={hatched}
-                >
-                    <Animated.View style={[styles.petWrap, eggStyle]}>
-                        <RadialPet stage="egg" mood="calm" size={200} />
-                    </Animated.View>
+                <View style={styles.stage}>
+                    <Pressable
+                        onPress={hatch}
+                        style={StyleSheet.absoluteFill}
+                        disabled={cracked}
+                    />
 
+                    <View style={styles.stageContent} pointerEvents="none">
+                        <View style={styles.petWrap}>
+                            <Animated.View style={[StyleSheet.absoluteFill, eggStyle]}>
+                                <RadialPet stage="egg" mood="calm" size={200} />
+                            </Animated.View>
+
+                            <Animated.View style={[StyleSheet.absoluteFill, creatureStyle]}>
+                                <RadialPet stage="coinling" mood="excited" size={200} />
+                            </Animated.View>
+
+                            {cracked && (
+                                <Animated.View style={[styles.crackOverlay, crackStyle]}>
+                                    <Svg width={200} height={200} viewBox="0 0 200 200">
+                                        <Path
+                                            d="M60 55 L84 92 L64 104 L92 148"
+                                            stroke="rgba(255,255,255,0.75)"
+                                            strokeWidth="3"
+                                            fill="none"
+                                            strokeLinecap="round"
+                                        />
+                                        <Path
+                                            d="M140 60 L116 96 L142 114 L108 152"
+                                            stroke="rgba(255,255,255,0.75)"
+                                            strokeWidth="3"
+                                            fill="none"
+                                            strokeLinecap="round"
+                                        />
+                                    </Svg>
+                                </Animated.View>
+                            )}
+
+                            <Animated.View style={[styles.burst, burstStyle]}>
+                                <Text style={styles.burstText}>✨</Text>
+                            </Animated.View>
+                        </View>
+
+                        {!cracked ? (
+                            <View style={styles.textWrap}>
+                                <Text style={styles.title}>Tap to hatch</Text>
+                                <Text style={styles.subtitle}>
+                                    Your egg is ready, {creatureName}
+                                </Text>
+                            </View>
+                        ) : null}
+                    </View>
+                </View>
+
+                {showWelcome ? (
                     <Animated.View
-                        style={[
-                            styles.petWrap,
-                            styles.creatureWrap,
-                            creatureStyle,
-                        ]}
+                        style={[styles.welcomeWrap, welcomeStyle]}
                         pointerEvents="none"
                     >
-                        <RadialPet stage="coinling" mood="happy" size={200} />
-                    </Animated.View>
-
-                    {!hatched ? (
-                        <View style={styles.textWrap}>
-                            <Text style={styles.title}>Tap to hatch</Text>
-                            <Text style={styles.subtitle}>
-                                Your egg is ready, {creatureName}
-                            </Text>
-                        </View>
-                    ) : null}
-                </Pressable>
-
-                {hatched ? (
-                    <Animated.View style={[styles.welcomeWrap, welcomeStyle]}>
                         <View style={styles.welcomePet}>
                             <RadialPet
                                 stage="coinling"
@@ -176,9 +266,13 @@ const styles = StyleSheet.create({
         flex: 1,
         alignItems: 'center',
         justifyContent: 'center',
-        paddingHorizontal: 28,
     },
     stage: {
+        flex: 1,
+        width: '100%',
+    },
+    stageContent: {
+        flex: 1,
         alignItems: 'center',
         justifyContent: 'center',
     },
@@ -188,12 +282,23 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         justifyContent: 'center',
     },
-    creatureWrap: {
+    crackOverlay: {
+        ...StyleSheet.absoluteFillObject,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    burst: {
         position: 'absolute',
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    burstText: {
+        fontSize: 90,
     },
     textWrap: {
         alignItems: 'center',
         marginTop: spacing.lg,
+        paddingHorizontal: 28,
     },
     title: {
         color: colors.text,
@@ -209,8 +314,9 @@ const styles = StyleSheet.create({
         textAlign: 'center',
     },
     welcomeWrap: {
-        position: 'absolute',
+        ...StyleSheet.absoluteFillObject,
         alignItems: 'center',
+        justifyContent: 'center',
         paddingHorizontal: 28,
     },
     welcomePet: {

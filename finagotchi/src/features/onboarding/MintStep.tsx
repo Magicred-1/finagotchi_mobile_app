@@ -119,8 +119,9 @@ export default function MintStep({
                             isSmall && styles.bodySmall,
                         ]}
                     >
-                        This is a demo mint on devnet. No real SOL is spent,
-                        but your creature will be saved as yours.
+                        Minting your creature requires a small SOL fee. On
+                        devnet this uses test SOL, and the NFT metadata will be
+                        tied to your wallet.
                     </Text>
                     <Text style={styles.address}>
                         Wallet: {truncatedAddress}
