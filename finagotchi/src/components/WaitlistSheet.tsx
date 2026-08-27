@@ -53,6 +53,11 @@ const BULLETS = [
         title: 'No keys on the device',
         body: 'Your wallet stays on your phone; the companion only reads public data.',
     },
+    {
+        icon: 'trending-up-outline' as const,
+        title: 'Double XP when bound',
+        body: 'Pair the hardware with your app to earn 2× XP on check-ins and quests.',
+    },
 ];
 
 const STAGGER_DELAY = 55;
@@ -108,6 +113,7 @@ function HardwarePlaceholder() {
 
 export default function WaitlistSheet({ visible, onClose }: Props) {
     const addEntry = useWaitlistStore((state) => state.addEntry);
+    const boostMultiplier = useWaitlistStore((state) => state.getBoostMultiplier());
     const scrollRef = useRef<ScrollView>(null);
 
     const [email, setEmail] = useState('');
@@ -305,9 +311,23 @@ export default function WaitlistSheet({ visible, onClose }: Props) {
                             You're on the list!
                         </Text>
                         <Text style={styles.successBody}>
-                            We'll reach out when the Finagotchi Hardware
-                            Companion is ready for early supporters.
+                            You now have early access to the Finagotchi hardware
+                            pre-order. We'll email you as soon as units are
+                            ready.
                         </Text>
+
+                        {/* {boostMultiplier > 1 ? (
+                            <View style={styles.boostPill}>
+                                <Ionicons
+                                    name="trending-up-outline"
+                                    size={14}
+                                    color={colors.warning}
+                                />
+                                <Text style={styles.boostPillText}>
+                                    Hardware owner 2× point boost unlocked
+                                </Text>
+                            </View>
+                        ) : null} */}
 
                         <Button
                             title="Close"
@@ -322,21 +342,35 @@ export default function WaitlistSheet({ visible, onClose }: Props) {
                                 <HardwarePlaceholder />
                             </Animated.View>
 
-                            <Text style={styles.eyebrow}>Hardware Companion</Text>
+                            <Text style={styles.eyebrow}>Early Access</Text>
                             <Text style={styles.heroTitle}>
-                                Take Finagotchi with you
+                                Get early access to Finagotchi hardware
                             </Text>
                             <Text style={styles.heroBody}>
-                                A physical sidekick that brings your pet off the
-                                screen and into your daily routine.
+                                Join the list for the hardware pre-order and
+                                unlock double XP when your companion is bound to
+                                the app.
                             </Text>
+
+                            {/* <View style={styles.scarcityPill}>
+                                <Ionicons
+                                    name="flash-outline"
+                                    size={12}
+                                    color={colors.warning}
+                                />
+                                <Text style={styles.scarcityText}>
+                                    First batch is limited
+                                </Text>
+                            </View> */}
                         </Animated.View>
 
                         <Animated.View style={[styles.form, formStyle]}>
+                            {/* <MultiplierBanner /> */}
+
                             <TextInput
                                 value={email}
                                 onChangeText={setEmail}
-                                placeholder="Email address"
+                                placeholder="Enter your email"
                                 placeholderTextColor={colors.textMuted}
                                 style={styles.input}
                                 keyboardType="email-address"
@@ -351,7 +385,11 @@ export default function WaitlistSheet({ visible, onClose }: Props) {
                             ) : null}
 
                             <Button
-                                title={loading ? 'Joining…' : 'Join the waitlist'}
+                                title={
+                                    loading
+                                        ? 'Joining…'
+                                        : 'Get early access'
+                                }
                                 onPress={handleSubmit}
                                 disabled={loading}
                             />
@@ -361,7 +399,7 @@ export default function WaitlistSheet({ visible, onClose }: Props) {
                                 style={styles.later}
                             >
                                 <Text style={styles.laterText}>
-                                    Maybe later
+                                    Not now
                                 </Text>
                             </PressableScale>
                         </Animated.View>
@@ -463,6 +501,25 @@ const styles = StyleSheet.create({
         textAlign: 'center',
         lineHeight: 20,
         maxWidth: 300,
+        marginBottom: spacing.sm,
+    },
+    scarcityPill: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+        paddingVertical: 6,
+        paddingHorizontal: 12,
+        borderRadius: radius.pill,
+        backgroundColor: 'rgba(255,209,102,0.10)',
+        borderWidth: 1,
+        borderColor: 'rgba(255,209,102,0.20)',
+    },
+    scarcityText: {
+        color: colors.warning,
+        fontSize: 11,
+        fontFamily: 'Poppins_700Bold',
+        textTransform: 'uppercase',
+        letterSpacing: 0.5,
     },
     form: {
         gap: spacing.md,
@@ -547,5 +604,56 @@ const styles = StyleSheet.create({
         lineHeight: 24,
         marginBottom: spacing.xl,
         maxWidth: 300,
+    },
+    multiplierIcon: {
+        width: 38,
+        height: 38,
+        alignItems: 'center',
+        justifyContent: 'center',
+        borderRadius: 10,
+        backgroundColor: 'rgba(255,209,102,0.12)',
+    },
+    multiplierText: {
+        flex: 1,
+        gap: 2,
+    },
+    multiplierTitle: {
+        color: colors.text,
+        fontSize: typography.small,
+        fontFamily: 'Poppins_700Bold',
+    },
+    multiplierBody: {
+        color: colors.textMuted,
+        fontSize: 11,
+        fontFamily: 'Poppins_400Regular',
+        lineHeight: 16,
+    },
+    multiplierBadge: {
+        paddingVertical: 6,
+        paddingHorizontal: 10,
+        borderRadius: 10,
+        backgroundColor: colors.warning,
+    },
+    multiplierBadgeText: {
+        color: colors.background,
+        fontSize: 14,
+        fontFamily: 'Poppins_800ExtraBold',
+    },
+    boostPill: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+        marginBottom: spacing.xl,
+        paddingVertical: 8,
+        paddingHorizontal: 14,
+        borderRadius: radius.pill,
+        backgroundColor: 'rgba(255,209,102,0.10)',
+        borderWidth: 1,
+        borderColor: 'rgba(255,209,102,0.20)',
+    },
+    boostPillText: {
+        color: colors.warning,
+        fontSize: typography.small,
+        fontFamily: 'Poppins_700Bold',
     },
 });

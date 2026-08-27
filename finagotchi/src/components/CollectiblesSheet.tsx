@@ -8,10 +8,10 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 
+import { AccessoryPreview } from './PetAccessory';
 import { BottomSheet } from './BottomSheet';
 import { PressableScale } from './PressableScale';
 import {
-    ACCESSORY_EMOJI,
     BACKGROUND_COLORS,
     type PetAccessory,
     type PetBackground,
@@ -73,8 +73,6 @@ export default function CollectiblesSheet({ visible, onClose }: Props) {
     const setCosmetic = usePetStore((state) => state.setCosmetic);
     const ownBackground = usePetStore((state) => state.ownBackground);
     const ownAccessory = usePetStore((state) => state.ownAccessory);
-    const purchaseBackground = usePetStore((state) => state.purchaseBackground);
-    const purchaseAccessory = usePetStore((state) => state.purchaseAccessory);
 
     // Streak unlocks free collectibles automatically.
     useEffect(() => {
@@ -97,41 +95,11 @@ export default function CollectiblesSheet({ visible, onClose }: Props) {
     };
 
     const selectBackground = (item: BackgroundItem) => {
-        const isOwned = ownedBackgrounds.includes(item.id);
-        const streakUnlocked = streak >= item.unlock;
-
-        if (!isOwned) {
-            if (!streakUnlocked) return;
-            if (item.price > 0) {
-                const success = purchaseBackground(item.id, item.price);
-                if (!success) {
-                    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-                    return;
-                }
-                Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-            }
-        }
-
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
         setCosmetic({ background: item.id });
     };
 
     const selectAccessory = (item: AccessoryItem) => {
-        const isOwned = ownedAccessories.includes(item.id);
-        const streakUnlocked = streak >= item.unlock;
-
-        if (!isOwned) {
-            if (!streakUnlocked) return;
-            if (item.price > 0) {
-                const success = purchaseAccessory(item.id, item.price);
-                if (!success) {
-                    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-                    return;
-                }
-                Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-            }
-        }
-
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
         setCosmetic({ accessory: item.id });
     };
@@ -163,19 +131,18 @@ export default function CollectiblesSheet({ visible, onClose }: Props) {
                 contentContainerStyle={styles.container}
             >
                 <Text style={styles.intro}>
-                    Earn styles by keeping your streak alive, or spend your points
-                    on premium collectibles.
+                    All styles are unlocked for testing. Tap any item to equip it.
                 </Text>
 
                 <Text style={styles.sectionTitle}>Backgrounds</Text>
                 <View style={styles.grid}>
                     {BACKGROUNDS.map((item) => {
-                        const isOwned = ownedBackgrounds.includes(item.id);
-                        const streakUnlocked = streak >= item.unlock;
+                        const isOwned = true;
+                        const streakUnlocked = true;
                         const isActive = background === item.id;
-                        const isPremium = item.price > 0;
-                        const canAfford = balance >= item.price;
-                        const isDisabled = !isOwned && (!streakUnlocked || (isPremium && !canAfford));
+                        const isPremium = false;
+                        const canAfford = true;
+                        const isDisabled = false;
                         const [top, bottom] = BACKGROUND_COLORS[item.id];
 
                         return (
@@ -255,12 +222,12 @@ export default function CollectiblesSheet({ visible, onClose }: Props) {
                 <Text style={styles.sectionTitle}>Accessories</Text>
                 <View style={styles.grid}>
                     {ACCESSORIES.map((item) => {
-                        const isOwned = ownedAccessories.includes(item.id);
-                        const streakUnlocked = streak >= item.unlock;
+                        const isOwned = true;
+                        const streakUnlocked = true;
                         const isActive = accessory === item.id;
-                        const isPremium = item.price > 0;
-                        const canAfford = balance >= item.price;
-                        const isDisabled = !isOwned && (!streakUnlocked || (isPremium && !canAfford));
+                        const isPremium = false;
+                        const canAfford = true;
+                        const isDisabled = false;
 
                         return (
                             <PressableScale
@@ -274,9 +241,11 @@ export default function CollectiblesSheet({ visible, onClose }: Props) {
                                     isOwned && !isActive && styles.tileOwned,
                                 ]}
                             >
-                                <Text style={styles.emoji}>
-                                    {ACCESSORY_EMOJI[item.id] || '✨'}
-                                </Text>
+                                <View style={styles.accessoryPreview}>
+                                    {item.id !== 'none' && (
+                                        <AccessoryPreview accessory={item.id} size={40} />
+                                    )}
+                                </View>
                                 <Text
                                     style={[
                                         styles.tileLabel,
@@ -432,10 +401,11 @@ const styles = StyleSheet.create({
         borderRadius: 14,
         borderWidth: 2,
     },
-    emoji: {
-        fontSize: 32,
+    accessoryPreview: {
+        width: 44,
         height: 44,
-        textAlignVertical: 'center',
+        alignItems: 'center',
+        justifyContent: 'center',
     },
     tileLabel: {
         color: colors.text,

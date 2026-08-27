@@ -9,9 +9,9 @@ const config = getDefaultConfig(__dirname);
 config.resolver.assetExts = config.resolver.assetExts.filter((ext) => ext !== 'cjs');
 config.resolver.sourceExts = ['cjs', ...config.resolver.sourceExts];
 
-// tweetnacl (via @phantom/crypto) requires Node's built-in 'crypto' module
-// for randomBytes. Hermes/JSC don't include it, so intercept that import
-// and point it at our minimal JS polyfill.
+// tweetnacl requires Node's built-in 'crypto' module for randomBytes.
+// Hermes/JSC don't include it, so intercept that import and point it at our
+// minimal JS polyfill.
 const cryptoPolyfillPath = path.resolve(__dirname, 'src/crypto-polyfill.ts');
 const originalResolveRequest = config.resolver.resolveRequest;
 

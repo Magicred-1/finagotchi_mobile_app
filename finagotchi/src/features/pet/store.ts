@@ -16,15 +16,6 @@ export const BACKGROUND_COLORS: Record<PetBackground, readonly [string, string]>
     gold: ['rgba(255,193,94,0.14)', 'rgba(255,142,74,0.12)'],
 };
 
-export const ACCESSORY_EMOJI: Record<PetAccessory, string> = {
-    none: '',
-    crown: '👑',
-    glasses: '🕶️',
-    bowtie: '🎀',
-    halo: '😇',
-    diamond: '💎',
-};
-
 export const STAGE_NAMES: Record<PetStage, string> = {
     1: 'Egg',
     2: 'Hatchling • Newborn',
@@ -34,6 +25,25 @@ export const STAGE_NAMES: Record<PetStage, string> = {
 };
 
 export const STAGE_THRESHOLDS = [0, 1, 7, 30, 90];
+
+export const LIFE_DURATION_MS = 24 * 60 * 60 * 1000;
+
+/** Progressive revive window: 1st death 30 min, 2nd 2 hours, 3rd+ 5 hours. */
+export const REVIVE_COOLDOWNS_MS = [
+    30 * 60 * 1000,
+    2 * 60 * 60 * 1000,
+    5 * 60 * 60 * 1000,
+];
+
+/** Free care actions (caress) are capped per calendar day. */
+export const FREE_ACTION_DAILY_LIMIT = 10;
+
+export type CauseOfDeath = 'starvation' | 'neglect';
+
+type DailyFreeUses = {
+    date: string;
+    count: number;
+};
 
 type PetState = {
     stage: PetStage;
@@ -49,6 +59,38 @@ type PetState = {
     balance: number;
     ownedBackgrounds: PetBackground[];
     ownedAccessories: PetAccessory[];
+    /** 0-100 happiness. Decays when the creature is bored and restores when fed or played with. */
+    happiness: number;
+    /** ISO date of the last time the creature was fed (check-in). */
+    lastFedAt: string | null;
+    /** ISO date of the last time the creature was engaged (fed, played, trained, caressed). */
+    lastInteractionAt: string | null;
+    /** True when the creature has died. Blocks normal interaction until revived. */
+    isDead: boolean;
+    /** True when the creature is in spectral (soft-death) form. Alias for isDead kept for clarity. */
+    isSpectral: boolean;
+    /** How many times the creature has died. Drives the progressive revive cooldown. */
+    deathCount: number;
+    /** ISO date of death. */
+    deathAt: string | null;
+    /** Why the creature died. */
+    causeOfDeath: CauseOfDeath | null;
+    /** ISO date when the paid revive window closes. */
+    reviveWindowEndsAt: string | null;
+    /** ISO date when the 24-hour life timer expires. */
+    lifeTimerEndsAt: string | null;
+    /** ISO date when the hired guardian expires. */
+    guardianExpiresAt: string | null;
+    /** XP earned from quests and care. Drives level progression. */
+    xp: number;
+    /** Current player level. Unlocks cosmetics, foods, and boosts. */
+    level: number;
+    /** Consumable revive tokens (free remint). */
+    reviveTokens: number;
+    /** Consumable streak freezes. */
+    streakFreezes: number;
+    /** Tracks free care actions used today. */
+    dailyFreeUses: DailyFreeUses;
 
     getStage: () => PetStage;
     setCreatureName: (name: string) => void;
@@ -67,7 +109,60 @@ type PetState = {
     ownBackground: (id: PetBackground) => void;
     /** Own an accessory without spending (e.g. streak unlocks). */
     ownAccessory: (id: PetAccessory) => void;
+    /** Feed the creature, giving a happiness boost and resetting the 24-hour life timer. */
+    feedPet: () => void;
+    /** Restore a flat amount of happiness. */
+    boostHappiness: (amount: number) => void;
+    /** Reduce happiness by a flat amount, clamped to 0. */
+    reduceHappiness: (amount: number) => void;
+    /** Decay happiness for each hour since the last interaction. */
+    decayHappiness: () => void;
+    /**
+     * Attempt to use a free care action for today.
+     * Returns true if within the daily limit, false otherwise.
+     */
+    useFreeAction: () => boolean;
+    /**
+     * Kill the creature. Instead of burning the NFT, the creature becomes
+     * spectral (soft-death). The mint address is preserved and a progressive
+     * revive window is opened based on deathCount.
+     */
+    killCreature: (cause: CauseOfDeath) => void;
+    /**
+     * Revive the creature from spectral form.
+     * @param resetProgress - If true, reset level/stage progress as a hard penalty.
+     */
+    reviveCreature: (resetProgress?: boolean) => void;
+    /** Whether the paid revive window is still open. */
+    isReviveWindowActive: () => boolean;
+    /** Time remaining in the revive window, in ms. */
+    getReviveWindowRemainingMs: () => number;
+    /** Check the 24-hour life timer and kill the creature if it expired. */
+    checkLifeTimer: () => void;
+    /** Time remaining on the 24-hour life timer, in ms. */
+    getLifeTimerRemainingMs: () => number;
+    /** Add XP and check for level up. */
+    addXp: (amount: number) => void;
+    /** Buy a revive token with balance. */
+    buyReviveToken: (price: number) => boolean;
+    /** Buy a streak freeze with balance. */
+    buyStreakFreeze: (price: number) => boolean;
+    /** Hire a guardian to keep the creature alive while you are away. */
+    hireGuardian: (hours: number, price: number) => boolean;
+    /** Whether a guardian is currently active. */
+    isGuardianActive: () => boolean;
+    /** Time remaining on the guardian timer, in ms. */
+    getGuardianRemainingMs: () => number;
 };
+
+function todayKey(): string {
+    const d = new Date();
+    return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+}
+
+function reviveWindowMs(deathCount: number): number {
+    return REVIVE_COOLDOWNS_MS[Math.min(Math.max(0, deathCount - 1), REVIVE_COOLDOWNS_MS.length - 1)];
+}
 
 export const usePetStore = create<PetState>()(
     persist(
@@ -82,8 +177,24 @@ export const usePetStore = create<PetState>()(
             background: 'default',
             accessory: 'none',
             balance: 750,
-            ownedBackgrounds: ['default'],
-            ownedAccessories: ['none'],
+            ownedBackgrounds: ['default', 'aurora', 'sunset', 'midnight', 'galaxy', 'gold'],
+            ownedAccessories: ['none', 'crown', 'glasses', 'bowtie', 'halo', 'diamond'],
+            happiness: 100,
+            lastFedAt: null,
+            lastInteractionAt: null,
+            isDead: false,
+            isSpectral: false,
+            deathCount: 0,
+            deathAt: null,
+            causeOfDeath: null,
+            reviveWindowEndsAt: null,
+            lifeTimerEndsAt: null,
+            guardianExpiresAt: null,
+            xp: 0,
+            level: 1,
+            reviveTokens: 1,
+            streakFreezes: 1,
+            dailyFreeUses: { date: todayKey(), count: 0 },
 
             getStage: () => get().stage,
 
@@ -92,13 +203,26 @@ export const usePetStore = create<PetState>()(
             },
 
             mintCreature: (name, mintAddress) => {
+                const now = new Date().toISOString();
                 set({
                     name: name.trim() || null,
                     mintAddress,
-                    mintedAt: new Date().toISOString(),
+                    mintedAt: now,
                     stage: 1,
                     lastCelebratedStage: 1,
-                    evolvedAt: new Date().toISOString(),
+                    evolvedAt: now,
+                    happiness: 100,
+                    lastInteractionAt: now,
+                    lifeTimerEndsAt: new Date(
+                        Date.now() + LIFE_DURATION_MS
+                    ).toISOString(),
+                    isDead: false,
+                    isSpectral: false,
+                    deathCount: 0,
+                    deathAt: null,
+                    causeOfDeath: null,
+                    reviveWindowEndsAt: null,
+                    guardianExpiresAt: null,
                 });
             },
 
@@ -157,10 +281,236 @@ export const usePetStore = create<PetState>()(
                 if (state.ownedAccessories.includes(id)) return;
                 set({ ownedAccessories: [...state.ownedAccessories, id] });
             },
+
+            feedPet: () => {
+                const now = new Date().toISOString();
+                set({
+                    happiness: Math.min(100, get().happiness + 20),
+                    lastFedAt: now,
+                    lastInteractionAt: now,
+                    lifeTimerEndsAt: new Date(
+                        Date.now() + LIFE_DURATION_MS
+                    ).toISOString(),
+                });
+            },
+
+            boostHappiness: (amount) => {
+                const now = new Date().toISOString();
+                set({
+                    happiness: Math.min(100, get().happiness + Math.max(0, amount)),
+                    lastInteractionAt: now,
+                });
+            },
+
+            reduceHappiness: (amount) => {
+                set({ happiness: Math.max(0, get().happiness - Math.max(0, amount)) });
+            },
+
+            decayHappiness: () => {
+                const { lastInteractionAt, happiness, isDead } = get();
+                if (isDead || !lastInteractionAt || happiness <= 0) return;
+
+                const now = Date.now();
+                const lastInteraction = new Date(lastInteractionAt).getTime();
+                const hoursSince = Math.floor(
+                    (now - lastInteraction) / (1000 * 60 * 60)
+                );
+
+                if (hoursSince > 0) {
+                    const decay = hoursSince * 5;
+                    set({ happiness: Math.max(0, happiness - decay) });
+                }
+            },
+
+            useFreeAction: () => {
+                const state = get();
+                const today = todayKey();
+                const current = state.dailyFreeUses.date === today ? state.dailyFreeUses.count : 0;
+                if (current >= FREE_ACTION_DAILY_LIMIT) return false;
+                set({
+                    dailyFreeUses: { date: today, count: current + 1 },
+                    lastInteractionAt: new Date().toISOString(),
+                });
+                return true;
+            },
+
+            killCreature: (cause) => {
+                const now = new Date();
+                const nextDeathCount = get().deathCount + 1;
+                const windowEnds = new Date(now.getTime() + reviveWindowMs(nextDeathCount));
+                set({
+                    happiness: 0,
+                    isDead: true,
+                    isSpectral: true,
+                    deathCount: nextDeathCount,
+                    deathAt: now.toISOString(),
+                    causeOfDeath: cause,
+                    reviveWindowEndsAt: windowEnds.toISOString(),
+                    // NFT is not burned; mintAddress is preserved.
+                });
+            },
+
+            reviveCreature: (resetProgress = false) => {
+                const now = new Date();
+                const state = get();
+                set({
+                    happiness: 100,
+                    isDead: false,
+                    isSpectral: false,
+                    deathAt: null,
+                    causeOfDeath: null,
+                    reviveWindowEndsAt: null,
+                    mintAddress: state.mintAddress,
+                    mintedAt: resetProgress ? now.toISOString() : state.mintedAt,
+                    stage: resetProgress ? 1 : state.stage,
+                    lastCelebratedStage: resetProgress ? 1 : state.lastCelebratedStage,
+                    evolvedAt: resetProgress ? now.toISOString() : state.evolvedAt,
+                    totalCheckins: resetProgress ? 0 : state.totalCheckins,
+                    lastFedAt: now.toISOString(),
+                    lastInteractionAt: now.toISOString(),
+                    lifeTimerEndsAt: new Date(
+                        now.getTime() + LIFE_DURATION_MS
+                    ).toISOString(),
+                    xp: resetProgress ? 0 : state.xp,
+                    level: resetProgress ? 1 : state.level,
+                });
+            },
+
+            isReviveWindowActive: () => {
+                const end = get().reviveWindowEndsAt;
+                if (!end) return false;
+                return new Date(end).getTime() > Date.now();
+            },
+
+            getReviveWindowRemainingMs: () => {
+                const end = get().reviveWindowEndsAt;
+                if (!end) return 0;
+                return Math.max(0, new Date(end).getTime() - Date.now());
+            },
+
+            checkLifeTimer: () => {
+                const state = get();
+                if (state.isDead) return;
+                if (state.isGuardianActive()) return;
+
+                if (!state.lifeTimerEndsAt) {
+                    set({
+                        lifeTimerEndsAt: new Date(
+                            Date.now() + LIFE_DURATION_MS
+                        ).toISOString(),
+                    });
+                    return;
+                }
+
+                if (Date.now() >= new Date(state.lifeTimerEndsAt).getTime()) {
+                    get().killCreature('neglect');
+                }
+            },
+
+            getLifeTimerRemainingMs: () => {
+                const end = get().lifeTimerEndsAt;
+                if (!end) return LIFE_DURATION_MS;
+                return Math.max(0, new Date(end).getTime() - Date.now());
+            },
+
+            addXp: (amount) => {
+                const state = get();
+                const newXp = state.xp + Math.max(0, amount);
+                const xpNeeded = state.level * 100;
+
+                if (newXp >= xpNeeded) {
+                    set({
+                        xp: newXp - xpNeeded,
+                        level: state.level + 1,
+                    });
+                } else {
+                    set({ xp: newXp });
+                }
+            },
+
+            buyReviveToken: (price) => {
+                const state = get();
+                if (state.balance < price) return false;
+                set({
+                    balance: state.balance - price,
+                    reviveTokens: state.reviveTokens + 1,
+                });
+                return true;
+            },
+
+            buyStreakFreeze: (price) => {
+                const state = get();
+                if (state.balance < price) return false;
+                set({
+                    balance: state.balance - price,
+                    streakFreezes: state.streakFreezes + 1,
+                });
+                return true;
+            },
+
+            hireGuardian: (hours, price) => {
+                const state = get();
+                if (state.balance < price) return false;
+                const now = Date.now();
+                const existing = state.guardianExpiresAt
+                    ? Math.max(now, new Date(state.guardianExpiresAt).getTime())
+                    : now;
+                set({
+                    balance: state.balance - price,
+                    guardianExpiresAt: new Date(
+                        existing + hours * 60 * 60 * 1000
+                    ).toISOString(),
+                });
+                return true;
+            },
+
+            isGuardianActive: () => {
+                const end = get().guardianExpiresAt;
+                if (!end) return false;
+                return new Date(end).getTime() > Date.now();
+            },
+
+            getGuardianRemainingMs: () => {
+                const end = get().guardianExpiresAt;
+                if (!end) return 0;
+                return Math.max(0, new Date(end).getTime() - Date.now());
+            },
         }),
         {
             name: 'finagotchi-pet',
             storage: createJSONStorage(() => AsyncStorage),
+            migrate: (persistedState: unknown) => {
+                if (
+                    persistedState &&
+                    typeof persistedState === 'object'
+                ) {
+                    const state = persistedState as Record<string, unknown>;
+                    const migrated: Record<string, unknown> = { ...state };
+
+                    // Legacy health -> happiness rename.
+                    if (!('happiness' in migrated) && 'health' in migrated) {
+                        migrated.happiness = migrated.health;
+                        delete migrated.health;
+                    }
+
+                    // New soft-death / guardian fields.
+                    if (typeof migrated.isSpectral !== 'boolean') {
+                        migrated.isSpectral = migrated.isDead === true;
+                    }
+                    if (typeof migrated.deathCount !== 'number') {
+                        migrated.deathCount = 0;
+                    }
+                    if (typeof migrated.guardianExpiresAt !== 'string') {
+                        migrated.guardianExpiresAt = null;
+                    }
+                    if (!migrated.dailyFreeUses || typeof migrated.dailyFreeUses !== 'object') {
+                        migrated.dailyFreeUses = { date: todayKey(), count: 0 };
+                    }
+
+                    return migrated as PetState;
+                }
+                return persistedState as PetState;
+            },
         }
     )
 );
@@ -180,4 +530,13 @@ export function updatePetStage(streak: number) {
         stage,
         evolvedAt: new Date().toISOString(),
     });
+}
+
+export function feedPet() {
+    const now = new Date().toISOString();
+    usePetStore.setState((pet) => ({
+        happiness: Math.min(100, pet.happiness + 50),
+        lastFedAt: now,
+        lastInteractionAt: now,
+    }));
 }

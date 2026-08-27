@@ -3,39 +3,61 @@ import { PublicKey } from '@solana/web3.js';
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 
+function todayKey() {
+    const date = new Date();
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(
+        2,
+        '0'
+    )}-${String(date.getDate()).padStart(2, '0')}`;
+}
+
+export type WalletConnectionType = 'turnkey' | 'mwa' | null;
+
 export type WalletSession = {
     authToken: string | null;
-    phantomEncryptionPublicKey: string | null;
-    phantomSessionId: string | null;
+    connectionType: WalletConnectionType;
+    turnkeyUserId: string | null;
+    turnkeyWalletId: string | null;
 };
 
 type WalletState = {
     address: string | null;
     session: WalletSession;
+    transactionsToday: number;
+    transactionsResetAt: string | null;
 
-    connect: (address: string) => boolean;
+    connect: (address: string, connectionType: WalletConnectionType) => boolean;
     setSession: (session: Partial<WalletSession>) => void;
+    recordTransaction: () => void;
+    resetTransactionsIfNeeded: () => void;
     disconnect: () => void;
 };
 
 const defaultSession: WalletSession = {
     authToken: null,
-    phantomEncryptionPublicKey: null,
-    phantomSessionId: null,
+    connectionType: null,
+    turnkeyUserId: null,
+    turnkeyWalletId: null,
 };
 
 export const useWalletStore = create<WalletState>()(
     persist(
-        (set) => ({
+        (set, get) => ({
             address: null,
             session: defaultSession,
+            transactionsToday: 0,
+            transactionsResetAt: null,
 
-            connect: (address) => {
+            connect: (address, connectionType) => {
                 try {
                     new PublicKey(address);
 
                     set({
                         address,
+                        session: {
+                            ...defaultSession,
+                            connectionType,
+                        },
                     });
 
                     return true;
@@ -53,10 +75,26 @@ export const useWalletStore = create<WalletState>()(
                 }));
             },
 
+            recordTransaction: () => {
+                get().resetTransactionsIfNeeded();
+                set((state) => ({
+                    transactionsToday: state.transactionsToday + 1,
+                }));
+            },
+
+            resetTransactionsIfNeeded: () => {
+                const today = todayKey();
+                if (get().transactionsResetAt !== today) {
+                    set({ transactionsToday: 0, transactionsResetAt: today });
+                }
+            },
+
             disconnect: () => {
                 set({
                     address: null,
                     session: defaultSession,
+                    transactionsToday: 0,
+                    transactionsResetAt: null,
                 });
             },
         }),

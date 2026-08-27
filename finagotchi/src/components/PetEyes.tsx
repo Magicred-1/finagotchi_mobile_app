@@ -7,7 +7,7 @@ interface PetEyesProps {
   eyes: RenderedEye[];
 }
 
-export function PetEyes({ eyes }: PetEyesProps) {
+export const PetEyes = React.memo(function PetEyes({ eyes }: PetEyesProps) {
   return (
     <G>
       {eyes.map((eye, i) => (
@@ -21,4 +21,4 @@ export function PetEyes({ eyes }: PetEyesProps) {
       ))}
     </G>
   );
-}
+});

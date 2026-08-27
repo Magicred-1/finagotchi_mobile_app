@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import {
     ScrollView,
+    Share,
     StyleSheet,
     Text,
     View,
@@ -10,141 +11,178 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 
 import { BottomSheet } from './BottomSheet';
+import { Button } from './Button';
 import { PressableScale } from './PressableScale';
 import { useWalletStore } from '../features/wallet/store';
+import { usePetStore } from '../features/pet/store';
+import { useCheckinStore } from '../features/checkin/store';
+import {
+    QUESTS,
+    QUEST_ACCENTS,
+    useQuestStore,
+    type Quest,
+    type QuestCategory,
+} from '../features/quests/store';
 import { colors, radius, spacing, typography } from '../theme/tokens';
 
-type QuestCategory = 'All' | 'Wallet' | 'Bank' | 'Habits' | 'Social';
-type QuestSource = 'wallet' | 'bank' | 'habit' | 'social';
+type FilterCategory = 'All' | QuestCategory;
 
-type Quest = {
-    id: string;
-    category: Exclude<QuestCategory, 'All'>;
-    source: QuestSource;
-    icon: keyof typeof Ionicons.glyphMap;
-    title: string;
-    description: string;
-    reward: number;
-    accent: string;
-    /** For data-driven quests: the metric to read once wallet/bank data is indexed. */
-    requirement?: {
-        metric: 'transactions' | 'balance' | 'accounts' | 'streak';
-        target: number;
-    };
-};
+type QuestStatus = 'available' | 'completed' | 'locked' | 'coming-soon';
 
-const QUESTS: Quest[] = [
-    {
-        id: 'save-streak',
-        category: 'Habits',
-        source: 'habit',
-        icon: 'leaf-outline',
-        title: 'Daily savings streak',
-        description: 'Keep your daily savings streak alive.',
-        reward: 25,
-        accent: colors.primary,
-    },
-    {
-        id: 'wallet-activity',
-        category: 'Wallet',
-        source: 'wallet',
-        icon: 'wallet-outline',
-        title: 'On-chain activity',
-        description: 'Make one wallet transaction today.',
-        reward: 75,
-        accent: '#6EA8FF',
-        requirement: { metric: 'transactions', target: 1 },
-    },
-    {
-        id: 'bank-linked',
-        category: 'Bank',
-        source: 'bank',
-        icon: 'card-outline',
-        title: 'Link a bank account',
-        description: 'Connect a bank to track saving goals.',
-        reward: 150,
-        accent: '#F6C85F',
-        requirement: { metric: 'accounts', target: 1 },
-    },
-    {
-        id: 'share',
-        category: 'Social',
-        source: 'social',
-        icon: 'share-outline',
-        title: 'Share your Finny',
-        description: 'Show your companion to a friend.',
-        reward: 40,
-        accent: '#FF8E9E',
-    },
+const FILTERS: FilterCategory[] = [
+    'All',
+    'Wallet',
+    'Bank',
+    'Habits',
+    'Social',
+    'Sponsored',
 ];
-
-const FILTERS: QuestCategory[] = ['All', 'Wallet', 'Bank', 'Habits', 'Social'];
 
 type Props = {
     visible: boolean;
     onClose: () => void;
+    onOpenRevive?: () => void;
 };
 
-export default function QuestsSheet({ visible, onClose }: Props) {
+export default function QuestsSheet({
+    visible,
+    onClose,
+    onOpenRevive,
+}: Props) {
     const { width } = useWindowDimensions();
-    const [filter, setFilter] = useState<QuestCategory>('All');
-    const [manualCompleted, setManualCompleted] = useState<Record<string, boolean>>({});
+    const [filter, setFilter] = useState<FilterCategory>('All');
+    const [claimedId, setClaimedId] = useState<string | null>(null);
+    const [recentlyTappedId, setRecentlyTappedId] = useState<string | null>(null);
 
     const walletAddress = useWalletStore((state) => state.address);
+    const transactionsToday = useWalletStore(
+        (state) => state.transactionsToday
+    );
     const isWalletConnected = Boolean(walletAddress);
+
+    const addBalance = usePetStore((state) => state.addBalance);
+    const addXp = usePetStore((state) => state.addXp);
+    const boostHappiness = usePetStore((state) => state.boostHappiness);
+    const isDead = usePetStore((state) => state.isDead);
+    const petName = usePetStore((state) => state.name);
+
+    const hasCheckedInToday = useCheckinStore(
+        (state) => state.hasCheckedInToday
+    );
+
+    const isCompletedToday = useQuestStore((state) => state.isCompletedToday);
+    const completeQuest = useQuestStore((state) => state.completeQuest);
+    const getProgress = useQuestStore((state) => state.getProgress);
 
     const isSmallDevice = width < 360;
 
-    const questStatus = useMemo(() => {
+    const questsWithStatus = useMemo(() => {
         return QUESTS.map((quest) => {
-            if (manualCompleted[quest.id]) {
-                return { ...quest, status: 'completed' as const };
+            if (isCompletedToday(quest.id)) {
+                return { ...quest, status: 'completed' as QuestStatus };
             }
 
-            if (quest.source === 'wallet') {
-                // TODO: replace with indexed wallet transaction count.
-                return { ...quest, status: isWalletConnected ? 'available' : 'locked' as const };
+            if (isDead) {
+                return { ...quest, status: 'locked' as QuestStatus };
             }
 
             if (quest.source === 'bank') {
-                // TODO: replace with indexed bank account count.
-                return { ...quest, status: 'locked' as const };
+                return { ...quest, status: 'coming-soon' as QuestStatus };
             }
 
-            return { ...quest, status: 'available' as const };
+            if (quest.source === 'wallet' && !isWalletConnected) {
+                return { ...quest, status: 'locked' as QuestStatus };
+            }
+
+            if (quest.source === 'wallet' && transactionsToday < 1) {
+                return { ...quest, status: 'locked' as QuestStatus };
+            }
+
+            if (quest.source === 'habit' && !hasCheckedInToday()) {
+                return { ...quest, status: 'locked' as QuestStatus };
+            }
+
+            return { ...quest, status: 'available' as QuestStatus };
         });
-    }, [isWalletConnected, manualCompleted]);
+    }, [
+        isWalletConnected,
+        transactionsToday,
+        hasCheckedInToday,
+        isCompletedToday,
+        isDead,
+    ]);
 
-    const filteredQuests = useMemo(
-        () =>
+    const filteredQuests = useMemo(() => {
+        const list =
             filter === 'All'
-                ? questStatus
-                : questStatus.filter((quest) => quest.category === filter),
-        [filter, questStatus]
-    );
+                ? questsWithStatus
+                : questsWithStatus.filter((quest) => quest.category === filter);
 
-    const completedCount = questStatus.filter((q) => q.status === 'completed').length;
-    const totalRewards = questStatus.reduce(
-        (sum, quest) => sum + (quest.status === 'completed' ? quest.reward : 0),
-        0
-    );
+        const order: Record<QuestStatus, number> = {
+            available: 0,
+            locked: 1,
+            'coming-soon': 2,
+            completed: 3,
+        };
 
-    function handleFilterPress(item: QuestCategory) {
+        return list.sort((a, b) => order[a.status] - order[b.status]);
+    }, [filter, questsWithStatus]);
+
+    const progress = getProgress();
+    const completedCount = questsWithStatus.filter(
+        (q) => q.status === 'completed'
+    ).length;
+    const availableCount = questsWithStatus.filter(
+        (q) => q.status === 'available'
+    ).length;
+
+    function handleFilterPress(item: FilterCategory) {
         if (filter === item) return;
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
         setFilter(item);
     }
 
-    function handleQuestPress(quest: Quest & { status: string }) {
-        if (quest.status !== 'available') return;
-        if (quest.source !== 'habit' && quest.source !== 'social') return;
-
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-        setManualCompleted((current) => ({
-            ...current,
-            [quest.id]: true,
-        }));
+    function claimReward(quest: Quest) {
+        completeQuest(quest.id);
+        addBalance(quest.reward);
+        addXp(quest.rewardXp);
+        boostHappiness(10);
+        setClaimedId(quest.id);
+        setTimeout(() => setClaimedId((id) => (id === quest.id ? null : id)), 1600);
     }
+
+    async function handleQuestPress(quest: Quest & { status: QuestStatus }) {
+        if (quest.status !== 'available') {
+            setRecentlyTappedId(quest.id);
+            setTimeout(() => setRecentlyTappedId((id) => (id === quest.id ? null : id)), 800);
+            return;
+        }
+
+        if (quest.source === 'social') {
+            try {
+                const result = await Share.share({
+                    message: `${petName ?? 'My Finagotchi'} and I are building a daily savings streak on Solana. Come raise yours with Finagotchi.`,
+                    url: 'https://www.finagotchi.app',
+                    title: 'Share your Finagotchi',
+                });
+                if (result.action === Share.sharedAction) {
+                    Haptics.notificationAsync(
+                        Haptics.NotificationFeedbackType.Success
+                    );
+                    claimReward(quest);
+                }
+            } catch {
+                // User cancelled or share failed; do not reward.
+            }
+            return;
+        }
+
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        claimReward(quest);
+    }
+
+    const progressPercent =
+        progress.total > 0 ? (progress.completed / progress.total) * 100 : 0;
 
     return (
         <BottomSheet visible={visible} onClose={onClose} title="Quests">
@@ -154,51 +192,58 @@ export default function QuestsSheet({ visible, onClose }: Props) {
             >
                 {/* HERO */}
                 <View style={styles.hero}>
-                    <View style={styles.heroTop}>
-                        <View style={styles.heroCopy}>
-                            <Text style={styles.heroEyebrow}>
-                                QUESTS
-                            </Text>
-                            <Text style={styles.heroTitle}>
-                                Grow with good habits.
-                            </Text>
-                            <Text style={styles.heroSubtitle}>
-                                Wallet and bank quests complete automatically once
-                                your accounts are connected.
+                    <View style={styles.heroCopy}>
+                        <Text style={styles.heroEyebrow}>Daily quests</Text>
+                        <Text style={styles.heroTitle}>
+                            Earn rewards by caring for {petName ?? 'Finny'}.
+                        </Text>
+                    </View>
+
+                    <View style={styles.progressWrap}>
+                        <View style={styles.progressHeader}>
+                            <Text style={styles.progressLabel}>Progress</Text>
+                            <Text style={styles.progressValue}>
+                                {completedCount}/{progress.total}
                             </Text>
                         </View>
-
-                        <View style={styles.heroCreature}>
-                            <Ionicons
-                                name="egg-outline"
-                                size={32}
-                                color={colors.primary}
+                        <View style={styles.progressTrack}>
+                            <View
+                                style={[
+                                    styles.progressFill,
+                                    { width: `${progressPercent}%` },
+                                ]}
                             />
                         </View>
                     </View>
-
-                    <View style={styles.dailyProgressHeader}>
-                        <Text style={styles.dailyProgressLabel}>
-                            Daily progress
-                        </Text>
-                        <Text style={styles.dailyProgressValue}>
-                            {completedCount}/{QUESTS.length}
-                        </Text>
-                    </View>
-
-                    <View style={styles.progressTrack}>
-                        <View
-                            style={[
-                                styles.progressFill,
-                                {
-                                    width: `${
-                                        (completedCount / QUESTS.length) * 100
-                                    }%`,
-                                },
-                            ]}
-                        />
-                    </View>
                 </View>
+
+                {isDead ? (
+                    <View style={styles.deathBanner}>
+                        <Ionicons
+                            name="skull-outline"
+                            size={20}
+                            color={colors.danger}
+                        />
+                        <View style={styles.deathText}>
+                            <Text style={styles.deathTitle}>
+                                Quests are paused
+                            </Text>
+                            <Text style={styles.deathBody}>
+                                {petName ?? 'Your creature'} needs to be revived
+                                before you can earn quest rewards.
+                            </Text>
+                        </View>
+                        {onOpenRevive ? (
+                            <Button
+                                title="Revive"
+                                onPress={() => {
+                                    onClose();
+                                    onOpenRevive();
+                                }}
+                            />
+                        ) : null}
+                    </View>
+                ) : null}
 
                 {/* FILTERS */}
                 <ScrollView
@@ -233,103 +278,149 @@ export default function QuestsSheet({ visible, onClose }: Props) {
 
                 {/* QUEST LIST */}
                 <View style={styles.sectionHeader}>
-                    <Text style={styles.sectionTitle}>Available quests</Text>
-                    <Text style={styles.sectionCount}>
-                        {filteredQuests.length}
-                    </Text>
+                    <Text style={styles.sectionTitle}>Available</Text>
+                    <Text style={styles.sectionCount}>{availableCount}</Text>
                 </View>
 
                 <View style={styles.questList}>
                     {filteredQuests.map((quest) => {
                         const isCompleted = quest.status === 'completed';
                         const isLocked = quest.status === 'locked';
-                        const isTappable = quest.status === 'available' &&
-                            (quest.source === 'habit' || quest.source === 'social');
+                        const isComingSoon = quest.status === 'coming-soon';
+                        const isAvailable = quest.status === 'available';
+                        const accent = QUEST_ACCENTS[quest.category];
+                        const isSponsored = quest.source === 'sponsored';
+                        const justClaimed = claimedId === quest.id;
+                        const tappedLocked = recentlyTappedId === quest.id && isLocked;
 
                         return (
                             <PressableScale
                                 key={quest.id}
                                 onPress={() => handleQuestPress(quest)}
-                                disabled={!isTappable}
-                                activeOpacity={isCompleted ? 0.68 : 0.85}
+                                disabled={isCompleted || isComingSoon}
+                                activeOpacity={isCompleted ? 0.68 : 0.92}
                                 style={[
                                     styles.questCard,
+                                    isSponsored && styles.questCardSponsored,
                                     isCompleted && styles.questCompleted,
                                     isLocked && styles.questLocked,
+                                    isComingSoon && styles.questLocked,
+                                    justClaimed && styles.questClaimed,
                                 ]}
                             >
                                 <View
                                     style={[
                                         styles.questIcon,
                                         {
-                                            backgroundColor: `${quest.accent}18`,
-                                            borderColor: `${quest.accent}35`,
+                                            backgroundColor: `${accent}18`,
+                                            borderColor: `${accent}35`,
                                         },
                                     ]}
                                 >
                                     <Ionicons
-                                        name={quest.icon}
+                                        name={
+                                            quest.icon as keyof typeof Ionicons.glyphMap
+                                        }
                                         size={22}
-                                        color={quest.accent}
+                                        color={accent}
                                     />
                                 </View>
 
                                 <View style={styles.questBody}>
-                                    <View style={styles.questTitleRow}>
-                                        <View style={styles.questTitleWrap}>
-                                            <Text style={styles.questCategory}>
+                                    <View style={styles.questTop}>
+                                        <View style={styles.questMeta}>
+                                            <Text
+                                                style={[
+                                                    styles.questCategory,
+                                                    { color: accent },
+                                                ]}
+                                            >
                                                 {quest.category.toUpperCase()}
                                             </Text>
-
-                                            <Text
-                                                style={styles.questTitle}
-                                                numberOfLines={1}
-                                            >
-                                                {quest.title}
-                                            </Text>
+                                            {isSponsored ? (
+                                                <View style={styles.sponsoredBadge}>
+                                                    <Text style={styles.sponsoredText}>
+                                                        Sponsored
+                                                    </Text>
+                                                </View>
+                                            ) : null}
                                         </View>
-
-                                        {isLocked && (
-                                            <View style={styles.lockedBadge}>
-                                                <Text style={styles.lockedText}>
-                                                    Connect
-                                                </Text>
-                                            </View>
-                                        )}
+                                        {isCompleted ? (
+                                            <Ionicons
+                                                name="checkmark-circle"
+                                                size={18}
+                                                color={colors.primary}
+                                            />
+                                        ) : isLocked ? (
+                                            <Ionicons
+                                                name="lock-closed"
+                                                size={16}
+                                                color={colors.textMuted}
+                                            />
+                                        ) : isComingSoon ? (
+                                            <Ionicons
+                                                name="time-outline"
+                                                size={16}
+                                                color={colors.textMuted}
+                                            />
+                                        ) : null}
                                     </View>
+
+                                    <Text
+                                        style={styles.questTitle}
+                                        numberOfLines={1}
+                                    >
+                                        {quest.title}
+                                    </Text>
 
                                     <Text
                                         style={styles.questDescription}
                                         numberOfLines={2}
                                     >
-                                        {quest.description}
+                                        {isLocked && quest.source === 'wallet' && !isWalletConnected
+                                            ? 'Connect a wallet to unlock this reward.'
+                                            : isLocked && quest.source === 'wallet'
+                                            ? 'Make one wallet transaction today to unlock.'
+                                            : isLocked && quest.source === 'habit'
+                                            ? 'Check in today to unlock this reward.'
+                                            : isComingSoon
+                                            ? 'Bank linking is coming soon.'
+                                            : quest.description}
                                     </Text>
 
                                     <View style={styles.questBottom}>
-                                        <View style={styles.xpPill}>
-                                            <Text style={styles.xpText}>
-                                                +{quest.reward} XP
-                                            </Text>
+                                        <View style={styles.rewardPills}>
+                                            <View style={styles.pointPill}>
+                                                <Text style={styles.pointText}>
+                                                    +{quest.reward} pts
+                                                </Text>
+                                            </View>
+                                            <View style={styles.xpPill}>
+                                                <Text style={styles.xpText}>
+                                                    +{quest.rewardXp} XP
+                                                </Text>
+                                            </View>
                                         </View>
+
+                                        {isAvailable && !isCompleted && (
+                                            <Text style={styles.claimHint}>
+                                                {justClaimed
+                                                    ? 'Claimed!'
+                                                    : quest.source === 'social'
+                                                    ? 'Tap to share'
+                                                    : 'Tap to claim'}
+                                            </Text>
+                                        )}
                                     </View>
                                 </View>
 
-                                <Ionicons
-                                    name={
-                                        isCompleted
-                                            ? 'checkmark-circle'
-                                            : isLocked
-                                            ? 'lock-closed'
-                                            : 'chevron-forward'
-                                    }
-                                    size={22}
-                                    color={
-                                        isCompleted
-                                            ? colors.primary
-                                            : colors.textMuted
-                                    }
-                                    style={styles.questChevron}
-                                />
+                                {tappedLocked ? (
+                                    <View style={styles.lockedHintOverlay}>
+                                        <Text style={styles.lockedHintText}>
+                                            Complete the requirement first
+                                        </Text>
+                                    </View>
+                                ) : null}
                             </PressableScale>
                         );
                     })}
@@ -337,13 +428,17 @@ export default function QuestsSheet({ visible, onClose }: Props) {
 
                 {/* FOOTER */}
                 <View style={styles.footer}>
-                    <Ionicons name="sparkles-outline" size={20} color={colors.primary} />
+                    <Ionicons
+                        name="sparkles-outline"
+                        size={20}
+                        color={colors.primary}
+                    />
                     <Text style={styles.footerTitle}>
-                        Every good habit makes Finny stronger.
+                        Daily quests reset at midnight.
                     </Text>
                     <Text style={styles.footerText}>
-                        Wallet and bank quests will unlock once those accounts
-                        are connected.
+                        Wallet and bank quests complete automatically once your
+                        accounts are connected.
                     </Text>
                 </View>
             </ScrollView>
@@ -353,73 +448,52 @@ export default function QuestsSheet({ visible, onClose }: Props) {
 
 const styles = StyleSheet.create({
     container: {
-        paddingBottom: 32,
+        paddingBottom: spacing.xl,
     },
     hero: {
         width: '100%',
-        padding: 17,
-        borderRadius: 22,
-        backgroundColor: colors.background,
+        padding: spacing.md,
+        borderRadius: radius.lg,
+        backgroundColor: colors.surface,
         borderWidth: 1,
         borderColor: colors.border,
-        overflow: 'hidden',
-    },
-    heroTop: {
-        flexDirection: 'row',
-        alignItems: 'center',
+        gap: spacing.md,
     },
     heroCopy: {
-        flex: 1,
-        paddingRight: 10,
+        gap: spacing.xs,
     },
     heroEyebrow: {
         color: colors.primary,
-        fontSize: 9,
-        letterSpacing: 1.1,
+        fontSize: typography.small,
+        letterSpacing: 0.5,
         fontFamily: 'Poppins_700Bold',
+        textTransform: 'uppercase',
     },
     heroTitle: {
-        marginTop: 3,
         color: colors.text,
-        fontSize: 19,
+        fontSize: typography.heading,
         fontFamily: 'Poppins_800ExtraBold',
     },
-    heroSubtitle: {
-        marginTop: 4,
-        color: colors.textMuted,
-        fontSize: 11,
-        lineHeight: 17,
-        fontFamily: 'Poppins_400Regular',
+    progressWrap: {
+        gap: spacing.sm,
     },
-    heroCreature: {
-        width: 66,
-        height: 66,
-        borderRadius: 22,
-        alignItems: 'center',
-        justifyContent: 'center',
-        backgroundColor: 'rgba(93,226,166,0.10)',
-        borderWidth: 1,
-        borderColor: 'rgba(93,226,166,0.20)',
-    },
-    dailyProgressHeader: {
-        marginTop: 18,
+    progressHeader: {
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'center',
     },
-    dailyProgressLabel: {
+    progressLabel: {
         color: colors.textMuted,
-        fontSize: 10,
+        fontSize: typography.small,
         fontFamily: 'Poppins_600SemiBold',
     },
-    dailyProgressValue: {
+    progressValue: {
         color: colors.primary,
-        fontSize: 11,
+        fontSize: typography.small,
         fontFamily: 'Poppins_800ExtraBold',
     },
     progressTrack: {
-        height: 7,
-        marginTop: 7,
+        height: 8,
         borderRadius: 4,
         backgroundColor: 'rgba(255,255,255,0.07)',
         overflow: 'hidden',
@@ -429,17 +503,43 @@ const styles = StyleSheet.create({
         borderRadius: 4,
         backgroundColor: colors.primary,
     },
+    deathBanner: {
+        marginTop: spacing.md,
+        padding: spacing.md,
+        borderRadius: radius.md,
+        backgroundColor: 'rgba(255,100,124,0.10)',
+        borderWidth: 1,
+        borderColor: 'rgba(255,100,124,0.20)',
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: spacing.md,
+    },
+    deathText: {
+        flex: 1,
+        gap: 2,
+    },
+    deathTitle: {
+        color: colors.text,
+        fontSize: typography.body,
+        fontFamily: 'Poppins_700Bold',
+    },
+    deathBody: {
+        color: colors.textMuted,
+        fontSize: typography.small,
+        fontFamily: 'Poppins_400Regular',
+        lineHeight: 18,
+    },
     filters: {
-        paddingVertical: 16,
-        gap: 8,
+        paddingVertical: spacing.md,
+        gap: spacing.sm,
     },
     filter: {
-        height: 34,
-        paddingHorizontal: 13,
+        height: 36,
+        paddingHorizontal: spacing.md,
         alignItems: 'center',
         justifyContent: 'center',
-        borderRadius: 17,
-        backgroundColor: colors.background,
+        borderRadius: radius.pill,
+        backgroundColor: colors.surface,
         borderWidth: 1,
         borderColor: colors.border,
     },
@@ -449,7 +549,7 @@ const styles = StyleSheet.create({
     },
     filterText: {
         color: colors.textMuted,
-        fontSize: 10,
+        fontSize: typography.small,
         fontFamily: 'Poppins_600SemiBold',
     },
     filterTextActive: {
@@ -458,48 +558,57 @@ const styles = StyleSheet.create({
     sectionHeader: {
         flexDirection: 'row',
         alignItems: 'center',
-        marginBottom: 9,
+        marginBottom: spacing.sm,
+        gap: spacing.sm,
     },
     sectionTitle: {
         color: colors.text,
-        fontSize: 15,
+        fontSize: typography.body,
         fontFamily: 'Poppins_700Bold',
     },
     sectionCount: {
-        marginLeft: 7,
-        paddingHorizontal: 7,
-        paddingVertical: 2,
-        borderRadius: 8,
+        paddingHorizontal: spacing.sm,
+        paddingVertical: spacing.xs,
+        borderRadius: radius.sm,
         color: colors.textMuted,
         backgroundColor: 'rgba(255,255,255,0.05)',
-        fontSize: 9,
+        fontSize: typography.small,
         fontFamily: 'Poppins_600SemiBold',
     },
     questList: {
-        gap: 9,
+        gap: spacing.sm,
     },
     questCard: {
-        minHeight: 104,
-        padding: 12,
-        borderRadius: 18,
+        minHeight: 108,
+        padding: spacing.md,
+        borderRadius: radius.lg,
         flexDirection: 'row',
         alignItems: 'center',
-        backgroundColor: colors.background,
+        backgroundColor: colors.surface,
         borderWidth: 1,
         borderColor: colors.border,
+        overflow: 'hidden',
+    },
+    questCardSponsored: {
+        borderColor: 'rgba(153,69,255,0.35)',
+        backgroundColor: 'rgba(153,69,255,0.06)',
     },
     questCompleted: {
-        opacity: 0.68,
+        opacity: 0.6,
+        borderColor: 'rgba(93,226,166,0.25)',
     },
     questLocked: {
-        opacity: 0.55,
+        opacity: 0.65,
         backgroundColor: 'rgba(255,255,255,0.02)',
-        borderColor: 'rgba(255,255,255,0.04)',
+        borderColor: 'rgba(255,255,255,0.05)',
+    },
+    questClaimed: {
+        borderColor: colors.primary,
     },
     questIcon: {
         width: 48,
         height: 48,
-        borderRadius: 15,
+        borderRadius: radius.md,
         alignItems: 'center',
         justifyContent: 'center',
         borderWidth: 1,
@@ -507,87 +616,117 @@ const styles = StyleSheet.create({
     questBody: {
         flex: 1,
         minWidth: 0,
-        marginLeft: 11,
+        marginLeft: spacing.md,
+        gap: spacing.xs,
     },
-    questTitleRow: {
-        flexDirection: 'row',
-        alignItems: 'center',
-    },
-    questTitleWrap: {
-        flex: 1,
-        minWidth: 0,
-    },
-    questCategory: {
-        color: colors.textMuted,
-        fontSize: 7,
-        letterSpacing: 0.8,
-        fontFamily: 'Poppins_700Bold',
-    },
-    questTitle: {
-        marginTop: 1,
-        color: colors.text,
-        fontSize: 13,
-        fontFamily: 'Poppins_700Bold',
-    },
-    lockedBadge: {
-        marginLeft: 6,
-        paddingHorizontal: 6,
-        paddingVertical: 3,
-        borderRadius: 6,
-        backgroundColor: 'rgba(255,255,255,0.06)',
-        borderWidth: 1,
-        borderColor: 'rgba(255,255,255,0.10)',
-    },
-    lockedText: {
-        color: colors.textMuted,
-        fontSize: 7,
-        letterSpacing: 0.5,
-        fontFamily: 'Poppins_800ExtraBold',
-        textTransform: 'uppercase',
-    },
-    questDescription: {
-        marginTop: 2,
-        color: colors.textMuted,
-        fontSize: 9,
-        lineHeight: 14,
-        fontFamily: 'Poppins_400Regular',
-    },
-    questBottom: {
-        marginTop: 7,
+    questTop: {
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'space-between',
     },
-    xpPill: {
-        paddingHorizontal: 7,
-        paddingVertical: 4,
-        borderRadius: 8,
-        backgroundColor: 'rgba(93,226,166,0.08)',
+    questMeta: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: spacing.xs,
     },
-    xpText: {
-        color: colors.primary,
-        fontSize: 8,
+    questCategory: {
+        fontSize: 10,
+        letterSpacing: 0.6,
         fontFamily: 'Poppins_700Bold',
     },
-    questChevron: {
-        marginLeft: 6,
+    sponsoredBadge: {
+        paddingVertical: 2,
+        paddingHorizontal: 6,
+        borderRadius: 6,
+        backgroundColor: 'rgba(153,69,255,0.15)',
+    },
+    sponsoredText: {
+        color: colors.purple,
+        fontSize: 9,
+        fontFamily: 'Poppins_800ExtraBold',
+        textTransform: 'uppercase',
+        letterSpacing: 0.4,
+    },
+    questTitle: {
+        color: colors.text,
+        fontSize: typography.body,
+        fontFamily: 'Poppins_700Bold',
+    },
+    questDescription: {
+        color: colors.textMuted,
+        fontSize: typography.small,
+        lineHeight: 18,
+        fontFamily: 'Poppins_400Regular',
+    },
+    questBottom: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        marginTop: spacing.xs,
+    },
+    rewardPills: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: spacing.sm,
+    },
+    pointPill: {
+        paddingHorizontal: spacing.sm,
+        paddingVertical: spacing.xs,
+        borderRadius: radius.sm,
+        backgroundColor: 'rgba(255,209,102,0.10)',
+    },
+    pointText: {
+        color: colors.warning,
+        fontSize: typography.small,
+        fontFamily: 'Poppins_700Bold',
+    },
+    xpPill: {
+        paddingHorizontal: spacing.sm,
+        paddingVertical: spacing.xs,
+        borderRadius: radius.sm,
+        backgroundColor: 'rgba(153,69,255,0.12)',
+    },
+    xpText: {
+        color: colors.purple,
+        fontSize: typography.small,
+        fontFamily: 'Poppins_700Bold',
+    },
+    claimHint: {
+        color: colors.primary,
+        fontSize: typography.small,
+        fontFamily: 'Poppins_600SemiBold',
+    },
+    lockedHintOverlay: {
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: 'rgba(7,17,31,0.85)',
+    },
+    lockedHintText: {
+        color: colors.text,
+        fontSize: typography.small,
+        fontFamily: 'Poppins_700Bold',
     },
     footer: {
         alignItems: 'center',
-        marginTop: 24,
-        paddingHorizontal: 20,
+        marginTop: spacing.lg,
+        paddingHorizontal: spacing.md,
+        gap: spacing.xs,
     },
     footerTitle: {
         color: colors.text,
-        fontSize: 11,
+        fontSize: typography.small,
         textAlign: 'center',
         fontFamily: 'Poppins_700Bold',
     },
     footerText: {
-        marginTop: 3,
         color: colors.textMuted,
-        fontSize: 9,
-        lineHeight: 14,
+        fontSize: typography.small,
+        lineHeight: 18,
         textAlign: 'center',
         fontFamily: 'Poppins_400Regular',
     },

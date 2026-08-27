@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
   BackHandler,
@@ -9,39 +9,55 @@ import {
   View,
   useWindowDimensions,
 } from 'react-native';
-import { ScrollView } from 'react-native-gesture-handler';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 import Animated, {
   runOnJS,
+  useAnimatedStyle,
   useSharedValue,
   withTiming,
 } from 'react-native-reanimated';
 
 import { PetCanvas } from '../../src/components/PetCanvas';
 import { PressableScale } from '../../src/components/PressableScale';
+import { LevelUpAnimation } from '../../src/components/LevelUpAnimation';
 import { Sidebar } from '../../src/components/Sidebar';
 import EvolutionCeremony from '../../src/components/EvolutionCeremony';
 import CollectiblesSheet from '../../src/components/CollectiblesSheet';
 import QuestsSheet from '../../src/components/QuestsSheet';
 import WaitlistSheet from '../../src/components/WaitlistSheet';
+import FoodSheet, { type FoodItem } from '../../src/components/FoodSheet';
+import DeathOverlay from '../../src/components/DeathOverlay';
+import ReviveSheet from '../../src/components/ReviveSheet';
+import CommunityResurrectSheet from '../../src/components/CommunityResurrectSheet';
 import { useCheckinStore } from '../../src/features/checkin/store';
 import {
-  ACCESSORY_EMOJI,
   BACKGROUND_COLORS,
   STAGE_NAMES,
   STAGE_THRESHOLDS,
   usePetStore,
+  type PetStage,
 } from '../../src/features/pet/store';
+import { useWalletStore } from '../../src/features/wallet/store';
+import { useWallet } from '../../src/wallet/useWallet';
 import { colors, radius, spacing, tracking, typography } from '../../src/theme/tokens';
 import type { PetMood, PetReaction } from '../../src/components/PetCanvas';
 
 function getMood(
   hour: number,
   hasCheckedInToday: boolean,
-  streak: number
+  streak: number,
+  happiness: number
 ): PetMood {
+  if (happiness <= 0) {
+    return 'sad';
+  }
+
+  if (happiness < 30) {
+    return 'sad';
+  }
+
   if (hour >= 22 || hour <= 7) {
     return 'sleeping';
   }
@@ -57,26 +73,17 @@ function getMood(
 }
 
 function computeProgressPercent(streak: number, stage: number): number {
-  if (stage >= STAGE_THRESHOLDS.length) {
+  if (stage >= STAGE_THRESHOLDS.length - 1) {
     return 100;
   }
 
-  const currentThreshold = STAGE_THRESHOLDS[stage - 1] ?? 0;
-  const nextThreshold = STAGE_THRESHOLDS[stage] ?? currentThreshold + 1;
+  const currentThreshold = STAGE_THRESHOLDS[stage] ?? 0;
+  const nextThreshold = STAGE_THRESHOLDS[stage + 1] ?? currentThreshold + 1;
   const range = nextThreshold - currentThreshold;
 
   if (range <= 0) return 100;
 
-  return Math.min(((streak - currentThreshold) / range) * 100, 100);
-}
-
-function pickReaction(): PetReaction {
-  const rand = Math.random();
-
-  if (rand < 0.1) return 'dance';
-  if (rand < 0.4) return 'jump';
-  if (rand < 0.7) return 'spin';
-  return 'glow';
+  return Math.min(Math.max(0, ((streak - currentThreshold) / range) * 100), 100);
 }
 
 function formatNumber(num: number): string {
@@ -104,13 +111,14 @@ type PetAction = {
   label: string;
   cost: number;
   reaction: PetReaction;
+  mood: PetMood;
 };
 
 const PET_ACTIONS: PetAction[] = [
-  { id: 'caress', icon: 'hand-left-outline', label: 'Caress', cost: 0, reaction: 'jump' },
-  { id: 'treat', icon: 'nutrition-outline', label: 'Treat', cost: 50, reaction: 'glow' },
-  { id: 'play', icon: 'game-controller-outline', label: 'Play', cost: 100, reaction: 'dance' },
-  { id: 'train', icon: 'barbell-outline', label: 'Train', cost: 250, reaction: 'spin' },
+  { id: 'caress', icon: 'hand-left-outline', label: 'Caress', cost: 0, reaction: 'jump', mood: 'happy' },
+  { id: 'treat', icon: 'nutrition-outline', label: 'Treat', cost: 50, reaction: 'glow', mood: 'happy' },
+  { id: 'play', icon: 'game-controller-outline', label: 'Play', cost: 100, reaction: 'dance', mood: 'calm' },
+  { id: 'train', icon: 'barbell-outline', label: 'Train', cost: 250, reaction: 'spin', mood: 'proud' },
 ];
 
 export default function HomeScreen() {
@@ -123,20 +131,33 @@ export default function HomeScreen() {
   const [collectiblesVisible, setCollectiblesVisible] = useState(false);
   const [questsVisible, setQuestsVisible] = useState(false);
   const [waitlistVisible, setWaitlistVisible] = useState(false);
+  const [foodVisible, setFoodVisible] = useState(false);
+  const [reviveVisible, setReviveVisible] = useState(false);
+  const [communityResurrectVisible, setCommunityResurrectVisible] = useState(false);
   const [reaction, setReaction] = useState<PetReaction | undefined>(undefined);
-  const [timeLeft, setTimeLeft] = useState('');
+  const [reactionKey, setReactionKey] = useState(0);
+  const [actionMood, setActionMood] = useState<PetMood | undefined>(undefined);
+  const [floatingEmoji, setFloatingEmoji] = useState<string | null>(null);
+  const [lifeTimeLeft, setLifeTimeLeft] = useState('');
+  const [guardianTimeLeft, setGuardianTimeLeft] = useState('');
   const [exitToastVisible, setExitToastVisible] = useState(false);
 
   const lastBackPress = useRef(0);
   const toastTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const emotionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const exitToastOpacity = useSharedValue(0);
+  const emojiOpacity = useSharedValue(0);
+  const emojiTranslateY = useSharedValue(0);
+
+  const wallet = useWallet();
 
   const checkIn = useCheckinStore((state) => state.checkIn);
   const hasCheckedInToday = useCheckinStore((state) => state.hasCheckedInToday());
   const streak = useCheckinStore((state) => state.streak);
   const longestStreak = useCheckinStore((state) => state.longestStreak);
   const totalCheckins = useCheckinStore((state) => state.totalCheckins);
+  const resetStreak = useCheckinStore((state) => state.resetStreak);
 
   const stage = usePetStore((state) => state.stage);
   const petName = usePetStore((state) => state.name);
@@ -148,6 +169,36 @@ export default function HomeScreen() {
   );
   const balance = usePetStore((state) => state.balance);
   const spendBalance = usePetStore((state) => state.spendBalance);
+  const happiness = usePetStore((state) => state.happiness);
+  const decayHappiness = usePetStore((state) => state.decayHappiness);
+  const boostHappiness = usePetStore((state) => state.boostHappiness);
+  const isDead = usePetStore((state) => state.isDead);
+  const isSpectral = usePetStore((state) => state.isSpectral);
+  const causeOfDeath = usePetStore((state) => state.causeOfDeath);
+  const level = usePetStore((state) => state.level);
+  const xp = usePetStore((state) => state.xp);
+  const reviveTokens = usePetStore((state) => state.reviveTokens);
+  const addXp = usePetStore((state) => state.addXp);
+  const reviveCreature = usePetStore((state) => state.reviveCreature);
+  const reviveWindowEndsAt = usePetStore((state) => state.reviveWindowEndsAt);
+  const isReviveWindowActive = usePetStore((state) => state.isReviveWindowActive);
+  const checkLifeTimer = usePetStore((state) => state.checkLifeTimer);
+  const getLifeTimerRemainingMs = usePetStore(
+    (state) => state.getLifeTimerRemainingMs
+  );
+  const lifeTimerEndsAt = usePetStore((state) => state.lifeTimerEndsAt);
+  const guardianExpiresAt = usePetStore((state) => state.guardianExpiresAt);
+  const isGuardianActive = usePetStore((state) => state.isGuardianActive);
+  const getGuardianRemainingMs = usePetStore(
+    (state) => state.getGuardianRemainingMs
+  );
+  const hireGuardian = usePetStore((state) => state.hireGuardian);
+  const useFreeAction = usePetStore((state) => state.useFreeAction);
+  const deathCount = usePetStore((state) => state.deathCount);
+
+  const [celebratingStage, setCelebratingStage] = useState<PetStage | null>(
+    stage > lastCelebratedStage ? stage : null
+  );
 
   const horizontalPadding = Math.min(Math.max(width * 0.05, 16), 24);
   const isSmallDevice = width < 360;
@@ -157,8 +208,8 @@ export default function HomeScreen() {
   const isDoneToday = hasCheckedInToday;
 
   const mood = useMemo(
-    () => getMood(currentHour, isDoneToday, streak),
-    [currentHour, isDoneToday, streak]
+    () => getMood(currentHour, isDoneToday, streak, happiness),
+    [currentHour, isDoneToday, streak, happiness]
   );
 
   const progressPercent = useMemo(
@@ -166,22 +217,57 @@ export default function HomeScreen() {
     [streak, stage]
   );
 
-  const showEvolution = stage > lastCelebratedStage;
+  const xpNeeded = level * 100;
+  const xpPercent = Math.min(100, Math.max(0, (xp / xpNeeded) * 100));
+
+  const nextStageName =
+    stage < 5 ? STAGE_NAMES[(stage + 1) as 2 | 3 | 4 | 5] : 'Max';
+
+  const effectiveMood = actionMood ?? mood;
 
   useEffect(() => {
     const update = () => {
-      const today = new Date();
-      const midnight = new Date(
-        today.getFullYear(),
-        today.getMonth(),
-        today.getDate() + 1
+      checkLifeTimer();
+      decayHappiness();
+
+      if (isDead && reviveWindowEndsAt) {
+        const remaining =
+          new Date(reviveWindowEndsAt).getTime() - Date.now();
+        setLifeTimeLeft(formatCountdown(remaining));
+      } else {
+        setLifeTimeLeft(formatCountdown(getLifeTimerRemainingMs()));
+      }
+
+      setGuardianTimeLeft(
+        isGuardianActive()
+          ? formatCountdown(getGuardianRemainingMs())
+          : ''
       );
-      setTimeLeft(formatCountdown(midnight.getTime() - today.getTime()));
     };
 
     update();
     const interval = setInterval(update, 1000);
     return () => clearInterval(interval);
+  }, [
+    isDead,
+    reviveWindowEndsAt, happiness, checkLifeTimer, decayHappiness,
+    getLifeTimerRemainingMs,
+    isGuardianActive,
+    getGuardianRemainingMs,
+  ]);
+
+  useEffect(() => {
+    if (isDead) {
+      resetStreak();
+    }
+  }, [isDead, resetStreak]);
+
+  useEffect(() => {
+    return () => {
+      if (emotionTimerRef.current) {
+        clearTimeout(emotionTimerRef.current);
+      }
+    };
   }, []);
 
   // Double-tap back to exit, with visual feedback. Close any open sheet/sidebar first.
@@ -203,7 +289,16 @@ export default function HomeScreen() {
         setWaitlistVisible(false);
         return true;
       }
-      if (showEvolution) {
+      if (foodVisible) {
+        setFoodVisible(false);
+        return true;
+      }
+      if (communityResurrectVisible) {
+        setCommunityResurrectVisible(false);
+        return true;
+      }
+      if (celebratingStage !== null) {
+        setCelebratingStage(null);
         setLastCelebratedStage(stage);
         return true;
       }
@@ -235,18 +330,64 @@ export default function HomeScreen() {
 
     const subscription = BackHandler.addEventListener('hardwareBackPress', onBackPress);
     return () => subscription.remove();
-  }, [sidebarVisible, collectiblesVisible, questsVisible, waitlistVisible, showEvolution, stage]);
+  }, [sidebarVisible, collectiblesVisible, questsVisible, waitlistVisible, foodVisible, communityResurrectVisible, celebratingStage, stage]);
 
-  function handleFeed() {
-    if (!isDoneToday) {
-      const result = checkIn(true);
-      if (result.success) {
-        setReaction(pickReaction());
-      }
-    } else {
-      setReaction(pickReaction());
-      Alert.alert('Already fed', `${petName || 'Finny'} is happy and full.`);
+  const REACTION_EMOJIS: Record<PetReaction, string> = {
+    jump: '❤️',
+    glow: '✨',
+    dance: '🎵',
+    spin: '🌟',
+  };
+
+  function triggerEmotion(newReaction: PetReaction, newMood: PetMood) {
+    if (emotionTimerRef.current) {
+      clearTimeout(emotionTimerRef.current);
     }
+
+    setActionMood(newMood);
+    setReaction(newReaction);
+    setReactionKey((key) => key + 1);
+    setFloatingEmoji(REACTION_EMOJIS[newReaction]);
+
+    emojiOpacity.value = 0;
+    emojiTranslateY.value = 0;
+    emojiOpacity.value = withTiming(1, { duration: 180 });
+    emojiTranslateY.value = withTiming(-28, { duration: 900 });
+
+    emotionTimerRef.current = setTimeout(() => {
+      emojiOpacity.value = withTiming(0, { duration: 220 });
+      setActionMood(undefined);
+      setReaction(undefined);
+      setFloatingEmoji(null);
+    }, 1800);
+  }
+
+  function openFoodSheet() {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setFoodVisible(true);
+  }
+
+  function handleFoodSelect(food: FoodItem) {
+    if (isDead) return;
+
+    const cost = isDoneToday ? food.cost : 0;
+    if (cost > balance) {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      return;
+    }
+
+    if (!isDoneToday) {
+      checkIn(true);
+    }
+
+    if (cost > 0) {
+      spendBalance(cost);
+    }
+
+    boostHappiness(food.happiness);
+    addXp(10);
+    triggerEmotion(food.reaction, food.mood);
+    setFoodVisible(false);
   }
 
   function handleCollectibles() {
@@ -265,16 +406,124 @@ export default function HomeScreen() {
   }
 
   function handlePetAction(action: PetAction) {
-    const success = spendBalance(action.cost);
+    if (isDead) return;
+
+    if (action.cost === 0) {
+      if (!useFreeAction()) {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+        Alert.alert(
+          'Daily limit reached',
+          'You used all your free caresses for today. Come back tomorrow!'
+        );
+        return;
+      }
+    } else {
+      const success = spendBalance(action.cost);
+      if (!success) {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+        return;
+      }
+    }
+
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+
+    const happinessBoost =
+      action.id === 'caress' ? 8 :
+      action.id === 'treat' ? 5 :
+      action.id === 'play' ? 15 :
+      action.id === 'train' ? 20 : 5;
+
+    boostHappiness(happinessBoost);
+    addXp(5);
+    triggerEmotion(action.reaction, action.mood);
+  }
+
+  const handlePetTap = useCallback(() => {
+    if (isDead) return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    triggerEmotion('jump', 'happy');
+  }, [isDead]);
+
+  const handleEvolve = useCallback((newStage: PetStage) => {
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    setCelebratingStage(newStage);
+  }, []);
+
+  function handleOpenRevive() {
+    setReviveVisible(true);
+  }
+
+  function handleEarnFreeRevive() {
+    setReviveVisible(false);
+    setQuestsVisible(true);
+  }
+
+  function handleHireGuardian() {
+    const GUARDIAN_HOURS = 12;
+    const GUARDIAN_COST = 300;
+    const success = hireGuardian(GUARDIAN_HOURS, GUARDIAN_COST);
     if (!success) {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      Alert.alert(
+        'Not enough points',
+        `A ${GUARDIAN_HOURS}h guardian costs ${GUARDIAN_COST} points.`
+      );
+      return;
+    }
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+  }
+
+  function handleAskCommunity() {
+    setCommunityResurrectVisible(true);
+  }
+
+  function handleCommunityResurrect() {
+    const COMMUNITY_REVIVE_COST = 250;
+    if (balance < COMMUNITY_REVIVE_COST) {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       return;
     }
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    setReaction(action.reaction);
+    usePetStore.setState({ balance: balance - COMMUNITY_REVIVE_COST });
+    reviveCreature(false);
+  }
+
+  async function handleRevive() {
+    const REMINT_COST_POINTS = 500;
+    const windowActive = isReviveWindowActive();
+
+    if (windowActive) {
+      if (reviveTokens > 0) {
+        usePetStore.setState({ reviveTokens: reviveTokens - 1 });
+      } else if (balance >= REMINT_COST_POINTS) {
+        usePetStore.setState({ balance: balance - REMINT_COST_POINTS });
+      } else {
+        const walletConnected = Boolean(useWalletStore.getState().address);
+        if (!walletConnected) {
+          Alert.alert(
+            'Wallet required',
+            'Connect a wallet to pay the SOL revive fee.'
+          );
+          return;
+        }
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+        await wallet.payReviveFee();
+      }
+    }
+
+    if (!windowActive) {
+      resetStreak();
+    }
+
+    reviveCreature(!windowActive);
+    setReviveVisible(false);
   }
 
   const displayName = petName || 'Finny';
+
+  const emojiStyle = useAnimatedStyle(() => ({
+    opacity: emojiOpacity.value,
+    transform: [{ translateY: emojiTranslateY.value }],
+  }));
 
   return (
     <View
@@ -286,9 +535,8 @@ export default function HomeScreen() {
         },
       ]}
     >
-      <ScrollView
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={[
+      <View
+        style={[
           styles.container,
           {
             paddingHorizontal: horizontalPadding,
@@ -297,30 +545,11 @@ export default function HomeScreen() {
       >
         {/* TOP BAR */}
         <View style={[styles.topBar, isTinyDevice && styles.topBarWrap]}>
-          <View
-            style={[
-              styles.namePill,
-              isTinyDevice && styles.namePillSmall,
-            ]}
-          >
-            <Image
-              source={require('../../assets/icon.png')}
-              style={[
-                styles.nameIcon,
-                isTinyDevice && styles.nameIconSmall,
-              ]}
-              resizeMode="contain"
-            />
-            <Text
-              style={[
-                styles.nameText,
-                isTinyDevice && styles.nameTextSmall,
-              ]}
-              numberOfLines={1}
-            >
-              {displayName}
-            </Text>
-          </View>
+          <Image
+            source={require('../../assets/icon.png')}
+            style={styles.appIcon}
+            resizeMode="contain"
+          />
 
           <View style={styles.topBarRight}>
             <PressableScale
@@ -350,22 +579,25 @@ export default function HomeScreen() {
         {/* PET CARD */}
         <View style={styles.petCard}>
           <View style={styles.petCardHeader}>
-            <View style={styles.timerPill}>
-              <Ionicons name="heart" size={12} color="#FF8E9E" />
-              <Text style={styles.timerText}>{timeLeft}</Text>
+            <View>
+              <Text style={styles.petName}>{displayName}</Text>
+              <View style={styles.levelRow}>
+                <Text style={styles.levelText}>Lv {level}</Text>
+                <View style={styles.xpTrackMini}>
+                  <View style={[styles.xpFillMini, { width: `${xpPercent}%` }]} />
+                </View>
+                <Text style={styles.xpTextMini}>
+                  {xp}/{xpNeeded}
+                </Text>
+                <LevelUpAnimation level={level} />
+              </View>
             </View>
 
             <PressableScale
-              onPress={handleFeed}
-              style={[
-                styles.primaryButtonSmall,
-                isTinyDevice && styles.primaryButtonSmallTiny,
-              ]}
+              onPress={openFoodSheet}
+              style={[styles.feedButton, isTinyDevice && styles.feedButtonTiny]}
             >
-              <Ionicons name="nutrition-outline" size={isTinyDevice ? 12 : 14} color={colors.background} />
-              <Text style={styles.primaryButtonText} numberOfLines={1}>
-                {isDoneToday ? 'Fed' : 'Feed'}
-              </Text>
+              <Text style={styles.fruitIcon}>🍎</Text>
             </PressableScale>
           </View>
 
@@ -382,36 +614,89 @@ export default function HomeScreen() {
               ]}
             />
             <View style={styles.ground} />
-            <View style={styles.petWrap}>
-              {!showEvolution && <PetCanvas mood={mood} reaction={reaction} />}
-              {accessory !== 'none' && (
-                <Text style={styles.accessory}>
-                  {ACCESSORY_EMOJI[accessory]}
-                </Text>
-              )}
-            </View>
-            {(mood === 'happy' || mood === 'proud') && (
-              <Text style={styles.floatingHeart}>❤️</Text>
-            )}
 
-            <View style={styles.sceneProgress}>
-              <View style={styles.sceneProgressHeader}>
-                <Text style={styles.sceneProgressTitle}>{displayName}'s evolution</Text>
-                <Text style={styles.sceneProgressPercent}>
-                  {Math.round(progressPercent)}%
+            {guardianTimeLeft ? (
+              <View style={styles.guardianBadge}>
+                <Ionicons name="shield-checkmark" size={12} color="#8B5CF6" />
+                <Text style={styles.guardianText}>
+                  Guardian {guardianTimeLeft}
                 </Text>
               </View>
-              <View style={styles.sceneProgressTrack}>
+            ) : null}
+
+            <View style={styles.petCenter}>
+              {celebratingStage === null && (
+                <PetCanvas
+                  mood={effectiveMood}
+                  reaction={reaction}
+                  reactionKey={reactionKey}
+                  accessory={accessory}
+                  lifeTimeLeft={lifeTimeLeft}
+                  lifeTimerEndsAt={lifeTimerEndsAt}
+                  isSpectral={isSpectral}
+                  onTap={handlePetTap}
+                  onEvolve={handleEvolve}
+                />
+              )}
+              {(effectiveMood === 'happy' || effectiveMood === 'proud') && (
+                <Text style={styles.floatingHeart}>❤️</Text>
+              )}
+              {floatingEmoji && (
+                <Animated.View style={[styles.floatingEmoji, emojiStyle]}>
+                  <Text style={styles.floatingEmojiText}>{floatingEmoji}</Text>
+                </Animated.View>
+              )}
+            </View>
+
+            <View style={styles.evolutionOverlay}>
+              <Text style={styles.evolutionStageName}>
+                {STAGE_NAMES[stage]}
+              </Text>
+              <View style={styles.evolutionTrack}>
                 <View
                   style={[
-                    styles.sceneProgressFill,
+                    styles.evolutionFill,
                     { width: `${progressPercent}%` },
                   ]}
                 />
               </View>
-              <Text style={styles.sceneProgressStage}>
-                {STAGE_NAMES[stage] ?? STAGE_NAMES[1]}
+              <Text style={styles.evolutionNext}>
+                Next: {nextStageName}
               </Text>
+            </View>
+          </View>
+
+          <View style={styles.statsRow}>
+            <View style={styles.statChip}>
+              <Ionicons name="flame-outline" size={14} color={colors.primary} />
+              <Text style={styles.statValue}>{streak}</Text>
+              <Text style={styles.statLabel}>streak</Text>
+            </View>
+            <View style={styles.statChip}>
+              <Ionicons name="wallet-outline" size={14} color={colors.warning} />
+              <Text style={styles.statValue}>{formatNumber(balance)}</Text>
+              <Text style={styles.statLabel}>points</Text>
+            </View>
+            <View
+              style={[
+                styles.statChip,
+                happiness <= 30 && styles.statChipDanger,
+              ]}
+            >
+              <Ionicons
+                name="happy-outline"
+                size={14}
+                color={happiness > 30 ? '#FF8E9E' : colors.danger}
+              />
+              <Text
+                style={[
+                  styles.statValue,
+                  happiness <= 30 && styles.statValueDanger,
+                ]}
+              >
+                {Math.round(happiness)}%
+              </Text>
+              <Text style={styles.statLabel}>happiness</Text>
             </View>
           </View>
 
@@ -463,26 +748,6 @@ export default function HomeScreen() {
               );
             })}
           </View>
-
-          <View style={styles.petCardFooter}>
-            <View style={styles.footerStat}>
-              <Ionicons name="flame-outline" size={14} color={colors.primary} />
-              <Text style={styles.footerStatValue}>{streak}</Text>
-              <Text style={styles.footerStatLabel}>streak</Text>
-            </View>
-            <View style={styles.footerStatDivider} />
-            <View style={styles.footerStat}>
-              <Ionicons name="wallet-outline" size={14} color={colors.warning} />
-              <Text style={styles.footerStatValue}>{formatNumber(balance)}</Text>
-              <Text style={styles.footerStatLabel}>coins</Text>
-            </View>
-            <View style={styles.footerStatDivider} />
-            <View style={styles.footerStat}>
-              <Ionicons name="star-outline" size={14} color={colors.textMuted} />
-              <Text style={styles.footerStatValue}>{stage}</Text>
-              <Text style={styles.footerStatLabel}>stage</Text>
-            </View>
-          </View>
         </View>
 
         {/* ACTION ROW */}
@@ -519,9 +784,7 @@ export default function HomeScreen() {
             </View>
           </PressableScale>
         </View>
-
-        <View style={{ height: 24 }} />
-      </ScrollView>
+      </View>
 
       <Sidebar
         visible={sidebarVisible}
@@ -532,10 +795,13 @@ export default function HomeScreen() {
       />
 
       <EvolutionCeremony
-        visible={showEvolution}
-        stage={stage}
+        visible={celebratingStage !== null}
+        stage={celebratingStage ?? stage}
         petName={petName}
-        onDismiss={() => setLastCelebratedStage(stage)}
+        onDismiss={() => {
+          setCelebratingStage(null);
+          setLastCelebratedStage(stage);
+        }}
       />
 
       <CollectiblesSheet
@@ -546,11 +812,57 @@ export default function HomeScreen() {
       <QuestsSheet
         visible={questsVisible}
         onClose={() => setQuestsVisible(false)}
+        onOpenRevive={() => setReviveVisible(true)}
       />
 
       <WaitlistSheet
         visible={waitlistVisible}
         onClose={() => setWaitlistVisible(false)}
+      />
+
+      <FoodSheet
+        visible={foodVisible}
+        onClose={() => setFoodVisible(false)}
+        onSelectFood={handleFoodSelect}
+        isDoneToday={isDoneToday}
+        balance={balance}
+      />
+
+      {isDead && (
+        <DeathOverlay
+          creatureName={displayName}
+          causeOfDeath={causeOfDeath}
+          streak={streak}
+          level={level}
+          deathCount={deathCount}
+          balance={balance}
+          reviveTokens={reviveTokens}
+          reviveWindowEndsAt={reviveWindowEndsAt}
+          onRevive={handleOpenRevive}
+          onEarnFreeRevive={handleEarnFreeRevive}
+          onHireGuardian={handleHireGuardian}
+          onAskCommunity={handleAskCommunity}
+        />
+      )}
+
+      <ReviveSheet
+        visible={reviveVisible}
+        onClose={() => setReviveVisible(false)}
+        creatureName={displayName}
+        balance={balance}
+        reviveTokens={reviveTokens}
+        reviveWindowEndsAt={reviveWindowEndsAt}
+        onRevive={handleRevive}
+        onEarnFreeRevive={handleEarnFreeRevive}
+        onHireGuardian={handleHireGuardian}
+      />
+
+      <CommunityResurrectSheet
+        visible={communityResurrectVisible}
+        onClose={() => setCommunityResurrectVisible(false)}
+        creatureName={displayName}
+        balance={balance}
+        onResurrect={handleCommunityResurrect}
       />
 
       {exitToastVisible && (
@@ -575,8 +887,11 @@ const styles = StyleSheet.create({
     backgroundColor: colors.background,
   },
   container: {
+    flex: 1,
     paddingTop: 12,
-    paddingBottom: 20,
+    paddingBottom: 12,
+    gap: 10,
+    justifyContent: 'space-between',
   },
   exitToast: {
     position: 'absolute',
@@ -601,84 +916,21 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 18,
+    marginBottom: 10,
     gap: 8,
   },
   topBarWrap: {
     flexWrap: 'wrap',
   },
-  namePill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 14,
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.06)',
-  },
-  namePillSmall: {
-    paddingVertical: 6,
-    paddingHorizontal: 8,
-    gap: 4,
-  },
-  nameIcon: {
-    width: 22,
-    height: 22,
-    borderRadius: 6,
-  },
-  nameIconSmall: {
-    width: 18,
-    height: 18,
-    borderRadius: 4,
-  },
-  nameText: {
-    color: colors.text,
-    fontSize: 13,
-    fontFamily: 'Poppins_700Bold',
-    maxWidth: 120,
-  },
-  nameTextSmall: {
-    fontSize: 11,
-    maxWidth: 90,
+  appIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: 10,
   },
   topBarRight: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 7,
-  },
-  currencyChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingVertical: 6,
-    paddingHorizontal: 10,
-    borderRadius: 12,
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.06)',
-  },
-  currencyChipSmall: {
-    paddingVertical: 4,
-    paddingHorizontal: 6,
-    gap: 2,
-  },
-  currencyValue: {
-    color: colors.text,
-    fontSize: 12,
-    fontFamily: 'Poppins_700Bold',
-  },
-  currencyValueSmall: {
-    fontSize: 10,
-  },
-  currencySymbol: {
-    color: colors.textMuted,
-    fontSize: 10,
-    fontFamily: 'Poppins_600SemiBold',
-  },
-  currencySymbolSmall: {
-    fontSize: 9,
   },
   headerIconButton: {
     width: 36,
@@ -697,59 +949,78 @@ const styles = StyleSheet.create({
 
   /* PET CARD */
   petCard: {
+    flex: 1,
     width: '100%',
-    padding: 14,
+    padding: 12,
     borderRadius: 24,
     backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.06)',
-    gap: 12,
+    gap: 10,
   },
   petCardHeader: {
     width: '100%',
     flexDirection: 'row',
     alignItems: 'center',
-    flexWrap: 'wrap',
-    gap: 8,
+    justifyContent: 'space-between',
+    gap: 12,
   },
-  timerPill: {
+  petName: {
+    color: colors.text,
+    fontSize: 22,
+    fontFamily: 'Poppins_800ExtraBold',
+  },
+  levelRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 5,
-    paddingVertical: 6,
-    paddingHorizontal: 10,
-    borderRadius: 12,
-    backgroundColor: colors.background,
+    gap: 8,
+    marginTop: 2,
   },
-  timerText: {
-    color: colors.text,
+  levelText: {
+    color: colors.textMuted,
     fontSize: 11,
     fontFamily: 'Poppins_700Bold',
   },
-  primaryButtonSmall: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    paddingVertical: 6,
-    paddingHorizontal: 10,
-    borderRadius: 12,
-    backgroundColor: colors.primary,
+  xpTrackMini: {
+    width: 80,
+    height: 5,
+    borderRadius: 3,
+    backgroundColor: 'rgba(255,255,255,0.10)',
+    overflow: 'hidden',
   },
-  primaryButtonSmallTiny: {
-    paddingVertical: 5,
-    paddingHorizontal: 8,
+  xpFillMini: {
+    height: '100%',
+    borderRadius: 3,
+    backgroundColor: '#8B5CF6',
   },
-  primaryButtonText: {
-    color: colors.background,
-    fontSize: 12,
+  xpTextMini: {
+    color: colors.textMuted,
+    fontSize: 10,
     fontFamily: 'Poppins_700Bold',
   },
+  feedButton: {
+    width: 44,
+    height: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 14,
+    backgroundColor: colors.primary,
+  },
+  feedButtonTiny: {
+    width: 38,
+    height: 38,
+    borderRadius: 12,
+  },
+  fruitIcon: {
+    fontSize: 22,
+  },
+
+  /* SCENE */
   scene: {
+    flex: 1,
     width: '100%',
-    minHeight: 220,
-    maxHeight: 360,
-    aspectRatio: 1.25,
-    borderRadius: 18,
+    minHeight: 180,
+    borderRadius: 20,
     overflow: 'hidden',
     alignItems: 'center',
     justifyContent: 'center',
@@ -773,53 +1044,116 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: 60,
     borderTopRightRadius: 60,
   },
-  petWrap: {
+  petCenter: {
+    alignItems: 'center',
+    justifyContent: 'center',
     zIndex: 2,
-  },
-  accessory: {
-    position: 'absolute',
-    top: -8,
-    right: -10,
-    fontSize: 28,
-    zIndex: 4,
   },
   floatingHeart: {
     position: 'absolute',
-    top: 20,
-    right: 24,
-    fontSize: 24,
+    top: -6,
+    right: -18,
+    fontSize: 20,
     zIndex: 3,
   },
-  petCardFooter: {
-    width: '100%',
+  floatingEmoji: {
+    position: 'absolute',
+    top: -8,
+    right: -22,
+    zIndex: 4,
+  },
+  floatingEmojiText: {
+    fontSize: 22,
+  },
+  guardianBadge: {
+    position: 'absolute',
+    top: 10,
+    right: 10,
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-evenly',
-    paddingVertical: 4,
-    borderRadius: 14,
-    backgroundColor: colors.background,
+    gap: 5,
+    paddingVertical: 5,
+    paddingHorizontal: 10,
+    borderRadius: 12,
+    backgroundColor: 'rgba(139,92,246,0.14)',
+    borderWidth: 1,
+    borderColor: 'rgba(139,92,246,0.30)',
+    zIndex: 5,
   },
-  footerStat: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 2,
-    paddingVertical: 8,
-  },
-  footerStatDivider: {
-    width: 1,
-    alignSelf: 'stretch',
-    backgroundColor: 'rgba(255,255,255,0.06)',
-  },
-  footerStatValue: {
-    color: colors.text,
-    fontSize: 14,
+  guardianText: {
+    color: '#8B5CF6',
+    fontSize: 10,
     fontFamily: 'Poppins_800ExtraBold',
   },
-  footerStatLabel: {
+
+  /* EVOLUTION OVERLAY */
+  evolutionOverlay: {
+    position: 'absolute',
+    left: 10,
+    right: 10,
+    bottom: 10,
+    gap: 5,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 14,
+    backgroundColor: 'rgba(7,17,31,0.45)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.06)',
+  },
+  evolutionStageName: {
+    color: colors.text,
+    fontSize: 12,
+    fontFamily: 'Poppins_800ExtraBold',
+  },
+  evolutionTrack: {
+    width: '100%',
+    height: 5,
+    borderRadius: 3,
+    backgroundColor: 'rgba(255,255,255,0.12)',
+    overflow: 'hidden',
+  },
+  evolutionFill: {
+    height: '100%',
+    borderRadius: 3,
+    backgroundColor: colors.primary,
+  },
+  evolutionNext: {
     color: colors.textMuted,
-    fontSize: 10,
-    fontFamily: 'Poppins_500Medium',
+    fontSize: 9,
+    fontFamily: 'Poppins_600SemiBold',
+  },
+
+  /* STATS ROW */
+  statsRow: {
+    width: '100%',
+    flexDirection: 'row',
+    gap: 8,
+  },
+  statChip: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 5,
+    paddingVertical: 8,
+    borderRadius: 12,
+    backgroundColor: colors.background,
+  },
+  statChipDanger: {
+    backgroundColor: 'rgba(255,100,124,0.10)',
+  },
+  statValue: {
+    color: colors.text,
+    fontSize: 13,
+    fontFamily: 'Poppins_800ExtraBold',
+  },
+  statValueDanger: {
+    color: colors.danger,
+  },
+  statLabel: {
+    color: colors.textMuted,
+    fontSize: 9,
+    fontFamily: 'Poppins_600SemiBold',
   },
 
   /* PET ACTIONS */
@@ -833,7 +1167,7 @@ const styles = StyleSheet.create({
     minWidth: 0,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 5,
+    gap: 4,
     paddingVertical: 10,
     paddingHorizontal: 4,
     borderRadius: 14,
@@ -883,15 +1217,14 @@ const styles = StyleSheet.create({
     width: '100%',
     flexDirection: 'row',
     gap: 10,
-    marginTop: 14,
   },
   actionTile: {
     flex: 1,
     minWidth: 0,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
-    paddingVertical: 16,
+    gap: 6,
+    paddingVertical: 12,
     borderRadius: 18,
     backgroundColor: colors.surface,
     borderWidth: 1,
@@ -925,55 +1258,5 @@ const styles = StyleSheet.create({
     fontFamily: 'Poppins_800ExtraBold',
     letterSpacing: 0.4,
     textTransform: 'uppercase',
-  },
-
-  /* PROGRESS (inside pet scene) */
-  sceneProgress: {
-    position: 'absolute',
-    left: 12,
-    right: 12,
-    bottom: 12,
-    padding: 12,
-    borderRadius: 16,
-    backgroundColor: 'rgba(7,17,31,0.78)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
-  },
-  sceneProgressHeader: {
-    width: '100%',
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  sceneProgressTitle: {
-    color: colors.text,
-    fontSize: 12,
-    fontFamily: 'Poppins_700Bold',
-    letterSpacing: tracking.small * 12,
-  },
-  sceneProgressPercent: {
-    color: colors.primary,
-    fontSize: 12,
-    fontFamily: 'Poppins_800ExtraBold',
-    letterSpacing: tracking.small * 12,
-  },
-  sceneProgressTrack: {
-    width: '100%',
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: 'rgba(255,255,255,0.10)',
-    overflow: 'hidden',
-  },
-  sceneProgressFill: {
-    height: '100%',
-    borderRadius: 3,
-    backgroundColor: colors.primary,
-  },
-  sceneProgressStage: {
-    marginTop: 6,
-    color: colors.textMuted,
-    fontSize: 10,
-    fontFamily: 'Poppins_500Medium',
   },
 });

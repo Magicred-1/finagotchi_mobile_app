@@ -1,13 +1,15 @@
-import React, { useCallback, useEffect, useRef } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
-    Alert,
     Image,
+    Modal,
     Pressable,
+    Share,
     StyleSheet,
     Text,
     View,
     useWindowDimensions,
 } from 'react-native';
+import QRCode from 'react-native-qrcode-svg';
 import {
     Gesture,
     GestureDetector,
@@ -29,12 +31,15 @@ import * as Haptics from 'expo-haptics';
 import { useWallet } from '../wallet/useWallet';
 import { usePetStore } from '../features/pet/store';
 import { PressableScale } from './PressableScale';
-import { colors, spacing, springs, typography } from '../theme/tokens';
+import { colors, radius, spacing, springs, typography } from '../theme/tokens';
 
 export const SIDEBAR_WIDTH = 300;
 const SWIPE_THRESHOLD = 60;
+const OPEN_SWIPE_THRESHOLD = 30;
 const FLICK_VELOCITY = 650;
-const EDGE_SWIPE_WIDTH = 32;
+const EDGE_SWIPE_WIDTH = 28;
+const ACTIVATE_DX = 8;
+const FAIL_DY = 24;
 
 function truncateAddress(address: string | null) {
     if (!address) return '';
@@ -83,7 +88,28 @@ export function Sidebar({
     const petName = usePetStore((state) => state.name);
     const stage = usePetStore((state) => state.stage);
 
-    const internalTranslateX = useSharedValue(-SIDEBAR_WIDTH);
+    const [qrVisible, setQrVisible] = useState(false);
+    const walletAddress = wallet.publicKey?.toBase58() ?? null;
+
+    const handleShowQr = useCallback(() => {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        setQrVisible(true);
+    }, []);
+
+    const handleHideQr = useCallback(() => {
+        setQrVisible(false);
+    }, []);
+
+    const handleShareAddress = useCallback(async () => {
+        if (!walletAddress) return;
+        try {
+            await Share.share({ message: walletAddress });
+        } catch {
+            // User cancelled or share failed; ignore.
+        }
+    }, [walletAddress]);
+
+    const internalTranslateX = useSharedValue(SIDEBAR_WIDTH);
     const internalOpacity = useSharedValue(0);
 
     const translateX = externalTranslateX ?? internalTranslateX;
@@ -98,11 +124,8 @@ export function Sidebar({
         onCloseRef.current = onClose;
     }, [onClose]);
 
-    const ACTIVATE_DX = 12;
-    const FAIL_DY = 10;
-
     const animateOpen = useCallback((velocity = 0) => {
-        if (translateX.value >= -1 && opacity.value >= 0.99) return;
+        if (translateX.value <= 1 && opacity.value >= 0.99) return;
         const isFlick = Math.abs(velocity) > FLICK_VELOCITY;
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
         translateX.value = withSpring(0, {
@@ -118,10 +141,10 @@ export function Sidebar({
     }, [translateX, opacity, contentShift]);
 
     const animateClose = useCallback((velocity = 0) => {
-        if (translateX.value <= -SIDEBAR_WIDTH + 1 && opacity.value <= 0.01) return;
+        if (translateX.value >= SIDEBAR_WIDTH - 1 && opacity.value <= 0.01) return;
         const isFlick = Math.abs(velocity) > FLICK_VELOCITY;
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-        translateX.value = withSpring(-SIDEBAR_WIDTH, {
+        translateX.value = withSpring(SIDEBAR_WIDTH, {
             ...(isFlick ? springs.momentum : springs.default),
             velocity,
             reduceMotion: ReduceMotion.System,
@@ -142,7 +165,7 @@ export function Sidebar({
         }
     }, [visible, animateOpen, animateClose]);
 
-    // Drag from the left/center of the screen to open the sidebar.
+    // Drag from the right edge of the screen to open the sidebar.
     // Uses manual activation so taps and vertical scrolling pass through to
     // buttons and lists that sit underneath the full-screen overlay.
     const openPan = Gesture.Pan()
@@ -152,13 +175,14 @@ export function Sidebar({
         .onTouchesDown((event, stateManager) => {
             'worklet';
             const touch = event.allTouches[0];
-            if (touch && touch.absoluteX < EDGE_SWIPE_WIDTH) {
+            if (touch && touch.absoluteX > width - EDGE_SWIPE_WIDTH) {
                 dragStartX.value = touch.absoluteX;
                 dragStartY.value = touch.absoluteY;
             } else {
                 stateManager.fail();
             }
         })
+        .minPointers(1)
         .onTouchesMove((event, stateManager) => {
             'worklet';
             const touch = event.allTouches[0];
@@ -167,9 +191,9 @@ export function Sidebar({
             const dx = touch.absoluteX - dragStartX.value;
             const dy = touch.absoluteY - dragStartY.value;
 
-            if (dx > ACTIVATE_DX && Math.abs(dy) < FAIL_DY) {
+            if (dx < -ACTIVATE_DX && Math.abs(dy) < FAIL_DY) {
                 stateManager.activate();
-            } else if (Math.abs(dy) > FAIL_DY || dx < -ACTIVATE_DX) {
+            } else if (Math.abs(dy) > FAIL_DY * 2 || dx > ACTIVATE_DX * 3) {
                 stateManager.fail();
             }
         })
@@ -179,42 +203,42 @@ export function Sidebar({
         })
         .onUpdate((event) => {
             'worklet';
-            const x = Math.max(0, event.translationX);
-            translateX.value = Math.min(0, -SIDEBAR_WIDTH + x);
+            const x = Math.max(0, -event.translationX);
+            translateX.value = Math.max(0, SIDEBAR_WIDTH - x);
             opacity.value = Math.min(1, x / SIDEBAR_WIDTH);
         })
         .onEnd((event) => {
             'worklet';
             const projectedX = event.translationX + project(event.velocityX);
             const shouldOpen =
-                projectedX > SWIPE_THRESHOLD ||
-                event.translationX > SWIPE_THRESHOLD;
+                projectedX < -OPEN_SWIPE_THRESHOLD ||
+                event.translationX < -OPEN_SWIPE_THRESHOLD;
 
             if (shouldOpen) {
                 runOnJS(onOpen)();
             } else {
-                translateX.value = withSpring(-SIDEBAR_WIDTH, springs.default);
+                translateX.value = withSpring(SIDEBAR_WIDTH, springs.default);
                 opacity.value = withTiming(0, { duration: 200 });
             }
         });
 
-    // Swipe the sidebar left to close.
+    // Swipe the sidebar right to close.
     const sidebarPan = Gesture.Pan()
         .minDistance(20)
         .failOffsetY([-20, 20])
         .shouldCancelWhenOutside(false)
         .onUpdate((event) => {
             const x = event.translationX;
-            if (x <= 0) {
-                translateX.value = Math.max(-SIDEBAR_WIDTH, x);
-                opacity.value = Math.max(0, 1 + x / SIDEBAR_WIDTH);
+            if (x >= 0) {
+                translateX.value = Math.min(SIDEBAR_WIDTH, x);
+                opacity.value = Math.max(0, 1 - x / SIDEBAR_WIDTH);
             }
         })
         .onEnd((event) => {
             const projectedX = event.translationX + project(event.velocityX);
             const shouldClose =
-                projectedX < -SWIPE_THRESHOLD ||
-                event.translationX < -SIDEBAR_WIDTH * 0.4;
+                projectedX > SWIPE_THRESHOLD ||
+                event.translationX > SIDEBAR_WIDTH * 0.4;
 
             const velocity = event.velocityX;
             const isFlick = Math.abs(velocity) > FLICK_VELOCITY;
@@ -222,7 +246,7 @@ export function Sidebar({
 
             if (shouldClose) {
                 runOnJS(Haptics.impactAsync)(Haptics.ImpactFeedbackStyle.Light);
-                translateX.value = withSpring(-SIDEBAR_WIDTH, {
+                translateX.value = withSpring(SIDEBAR_WIDTH, {
                     ...springConfig,
                     velocity,
                     reduceMotion: ReduceMotion.System,
@@ -268,11 +292,6 @@ export function Sidebar({
         [onClose, onOpenQuests, onOpenWaitlist, pathname, router]
     );
 
-    const handleAddBank = () => {
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-        Alert.alert('Bank accounts', 'Linking bank accounts is coming soon.');
-    };
-
     const backdropStyle = useAnimatedStyle(() => ({
         opacity: opacity.value,
         pointerEvents: opacity.value > 0 ? 'auto' : 'none',
@@ -300,6 +319,7 @@ export function Sidebar({
                         },
                     ]}
                     pointerEvents={visible ? 'none' : 'auto'}
+                    collapsable={false}
                 />
             </GestureDetector>
 
@@ -432,10 +452,7 @@ export function Sidebar({
                                             <View style={styles.connectionStatus}>
                                                 <View style={styles.statusDot} />
                                                 <Text style={styles.statusText}>
-                                                    {truncateAddress(
-                                                        wallet.publicKey?.toBase58() ??
-                                                            null
-                                                    )}
+                                                    {truncateAddress(walletAddress)}
                                                 </Text>
                                             </View>
                                         ) : (
@@ -457,66 +474,105 @@ export function Sidebar({
                                             </View>
                                         )}
                                     </View>
-                                    {wallet.connected ? (
+                                </View>
+
+                                {wallet.connected ? (
+                                    <View style={styles.walletActions}>
+                                        <PressableScale
+                                            onPress={handleShowQr}
+                                            style={styles.walletActionButton}
+                                        >
+                                            <Ionicons
+                                                name="qr-code-outline"
+                                                size={18}
+                                                color={colors.background}
+                                            />
+                                            <Text style={styles.walletActionText}>
+                                                Show QR
+                                            </Text>
+                                        </PressableScale>
+
                                         <PressableScale
                                             onPress={wallet.disconnect}
-                                            style={styles.iconButton}
-                                            hitSlop={8}
+                                            style={[
+                                                styles.walletActionButton,
+                                                styles.disconnectButton,
+                                            ]}
                                         >
                                             <Ionicons
                                                 name="log-out-outline"
                                                 size={18}
-                                                color={colors.danger}
+                                                color={colors.background}
                                             />
+                                            <Text style={styles.walletActionText}>
+                                                Disconnect
+                                            </Text>
                                         </PressableScale>
-                                    ) : null}
-                                </View>
-
-                                {/* BANK ACCOUNTS */}
-                                <View style={styles.connectionRow}>
-                                    <View
-                                        style={[
-                                            styles.connectionIcon,
-                                            styles.connectionIconMuted,
-                                        ]}
-                                    >
-                                        <Ionicons
-                                            name="card-outline"
-                                            size={22}
-                                            color={colors.textMuted}
-                                        />
                                     </View>
-                                    <View style={styles.connectionBody}>
-                                        <Text
-                                            style={[
-                                                styles.connectionLabel,
-                                                styles.connectionLabelMuted,
-                                            ]}
-                                        >
-                                            Bank accounts
-                                        </Text>
-                                        <Text
-                                            style={[
-                                                styles.statusText,
-                                                styles.statusTextOffline,
-                                            ]}
-                                        >
-                                            No accounts linked
-                                        </Text>
-                                    </View>
-                                    <PressableScale
-                                        onPress={handleAddBank}
-                                        style={styles.addButton}
-                                        hitSlop={8}
-                                    >
-                                        <Ionicons
-                                            name="add"
-                                            size={18}
-                                            color={colors.primary}
-                                        />
-                                    </PressableScale>
-                                </View>
+                                ) : null}
                             </View>
+
+                            <Modal
+                                visible={qrVisible}
+                                transparent
+                                animationType="fade"
+                                onRequestClose={handleHideQr}
+                            >
+                                <View style={styles.qrOverlay}>
+                                    <Pressable
+                                        style={StyleSheet.absoluteFill}
+                                        onPress={handleHideQr}
+                                    />
+                                    <View style={styles.qrCard}>
+                                        <Text style={styles.qrTitle}>
+                                            Your Solana address
+                                        </Text>
+                                        {walletAddress ? (
+                                            <>
+                                                <View style={styles.qrCodeWrap}>
+                                                    <QRCode
+                                                        value={walletAddress}
+                                                        size={180}
+                                                        backgroundColor="white"
+                                                        color="black"
+                                                    />
+                                                </View>
+                                                <Text style={styles.qrAddress}>
+                                                    {walletAddress}
+                                                </Text>
+                                                <PressableScale
+                                                    onPress={handleShareAddress}
+                                                    style={styles.qrShareButton}
+                                                >
+                                                    <Ionicons
+                                                        name="share-outline"
+                                                        size={18}
+                                                        color={colors.background}
+                                                    />
+                                                    <Text
+                                                        style={styles.qrShareText}
+                                                    >
+                                                        Share address
+                                                    </Text>
+                                                </PressableScale>
+                                            </>
+                                        ) : (
+                                            <Text style={styles.qrAddress}>
+                                                No wallet connected
+                                            </Text>
+                                        )}
+                                        <PressableScale
+                                            onPress={handleHideQr}
+                                            style={styles.qrCloseButton}
+                                        >
+                                            <Text style={styles.qrCloseText}>
+                                                Close
+                                            </Text>
+                                        </PressableScale>
+                                    </View>
+                                </View>
+                            </Modal>
+
                         </Animated.View>
                     </Animated.View>
                 </GestureDetector>
@@ -529,12 +585,12 @@ const styles = StyleSheet.create({
     container: {
         position: 'absolute',
         top: 0,
-        left: 0,
+        right: 0,
         zIndex: 1000,
     },
     dragOverlay: {
         position: 'absolute',
-        left: 0,
+        right: 0,
         top: 0,
         zIndex: 1001,
         backgroundColor: 'transparent',
@@ -544,14 +600,14 @@ const styles = StyleSheet.create({
     },
     sidebar: {
         position: 'absolute',
-        left: 0,
+        right: 0,
         top: 0,
         backgroundColor: 'rgba(14,27,46,0.96)',
-        borderRightWidth: 1,
-        borderRightColor: 'rgba(255,255,255,0.08)',
+        borderLeftWidth: 1,
+        borderLeftColor: 'rgba(255,255,255,0.08)',
         paddingHorizontal: spacing.lg,
         shadowColor: '#000',
-        shadowOffset: { width: 8, height: 0 },
+        shadowOffset: { width: -8, height: 0 },
         shadowOpacity: 0.35,
         shadowRadius: 40,
         elevation: 20,
@@ -559,7 +615,7 @@ const styles = StyleSheet.create({
     handle: {
         position: 'absolute',
         top: 16,
-        left: spacing.lg,
+        right: spacing.lg,
         width: 36,
         height: 4,
         borderRadius: 2,
@@ -669,12 +725,12 @@ const styles = StyleSheet.create({
     },
     activeAccent: {
         position: 'absolute',
-        left: 0,
+        right: 0,
         top: 12,
         bottom: 12,
         width: 3,
-        borderTopRightRadius: 3,
-        borderBottomRightRadius: 3,
+        borderTopLeftRadius: 3,
+        borderBottomLeftRadius: 3,
         backgroundColor: colors.background,
     },
     divider: {
@@ -750,20 +806,85 @@ const styles = StyleSheet.create({
     statusTextOffline: {
         color: colors.textMuted,
     },
-    iconButton: {
-        width: 32,
-        height: 32,
-        alignItems: 'center',
-        justifyContent: 'center',
-        borderRadius: 10,
-        backgroundColor: 'rgba(255,100,124,0.10)',
+    walletActions: {
+        flexDirection: 'row',
+        gap: spacing.sm,
+        marginTop: spacing.sm,
     },
-    addButton: {
-        width: 32,
-        height: 32,
+    walletActionButton: {
+        flex: 1,
+        flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'center',
-        borderRadius: 10,
-        backgroundColor: 'rgba(114,228,90,0.10)',
+        gap: spacing.sm,
+        paddingVertical: spacing.sm,
+        borderRadius: 12,
+        backgroundColor: colors.primary,
+    },
+    disconnectButton: {
+        backgroundColor: colors.danger,
+    },
+    walletActionText: {
+        color: colors.background,
+        fontSize: typography.small,
+        fontFamily: 'Poppins_700Bold',
+    },
+    qrOverlay: {
+        flex: 1,
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: 'rgba(0,0,0,0.70)',
+    },
+    qrCard: {
+        width: 300,
+        alignItems: 'center',
+        gap: spacing.md,
+        padding: spacing.lg,
+        borderRadius: radius.lg,
+        backgroundColor: colors.surface,
+        borderWidth: 1,
+        borderColor: 'rgba(255,255,255,0.08)',
+    },
+    qrTitle: {
+        color: colors.text,
+        fontSize: typography.heading,
+        fontFamily: 'Poppins_700Bold',
+        textAlign: 'center',
+    },
+    qrCodeWrap: {
+        padding: spacing.md,
+        borderRadius: radius.md,
+        backgroundColor: '#FFFFFF',
+    },
+    qrAddress: {
+        color: colors.textMuted,
+        fontSize: typography.small,
+        fontFamily: 'Poppins_500Medium',
+        textAlign: 'center',
+    },
+    qrShareButton: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: spacing.sm,
+        width: '100%',
+        paddingVertical: spacing.sm,
+        borderRadius: radius.md,
+        backgroundColor: colors.primary,
+    },
+    qrShareText: {
+        color: colors.background,
+        fontSize: typography.body,
+        fontFamily: 'Poppins_800ExtraBold',
+    },
+    qrCloseButton: {
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingVertical: spacing.sm,
+    },
+    qrCloseText: {
+        color: colors.textMuted,
+        fontSize: typography.body,
+        fontFamily: 'Poppins_600SemiBold',
     },
 });

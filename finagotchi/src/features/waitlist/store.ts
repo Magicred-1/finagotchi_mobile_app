@@ -10,13 +10,18 @@ export type WaitlistEntry = {
 
 type WaitlistState = {
     entries: WaitlistEntry[];
+    boostExpiresAt: string | null;
     addEntry: (email: string, name?: string) => boolean;
+    getBoostMultiplier: () => number;
 };
+
+const BOOST_DURATION_MS = 24 * 60 * 60 * 1000;
 
 export const useWaitlistStore = create<WaitlistState>()(
     persist(
         (set, get) => ({
             entries: [],
+            boostExpiresAt: null,
 
             addEntry: (email, name) => {
                 const normalized = email.trim().toLowerCase();
@@ -29,6 +34,13 @@ export const useWaitlistStore = create<WaitlistState>()(
                     return true;
                 }
 
+                const now = Date.now();
+                const expiresAt = get().boostExpiresAt;
+                const currentBoost = expiresAt ? new Date(expiresAt).getTime() : 0;
+                const newBoostExpiresAt = new Date(
+                    Math.max(now, currentBoost) + BOOST_DURATION_MS
+                ).toISOString();
+
                 set({
                     entries: [
                         ...get().entries,
@@ -38,9 +50,16 @@ export const useWaitlistStore = create<WaitlistState>()(
                             joinedAt: new Date().toISOString(),
                         },
                     ],
+                    boostExpiresAt: newBoostExpiresAt,
                 });
 
                 return true;
+            },
+
+            getBoostMultiplier: () => {
+                const expires = get().boostExpiresAt;
+                if (!expires) return 1;
+                return new Date(expires).getTime() > Date.now() ? 2 : 1;
             },
         }),
         {

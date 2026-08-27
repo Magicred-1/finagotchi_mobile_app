@@ -1,6 +1,7 @@
 // @ts-nocheck
 // Polyfills must run before any wallet SDK code is evaluated.
 import 'react-native-get-random-values';
+import 'react-native-url-polyfill/auto';
 import { Buffer } from 'buffer';
 import { p256 } from '@noble/curves/nist.js';
 import { sha256 } from '@noble/hashes/sha2.js';
@@ -9,10 +10,10 @@ if (typeof (globalThis as any).Buffer === 'undefined') {
     (globalThis as any).Buffer = Buffer;
 }
 
-// iOS JSC/Hermes does not ship with WebCrypto, which Phantom's Auth2 stamper
-// needs for crypto.subtle.generateKey/exportKey/importKey/sign/digest. We
-// provide a minimal pure-JS SubtleCrypto implementation backed by Noble curves
-// for ECDSA P-256 / SHA-256 only.
+// iOS JSC/Hermes does not ship with WebCrypto, which Turnkey's passkey/OAuth
+// stamper needs for crypto.subtle.generateKey/exportKey/importKey/sign/digest.
+// We provide a minimal pure-JS SubtleCrypto implementation backed by Noble
+// curves for ECDSA P-256 / SHA-256 only.
 
 const P256_PKCS8_HEADER_HEX =
     '3041020100301306072a8648ce3d020106082a8648ce3d030107042730250201010420';
@@ -292,7 +293,7 @@ const subtle: SubtleCrypto = {
         return hash.buffer.slice(hash.byteOffset, hash.byteOffset + hash.byteLength);
     },
 
-    // Not used by Phantom; stubbed so the object looks like a SubtleCrypto.
+    // Not used by Turnkey; stubbed so the object looks like a SubtleCrypto.
     async deriveBits(): Promise<ArrayBuffer> {
         throw new Error('deriveBits is not supported');
     },
@@ -334,7 +335,7 @@ function installSubtleCrypto() {
 
     // Always install our subtle shim unless a working WebCrypto implementation
     // with generateKey is already present. iOS JSC/Hermes expose no subtle, and
-    // some runtimes expose a stub object that lacks the methods Phantom needs.
+    // some runtimes expose a stub object that lacks the methods Turnkey needs.
     const hasWorkingSubtle =
         typeof crypto.subtle === 'object' &&
         crypto.subtle != null &&

@@ -1,7 +1,8 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
-import { updatePetStage } from '../pet/store';
+import { LIFE_DURATION_MS, updatePetStage, usePetStore } from '../pet/store';
+import { useWaitlistStore } from '../waitlist/store';
 
 export type CheckinDetails = {
     amount?: number;
@@ -28,6 +29,8 @@ type CheckinState = {
     hasCheckedInToday: () => boolean;
     freezeAvailable: () => boolean;
     getWeekHistory: () => boolean[];
+    resetStreak: () => void;
+    useStreakFreeze: () => boolean;
 };
 
 const MILESTONES = [3, 7, 14, 30, 60, 90];
@@ -115,6 +118,15 @@ export const useCheckinStore = create<CheckinState>()(
             checkIn: (saved: boolean, details?: CheckinDetails) => {
                 const state = get();
 
+                if (usePetStore.getState().isDead) {
+                    return {
+                        success: false,
+                        streak: state.streak,
+                        freezeUsed: false,
+                        milestone: null,
+                    };
+                }
+
                 if (state.lastCheckin === todayKey()) {
                     return {
                         success: false,
@@ -167,6 +179,21 @@ export const useCheckinStore = create<CheckinState>()(
 
                 set(updates);
 
+                if (saved) {
+                    const boost = useWaitlistStore.getState().getBoostMultiplier();
+                    const now = new Date();
+                    usePetStore.setState((pet) => ({
+                        happiness: Math.min(100, pet.happiness + 50),
+                        lastFedAt: now.toISOString(),
+                        lastInteractionAt: now.toISOString(),
+                        lifeTimerEndsAt: new Date(
+                            now.getTime() + LIFE_DURATION_MS
+                        ).toISOString(),
+                        balance: pet.balance + 50 * boost,
+                    }));
+                    usePetStore.getState().addXp(20);
+                }
+
                 updatePetStage(newStreak);
 
                 const milestone = MILESTONES.includes(newStreak)
@@ -179,6 +206,33 @@ export const useCheckinStore = create<CheckinState>()(
                     freezeUsed,
                     milestone,
                 };
+            },
+
+            resetStreak: () => {
+                set({
+                    streak: 0,
+                    lastCheckin: null,
+                    todayDetails: null,
+                });
+            },
+
+            useStreakFreeze: () => {
+                const state = get();
+                const hadActiveStreakYesterday =
+                    state.streak > 0 && state.lastCheckin === yesterdayKey();
+
+                if (!hadActiveStreakYesterday || !state.freezeAvailable()) {
+                    return false;
+                }
+
+                const key = todayKey();
+                set({
+                    streak: state.streak,
+                    lastCheckin: key,
+                    freezeLastUsedAt: key,
+                    history: { ...state.history, [key]: false },
+                });
+                return true;
             },
         }),
         {
