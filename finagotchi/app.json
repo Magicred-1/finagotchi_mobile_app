@@ -54,6 +54,14 @@
       "expo-splash-screen",
       "expo-notifications",
       [
+        "react-native-ble-plx",
+        {
+          "isBackgroundEnabled": false,
+          "modes": [],
+          "bluetoothAlwaysPermission": "Allow $(PRODUCT_NAME) to connect to your Finagotchi device over Bluetooth."
+        }
+      ],
+      [
         "expo-build-properties",
         {
           "ios": {

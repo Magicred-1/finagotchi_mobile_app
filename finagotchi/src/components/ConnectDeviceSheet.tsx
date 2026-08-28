@@ -1,0 +1,354 @@
+import React, { useEffect } from 'react';
+import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+
+import { BottomSheet } from './BottomSheet';
+import { Button } from './Button';
+import { PressableScale } from './PressableScale';
+import { colors, radius, spacing, typography } from '../theme/tokens';
+import { usePetStore, STAGE_NAMES } from '../features/pet/store';
+import {
+    MOODS,
+    nextEvolutionStage,
+    useDeviceControlStore,
+} from '../features/ble/sync';
+import type { FinagotchiBle } from '../features/ble/types';
+
+type Props = {
+    visible: boolean;
+    onClose: () => void;
+    ble: FinagotchiBle;
+};
+
+export function ConnectDeviceSheet({ visible, onClose, ble }: Props) {
+    const {
+        status,
+        devices,
+        connectedDevice,
+        deviceState,
+        error,
+        startScan,
+        connect,
+        disconnect,
+        reconnect,
+        connectMock,
+        sendCommand,
+    } = ble;
+
+    const stage = usePetStore((state) => state.stage);
+    const deviceMood = useDeviceControlStore((state) => state.deviceMood);
+    const pushMood = useDeviceControlStore((state) => state.pushMood);
+
+    // Start looking for the device as soon as the sheet opens.
+    useEffect(() => {
+        if (visible && status === 'idle' && !connectedDevice) {
+            startScan();
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [visible]);
+
+    const scanning = status === 'scanning';
+    const connecting = status === 'connecting';
+    const reconnecting = status === 'reconnecting';
+
+    const nextStage = nextEvolutionStage(stage);
+
+    function handleMoodPress(moodId: (typeof MOODS)[number]['id'], index: number) {
+        pushMood(moodId);
+        sendCommand(`mood:${index}`);
+    }
+
+    function handleEvolve() {
+        if (!nextStage) return;
+        // The device sync subscription writes `stage:<n>` to the device.
+        usePetStore.setState({ stage: nextStage });
+    }
+
+    return (
+        <BottomSheet visible={visible} onClose={onClose} title="Finagotchi Hardware">
+            {connectedDevice ? (
+                <View style={styles.section}>
+                    <View style={styles.connectedCard}>
+                        <View style={styles.connectedIconWrap}>
+                            <Ionicons name="bluetooth" size={20} color={colors.primary} />
+                        </View>
+                        <View style={styles.connectedInfo}>
+                            <Text style={styles.deviceName}>
+                                {connectedDevice.name ?? 'Finagotchi'}
+                            </Text>
+                            <Text style={styles.connectedLabel}>Connected</Text>
+                        </View>
+                    </View>
+
+                    {deviceState && (
+                        <View style={styles.stateRow}>
+                            <View style={styles.stateChip}>
+                                <Text style={styles.stateValue}>{deviceState.stage}</Text>
+                                <Text style={styles.stateLabel}>stage</Text>
+                            </View>
+                            <View style={styles.stateChip}>
+                                <Text style={styles.stateValue}>🔥 {deviceState.streak}</Text>
+                                <Text style={styles.stateLabel}>streak</Text>
+                            </View>
+                            <View style={styles.stateChip}>
+                                <Text style={styles.stateValue}>{deviceState.mood}</Text>
+                                <Text style={styles.stateLabel}>mood</Text>
+                            </View>
+                        </View>
+                    )}
+
+                    <View style={styles.controlGroup}>
+                        <Text style={styles.controlLabel}>Mood</Text>
+                        <View style={styles.moodRow}>
+                            {MOODS.map((mood) => {
+                                const active = deviceMood === mood.id;
+                                return (
+                                    <PressableScale
+                                        key={mood.id}
+                                        onPress={() => handleMoodPress(mood.id, mood.index)}
+                                        style={[
+                                            styles.moodChip,
+                                            active && styles.moodChipActive,
+                                        ]}
+                                    >
+                                        <Text
+                                            style={[
+                                                styles.moodChipText,
+                                                active && styles.moodChipTextActive,
+                                            ]}
+                                        >
+                                            {mood.id}
+                                        </Text>
+                                    </PressableScale>
+                                );
+                            })}
+                        </View>
+                    </View>
+
+                    <Button
+                        title={
+                            nextStage
+                                ? `Evolve to ${STAGE_NAMES[nextStage].split(' • ')[0]}`
+                                : 'Fully evolved'
+                        }
+                        variant="secondary"
+                        disabled={!nextStage}
+                        onPress={handleEvolve}
+                    />
+
+                    <Button title="Disconnect" variant="secondary" onPress={disconnect} />
+                </View>
+            ) : (
+                <View style={styles.section}>
+                    <View style={styles.statusRow}>
+                        {(scanning || reconnecting) && (
+                            <ActivityIndicator size="small" color={colors.primary} />
+                        )}
+                        <Text style={styles.statusText}>
+                            {scanning
+                                ? 'Searching for nearby Finagotchi…'
+                                : connecting
+                                  ? 'Connecting…'
+                                  : reconnecting
+                                    ? 'Connection lost — reconnecting…'
+                                    : error ?? 'No Finagotchi found nearby.'}
+                        </Text>
+                    </View>
+
+                    {devices.map((device) => (
+                        <PressableScale
+                            key={device.id}
+                            onPress={() => connect(device)}
+                            disabled={connecting}
+                            style={[
+                                styles.deviceRow,
+                                connecting && styles.deviceRowDisabled,
+                            ]}
+                        >
+                            <Ionicons
+                                name="hardware-chip-outline"
+                                size={18}
+                                color={colors.primary}
+                            />
+                            <View style={styles.deviceRowInfo}>
+                                <Text style={styles.deviceName}>
+                                    {device.name ?? 'Finagotchi'}
+                                </Text>
+                                <Text style={styles.deviceMeta}>
+                                    {device.rssi != null ? `${device.rssi} dBm` : ''}
+                                </Text>
+                            </View>
+                            <Text style={styles.connectLabel}>Connect</Text>
+                        </PressableScale>
+                    ))}
+
+                    {__DEV__ && (
+                        <PressableScale
+                            onPress={connectMock}
+                            style={styles.deviceRow}
+                        >
+                            <Ionicons
+                                name="flask-outline"
+                                size={18}
+                                color={colors.warning}
+                            />
+                            <View style={styles.deviceRowInfo}>
+                                <Text style={styles.deviceName}>Finagotchi (demo)</Text>
+                                <Text style={styles.deviceMeta}>
+                                    Mock device — logs writes, echoes state
+                                </Text>
+                            </View>
+                            <Text style={styles.connectLabel}>Connect</Text>
+                        </PressableScale>
+                    )}
+
+                    {!scanning && !reconnecting && (
+                        <Button
+                            title="Scan again"
+                            variant="secondary"
+                            loading={connecting}
+                            onPress={startScan}
+                        />
+                    )}
+
+                    {!scanning && !connecting && !reconnecting && status === 'error' && (
+                        <Button title="Reconnect" onPress={reconnect} />
+                    )}
+                </View>
+            )}
+        </BottomSheet>
+    );
+}
+
+const styles = StyleSheet.create({
+    section: {
+        gap: spacing.md,
+        paddingBottom: spacing.md,
+    },
+    statusRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: spacing.sm,
+    },
+    statusText: {
+        color: colors.textMuted,
+        fontSize: typography.small,
+        fontFamily: 'Poppins_600SemiBold',
+    },
+    deviceRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: spacing.sm,
+        padding: spacing.md,
+        borderRadius: radius.md,
+        backgroundColor: colors.surfaceLight,
+        borderWidth: 1,
+        borderColor: colors.border,
+    },
+    deviceRowDisabled: {
+        opacity: 0.5,
+    },
+    deviceRowInfo: {
+        flex: 1,
+    },
+    deviceName: {
+        color: colors.text,
+        fontSize: typography.body,
+        fontFamily: 'Poppins_700Bold',
+    },
+    deviceMeta: {
+        color: colors.textMuted,
+        fontSize: typography.small,
+        fontFamily: 'Poppins_600SemiBold',
+    },
+    connectLabel: {
+        color: colors.primary,
+        fontSize: typography.small,
+        fontFamily: 'Poppins_700Bold',
+    },
+    connectedCard: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: spacing.md,
+        padding: spacing.md,
+        borderRadius: radius.md,
+        backgroundColor: colors.surfaceLight,
+        borderWidth: 1,
+        borderColor: colors.border,
+    },
+    connectedIconWrap: {
+        width: 40,
+        height: 40,
+        borderRadius: radius.md,
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: 'rgba(53,215,255,0.12)',
+    },
+    connectedInfo: {
+        flex: 1,
+    },
+    connectedLabel: {
+        color: colors.primary,
+        fontSize: typography.small,
+        fontFamily: 'Poppins_600SemiBold',
+    },
+    stateRow: {
+        flexDirection: 'row',
+        gap: spacing.sm,
+    },
+    stateChip: {
+        flex: 1,
+        alignItems: 'center',
+        paddingVertical: spacing.sm,
+        borderRadius: radius.md,
+        backgroundColor: colors.surfaceLight,
+        borderWidth: 1,
+        borderColor: colors.border,
+    },
+    stateValue: {
+        color: colors.text,
+        fontSize: typography.body,
+        fontFamily: 'Poppins_700Bold',
+    },
+    stateLabel: {
+        color: colors.textMuted,
+        fontSize: typography.small,
+        fontFamily: 'Poppins_600SemiBold',
+    },
+    controlGroup: {
+        gap: spacing.sm,
+    },
+    controlLabel: {
+        color: colors.textMuted,
+        fontSize: typography.small,
+        fontFamily: 'Poppins_700Bold',
+        textTransform: 'uppercase',
+        letterSpacing: 1,
+    },
+    moodRow: {
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        gap: spacing.sm,
+    },
+    moodChip: {
+        paddingVertical: 6,
+        paddingHorizontal: 12,
+        borderRadius: radius.pill,
+        backgroundColor: colors.surfaceLight,
+        borderWidth: 1,
+        borderColor: colors.border,
+    },
+    moodChipActive: {
+        backgroundColor: 'rgba(53,215,255,0.14)',
+        borderColor: colors.primary,
+    },
+    moodChipText: {
+        color: colors.textMuted,
+        fontSize: typography.small,
+        fontFamily: 'Poppins_600SemiBold',
+        textTransform: 'capitalize',
+    },
+    moodChipTextActive: {
+        color: colors.primary,
+    },
+});

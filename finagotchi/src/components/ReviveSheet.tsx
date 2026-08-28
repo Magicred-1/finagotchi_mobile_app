@@ -23,9 +23,11 @@ type Props = {
     creatureName: string;
     balance: number;
     reviveTokens: number;
+    reviveInvites: number;
+    reviveInvitesRequired: number;
     reviveWindowEndsAt: string | null;
     onRevive: () => void;
-    onEarnFreeRevive: () => void;
+    onInvite: () => void;
     onHireGuardian: () => void;
 };
 
@@ -35,9 +37,11 @@ export default function ReviveSheet({
     creatureName,
     balance,
     reviveTokens,
+    reviveInvites,
+    reviveInvitesRequired,
     reviveWindowEndsAt,
     onRevive,
-    onEarnFreeRevive,
+    onInvite,
     onHireGuardian,
 }: Props) {
     const [minting, setMinting] = useState(false);
@@ -64,8 +68,9 @@ export default function ReviveSheet({
     const windowActive = reviveWindowEndsAt
         ? new Date(reviveWindowEndsAt).getTime() > Date.now()
         : false;
+    const invitesReady = reviveInvites >= reviveInvitesRequired;
     const canAfford = windowActive
-        ? balance >= REMINT_COST_POINTS || reviveTokens > 0
+        ? balance >= REMINT_COST_POINTS || reviveTokens > 0 || invitesReady
         : true;
 
     return (
@@ -88,12 +93,27 @@ export default function ReviveSheet({
                     <View style={styles.costRow}>
                         <Text style={styles.costLabel}>Cost</Text>
                         <Text style={styles.costValue}>
-                            {reviveTokens > 0 ? 'Free token' : `${REMINT_COST_POINTS} points`}
+                            {reviveTokens > 0
+                                ? 'Free token'
+                                : invitesReady
+                                  ? 'Free (invites)'
+                                  : `${REMINT_COST_POINTS} points`}
                         </Text>
                     </View>
                     <View style={styles.costRow}>
                         <Text style={styles.costLabel}>Your balance</Text>
                         <Text style={styles.costValue}>{balance} points</Text>
+                    </View>
+                    <View style={styles.costRow}>
+                        <Text style={styles.costLabel}>Free revive</Text>
+                        <Text
+                            style={[
+                                styles.costValue,
+                                invitesReady && styles.costValueReady,
+                            ]}
+                        >
+                            {reviveInvites}/{reviveInvitesRequired} invites
+                        </Text>
                     </View>
                     {reviveTokens > 0 ? (
                         <View style={styles.tokenRow}>
@@ -112,14 +132,14 @@ export default function ReviveSheet({
 
                 <View style={styles.actions}>
                     <Button
-                        title={minting ? 'Summoning...' : reviveTokens > 0 ? 'Revive free' : windowActive ? `Pay ${REMINT_COST_POINTS} points` : 'Start over'}
+                        title={minting ? 'Summoning...' : reviveTokens > 0 ? 'Revive free' : invitesReady ? 'Revive free (invites)' : windowActive ? `Pay ${REMINT_COST_POINTS} points` : 'Start over'}
                         onPress={handleRevive}
                         disabled={minting || !canAfford}
                     />
                     {!canAfford && windowActive ? (
-                        <PressableScale onPress={onEarnFreeRevive}>
+                        <PressableScale onPress={onInvite}>
                             <Text style={styles.freeText}>
-                                Earn a free revive from a sponsored quest
+                                No points? Invite {reviveInvitesRequired} friends for a free revive ({reviveInvites}/{reviveInvitesRequired})
                             </Text>
                         </PressableScale>
                     ) : null}
@@ -190,6 +210,9 @@ const styles = StyleSheet.create({
         color: colors.text,
         fontSize: typography.body,
         fontFamily: 'Poppins_800ExtraBold',
+    },
+    costValueReady: {
+        color: colors.primary,
     },
     tokenRow: {
         marginTop: spacing.sm,

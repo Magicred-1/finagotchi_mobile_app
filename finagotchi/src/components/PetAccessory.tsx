@@ -103,7 +103,7 @@ function diamondFacetPath(R: number): string {
   );
 }
 
-export function PetAccessoryArt({ accessory, size }: PetAccessoryProps) {
+export const PetAccessoryArt = React.memo(function PetAccessoryArt({ accessory, size }: PetAccessoryProps) {
   if (accessory === 'none') return null;
 
   const R = size / 2;
@@ -169,7 +169,7 @@ export function PetAccessoryArt({ accessory, size }: PetAccessoryProps) {
         </G>
       );
   }
-}
+});
 
 interface AccessoryPreviewProps {
   accessory: PetAccessory;

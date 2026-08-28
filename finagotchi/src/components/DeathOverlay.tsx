@@ -21,9 +21,11 @@ type Props = {
     deathCount: number;
     balance: number;
     reviveTokens: number;
+    reviveInvites: number;
+    reviveInvitesRequired: number;
     reviveWindowEndsAt: string | null;
     onRevive: () => void;
-    onEarnFreeRevive: () => void;
+    onInvite: () => void;
     onHireGuardian: () => void;
     onAskCommunity: () => void;
 };
@@ -44,9 +46,11 @@ export default function DeathOverlay({
     deathCount,
     balance,
     reviveTokens,
+    reviveInvites,
+    reviveInvitesRequired,
     reviveWindowEndsAt,
     onRevive,
-    onEarnFreeRevive,
+    onInvite,
     onHireGuardian,
     onAskCommunity,
 }: Props) {
@@ -88,10 +92,14 @@ export default function DeathOverlay({
         onHireGuardian();
     }
 
+    const invitesReady = reviveInvites >= reviveInvitesRequired;
+
     const primaryTitle = windowActive
-        ? reviveTokens > 0
-            ? `Revive free (${reviveTokens})`
-            : 'Revive now'
+        ? invitesReady
+            ? 'Revive free (invites)'
+            : reviveTokens > 0
+              ? `Revive free (${reviveTokens})`
+              : 'Revive now'
         : 'Revive now';
 
     return (
@@ -152,11 +160,36 @@ export default function DeathOverlay({
                     />
 
                     {windowActive && reviveTokens === 0 ? (
-                        <PressableScale onPress={onEarnFreeRevive}>
-                            <Text style={styles.freeReviveText}>
-                                No points? Complete a sponsored quest for a free revive
+                        <View style={styles.inviteCard}>
+                            <View style={styles.inviteCardHeader}>
+                                <Text style={styles.inviteTitle}>
+                                    Free revive
+                                </Text>
+                                <Text
+                                    style={[
+                                        styles.inviteProgress,
+                                        invitesReady && styles.inviteProgressReady,
+                                    ]}
+                                >
+                                    {reviveInvites}/{reviveInvitesRequired}
+                                </Text>
+                            </View>
+                            <Text style={styles.inviteBody}>
+                                {invitesReady
+                                    ? 'Your friends answered the call — revive is free.'
+                                    : `Invite ${reviveInvitesRequired} friends to join Finagotchi.`}
                             </Text>
-                        </PressableScale>
+                            {!invitesReady && (
+                                <PressableScale
+                                    onPress={onInvite}
+                                    style={styles.inviteButton}
+                                >
+                                    <Text style={styles.inviteButtonText}>
+                                        Invite a friend
+                                    </Text>
+                                </PressableScale>
+                            )}
+                        </View>
                     ) : null}
 
                     <View style={styles.altActions}>
@@ -284,6 +317,51 @@ const styles = StyleSheet.create({
         fontSize: typography.small,
         fontFamily: 'Poppins_600SemiBold',
         textAlign: 'center',
+    },
+    inviteCard: {
+        width: '100%',
+        padding: spacing.md,
+        borderRadius: radius.lg,
+        backgroundColor: 'rgba(53,215,255,0.08)',
+        borderWidth: 1,
+        borderColor: 'rgba(53,215,255,0.20)',
+        gap: spacing.sm,
+    },
+    inviteCardHeader: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+    },
+    inviteTitle: {
+        color: colors.text,
+        fontSize: typography.body,
+        fontFamily: 'Poppins_700Bold',
+    },
+    inviteProgress: {
+        color: colors.textMuted,
+        fontSize: typography.body,
+        fontFamily: 'Poppins_800ExtraBold',
+    },
+    inviteProgressReady: {
+        color: colors.primary,
+    },
+    inviteBody: {
+        color: colors.textMuted,
+        fontSize: typography.small,
+        fontFamily: 'Poppins_400Regular',
+        lineHeight: 20,
+    },
+    inviteButton: {
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingVertical: spacing.sm,
+        borderRadius: radius.md,
+        backgroundColor: colors.primary,
+    },
+    inviteButtonText: {
+        color: colors.background,
+        fontSize: typography.small,
+        fontFamily: 'Poppins_700Bold',
     },
     altActions: {
         flexDirection: 'row',
