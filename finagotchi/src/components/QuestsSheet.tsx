@@ -63,6 +63,7 @@ export default function QuestsSheet({
     const addBalance = usePetStore((state) => state.addBalance);
     const addXp = usePetStore((state) => state.addXp);
     const boostHappiness = usePetStore((state) => state.boostHappiness);
+    const resetLifeTimer = usePetStore((state) => state.resetLifeTimer);
     const isDead = usePetStore((state) => state.isDead);
     const petName = usePetStore((state) => state.name);
 
@@ -147,6 +148,7 @@ export default function QuestsSheet({
         addBalance(quest.reward);
         addXp(quest.rewardXp);
         boostHappiness(10);
+        resetLifeTimer();
         setClaimedId(quest.id);
         setTimeout(() => setClaimedId((id) => (id === quest.id ? null : id)), 1600);
     }

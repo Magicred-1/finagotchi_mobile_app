@@ -38,6 +38,9 @@ export const REVIVE_COOLDOWNS_MS = [
 /** Free care actions (caress) are capped per calendar day. */
 export const FREE_ACTION_DAILY_LIMIT = 10;
 
+/** Friends a user must invite to earn a free revive after death. */
+export const REVIVE_INVITES_REQUIRED = 2;
+
 export type CauseOfDeath = 'starvation' | 'neglect';
 
 type DailyFreeUses = {
@@ -89,6 +92,8 @@ type PetState = {
     reviveTokens: number;
     /** Consumable streak freezes. */
     streakFreezes: number;
+    /** Friends invited toward a free revive. Reset on death and on revive. */
+    reviveInvites: number;
     /** Tracks free care actions used today. */
     dailyFreeUses: DailyFreeUses;
 
@@ -153,6 +158,10 @@ type PetState = {
     isGuardianActive: () => boolean;
     /** Time remaining on the guardian timer, in ms. */
     getGuardianRemainingMs: () => number;
+    /** Reset the 24-hour life timer (e.g. a quest was completed). */
+    resetLifeTimer: () => void;
+    /** Count one more friend invited toward a free revive. */
+    addReviveInvite: () => void;
 };
 
 function todayKey(): string {
@@ -194,6 +203,7 @@ export const usePetStore = create<PetState>()(
             level: 1,
             reviveTokens: 1,
             streakFreezes: 1,
+            reviveInvites: 0,
             dailyFreeUses: { date: todayKey(), count: 0 },
 
             getStage: () => get().stage,
@@ -346,6 +356,7 @@ export const usePetStore = create<PetState>()(
                     deathAt: now.toISOString(),
                     causeOfDeath: cause,
                     reviveWindowEndsAt: windowEnds.toISOString(),
+                    reviveInvites: 0,
                     // NFT is not burned; mintAddress is preserved.
                 });
             },
@@ -360,6 +371,7 @@ export const usePetStore = create<PetState>()(
                     deathAt: null,
                     causeOfDeath: null,
                     reviveWindowEndsAt: null,
+                    reviveInvites: 0,
                     mintAddress: state.mintAddress,
                     mintedAt: resetProgress ? now.toISOString() : state.mintedAt,
                     stage: resetProgress ? 1 : state.stage,
@@ -475,6 +487,24 @@ export const usePetStore = create<PetState>()(
                 if (!end) return 0;
                 return Math.max(0, new Date(end).getTime() - Date.now());
             },
+
+            resetLifeTimer: () => {
+                if (get().isDead) return;
+                set({
+                    lifeTimerEndsAt: new Date(
+                        Date.now() + LIFE_DURATION_MS
+                    ).toISOString(),
+                });
+            },
+
+            addReviveInvite: () => {
+                set({
+                    reviveInvites: Math.min(
+                        REVIVE_INVITES_REQUIRED,
+                        get().reviveInvites + 1
+                    ),
+                });
+            },
         }),
         {
             name: 'finagotchi-pet',
@@ -505,6 +535,9 @@ export const usePetStore = create<PetState>()(
                     }
                     if (!migrated.dailyFreeUses || typeof migrated.dailyFreeUses !== 'object') {
                         migrated.dailyFreeUses = { date: todayKey(), count: 0 };
+                    }
+                    if (typeof migrated.reviveInvites !== 'number') {
+                        migrated.reviveInvites = 0;
                     }
 
                     return migrated as PetState;

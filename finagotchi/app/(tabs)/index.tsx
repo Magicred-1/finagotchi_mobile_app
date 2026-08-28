@@ -3,6 +3,7 @@ import {
   Alert,
   BackHandler,
   Image,
+  Share,
   StyleSheet,
   Text,
   ToastAndroid,
@@ -31,9 +32,11 @@ import FoodSheet, { type FoodItem } from '../../src/components/FoodSheet';
 import DeathOverlay from '../../src/components/DeathOverlay';
 import ReviveSheet from '../../src/components/ReviveSheet';
 import CommunityResurrectSheet from '../../src/components/CommunityResurrectSheet';
+import { ConnectDeviceSheet } from '../../src/components/ConnectDeviceSheet';
 import { useCheckinStore } from '../../src/features/checkin/store';
 import {
   BACKGROUND_COLORS,
+  REVIVE_INVITES_REQUIRED,
   STAGE_NAMES,
   STAGE_THRESHOLDS,
   usePetStore,
@@ -41,6 +44,12 @@ import {
 } from '../../src/features/pet/store';
 import { useWalletStore } from '../../src/features/wallet/store';
 import { useWallet } from '../../src/wallet/useWallet';
+import { useFinagotchiBle } from '../../src/features/ble/useBle';
+import {
+  useDeviceControlStore,
+  useDeviceSync,
+} from '../../src/features/ble/sync';
+import type { PetMood as EngineMood } from '../../src/engine/expressions';
 import { colors, radius, spacing, tracking, typography } from '../../src/theme/tokens';
 import type { PetMood, PetReaction } from '../../src/components/PetCanvas';
 
@@ -100,6 +109,39 @@ function formatCountdown(ms: number): string {
   return `${hours}h ${minutes}m ${seconds}s`;
 }
 
+/**
+ * Self-ticking guardian countdown badge. Ticks locally so the home screen
+ * doesn't re-render every second just to update this label.
+ */
+function GuardianBadge() {
+  const isGuardianActive = usePetStore((state) => state.isGuardianActive);
+  const getGuardianRemainingMs = usePetStore(
+    (state) => state.getGuardianRemainingMs
+  );
+  const [timeLeft, setTimeLeft] = useState('');
+
+  useEffect(() => {
+    const update = () => {
+      setTimeLeft(
+        isGuardianActive() ? formatCountdown(getGuardianRemainingMs()) : ''
+      );
+    };
+
+    update();
+    const interval = setInterval(update, 1000);
+    return () => clearInterval(interval);
+  }, [isGuardianActive, getGuardianRemainingMs]);
+
+  if (!timeLeft) return null;
+
+  return (
+    <View style={styles.guardianBadge}>
+      <Ionicons name="shield-checkmark" size={12} color="#8B5CF6" />
+      <Text style={styles.guardianText}>Guardian {timeLeft}</Text>
+    </View>
+  );
+}
+
 function project(initialVelocity: number, decelerationRate = 0.998) {
   'worklet';
   return (initialVelocity / 1000) * decelerationRate / (1 - decelerationRate);
@@ -132,14 +174,13 @@ export default function HomeScreen() {
   const [questsVisible, setQuestsVisible] = useState(false);
   const [waitlistVisible, setWaitlistVisible] = useState(false);
   const [foodVisible, setFoodVisible] = useState(false);
+  const [bleVisible, setBleVisible] = useState(false);
   const [reviveVisible, setReviveVisible] = useState(false);
   const [communityResurrectVisible, setCommunityResurrectVisible] = useState(false);
   const [reaction, setReaction] = useState<PetReaction | undefined>(undefined);
   const [reactionKey, setReactionKey] = useState(0);
   const [actionMood, setActionMood] = useState<PetMood | undefined>(undefined);
   const [floatingEmoji, setFloatingEmoji] = useState<string | null>(null);
-  const [lifeTimeLeft, setLifeTimeLeft] = useState('');
-  const [guardianTimeLeft, setGuardianTimeLeft] = useState('');
   const [exitToastVisible, setExitToastVisible] = useState(false);
 
   const lastBackPress = useRef(0);
@@ -151,6 +192,7 @@ export default function HomeScreen() {
   const emojiTranslateY = useSharedValue(0);
 
   const wallet = useWallet();
+  const ble = useFinagotchiBle();
 
   const checkIn = useCheckinStore((state) => state.checkIn);
   const hasCheckedInToday = useCheckinStore((state) => state.hasCheckedInToday());
@@ -178,20 +220,13 @@ export default function HomeScreen() {
   const level = usePetStore((state) => state.level);
   const xp = usePetStore((state) => state.xp);
   const reviveTokens = usePetStore((state) => state.reviveTokens);
+  const reviveInvites = usePetStore((state) => state.reviveInvites);
+  const addReviveInvite = usePetStore((state) => state.addReviveInvite);
   const addXp = usePetStore((state) => state.addXp);
   const reviveCreature = usePetStore((state) => state.reviveCreature);
   const reviveWindowEndsAt = usePetStore((state) => state.reviveWindowEndsAt);
   const isReviveWindowActive = usePetStore((state) => state.isReviveWindowActive);
   const checkLifeTimer = usePetStore((state) => state.checkLifeTimer);
-  const getLifeTimerRemainingMs = usePetStore(
-    (state) => state.getLifeTimerRemainingMs
-  );
-  const lifeTimerEndsAt = usePetStore((state) => state.lifeTimerEndsAt);
-  const guardianExpiresAt = usePetStore((state) => state.guardianExpiresAt);
-  const isGuardianActive = usePetStore((state) => state.isGuardianActive);
-  const getGuardianRemainingMs = usePetStore(
-    (state) => state.getGuardianRemainingMs
-  );
   const hireGuardian = usePetStore((state) => state.hireGuardian);
   const useFreeAction = usePetStore((state) => state.useFreeAction);
   const deathCount = usePetStore((state) => state.deathCount);
@@ -225,36 +260,31 @@ export default function HomeScreen() {
 
   const effectiveMood = actionMood ?? mood;
 
+  // App label → engine expression; proud renders as happy, sleeping as sleepy.
+  const currentEngineMood: EngineMood =
+    effectiveMood === 'sleeping'
+      ? 'sleepy'
+      : effectiveMood === 'proud'
+        ? 'happy'
+        : effectiveMood;
+
+  // Mirror stage/mood/accessory/reactions to the connected device and back.
+  useDeviceSync(ble, currentEngineMood, reaction, reactionKey);
+  const deviceMood = useDeviceControlStore((state) => state.deviceMood);
+
+  // Tick store-side life/happiness logic once a second. Countdown text lives
+  // in self-ticking components (LifeTimerPill, GuardianBadge) so this screen
+  // no longer re-renders every second.
   useEffect(() => {
     const update = () => {
       checkLifeTimer();
       decayHappiness();
-
-      if (isDead && reviveWindowEndsAt) {
-        const remaining =
-          new Date(reviveWindowEndsAt).getTime() - Date.now();
-        setLifeTimeLeft(formatCountdown(remaining));
-      } else {
-        setLifeTimeLeft(formatCountdown(getLifeTimerRemainingMs()));
-      }
-
-      setGuardianTimeLeft(
-        isGuardianActive()
-          ? formatCountdown(getGuardianRemainingMs())
-          : ''
-      );
     };
 
     update();
     const interval = setInterval(update, 1000);
     return () => clearInterval(interval);
-  }, [
-    isDead,
-    reviveWindowEndsAt, happiness, checkLifeTimer, decayHappiness,
-    getLifeTimerRemainingMs,
-    isGuardianActive,
-    getGuardianRemainingMs,
-  ]);
+  }, [checkLifeTimer, decayHappiness]);
 
   useEffect(() => {
     if (isDead) {
@@ -275,6 +305,10 @@ export default function HomeScreen() {
     const onBackPress = () => {
       if (sidebarVisible) {
         setSidebarVisible(false);
+        return true;
+      }
+      if (bleVisible) {
+        setBleVisible(false);
         return true;
       }
       if (collectiblesVisible) {
@@ -330,7 +364,7 @@ export default function HomeScreen() {
 
     const subscription = BackHandler.addEventListener('hardwareBackPress', onBackPress);
     return () => subscription.remove();
-  }, [sidebarVisible, collectiblesVisible, questsVisible, waitlistVisible, foodVisible, communityResurrectVisible, celebratingStage, stage]);
+  }, [sidebarVisible, bleVisible, collectiblesVisible, questsVisible, waitlistVisible, foodVisible, communityResurrectVisible, celebratingStage, stage]);
 
   const REACTION_EMOJIS: Record<PetReaction, string> = {
     jump: '❤️',
@@ -444,6 +478,20 @@ export default function HomeScreen() {
     triggerEmotion('jump', 'happy');
   }, [isDead]);
 
+  // Drag-to-look: steer the on-device gaze too (throttled by RadialPet).
+  const handlePetLook = useCallback(
+    (yaw: number, pitch: number) => {
+      if (!ble.connectedDevice) return;
+      ble.sendCommand(`look:${Math.round(yaw)},${Math.round(pitch)}`);
+    },
+    [ble.sendCommand, ble.connectedDevice]
+  );
+
+  const handlePetLookEnd = useCallback(() => {
+    if (!ble.connectedDevice) return;
+    ble.sendCommand('look:off');
+  }, [ble.sendCommand, ble.connectedDevice]);
+
   const handleEvolve = useCallback((newStage: PetStage) => {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     setCelebratingStage(newStage);
@@ -451,11 +499,6 @@ export default function HomeScreen() {
 
   function handleOpenRevive() {
     setReviveVisible(true);
-  }
-
-  function handleEarnFreeRevive() {
-    setReviveVisible(false);
-    setQuestsVisible(true);
   }
 
   function handleHireGuardian() {
@@ -487,12 +530,32 @@ export default function HomeScreen() {
     reviveCreature(false);
   }
 
+  async function handleInviteForRevive() {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    try {
+      const result = await Share.share({
+        message: `Join me on Finagotchi and raise your own savings companion — ${displayName} needs ${REVIVE_INVITES_REQUIRED} friends to come back to life!`,
+        url: 'https://www.finagotchi.app/invite?ref=revive',
+        title: 'Join me on Finagotchi',
+      });
+      if (result.action === Share.sharedAction) {
+        addReviveInvite();
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      }
+    } catch {
+      // User cancelled or share failed; no invite counted.
+    }
+  }
+
   async function handleRevive() {
     const REMINT_COST_POINTS = 500;
     const windowActive = isReviveWindowActive();
 
     if (windowActive) {
-      if (reviveTokens > 0) {
+      if (reviveInvites >= REVIVE_INVITES_REQUIRED) {
+        // Free revive earned by inviting friends; the invite counter is
+        // consumed by reviveCreature below.
+      } else if (reviveTokens > 0) {
         usePetStore.setState({ reviveTokens: reviveTokens - 1 });
       } else if (balance >= REMINT_COST_POINTS) {
         usePetStore.setState({ balance: balance - REMINT_COST_POINTS });
@@ -552,6 +615,36 @@ export default function HomeScreen() {
           />
 
           <View style={styles.topBarRight}>
+            <PressableScale
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                setBleVisible(true);
+              }}
+              hitSlop={8}
+              style={[
+                styles.headerIconButton,
+                isTinyDevice && styles.headerIconButtonSmall,
+              ]}
+            >
+              <Ionicons
+                name="bluetooth"
+                size={isTinyDevice ? 16 : 18}
+                color={ble.connectedDevice ? colors.primary : colors.text}
+              />
+              <View
+                style={[
+                  styles.bleStatusDot,
+                  {
+                    backgroundColor: ble.connectedDevice
+                      ? '#5DE2A6'
+                      : ble.status === 'reconnecting' || ble.status === 'error'
+                        ? colors.danger
+                        : colors.textMuted,
+                  },
+                ]}
+              />
+            </PressableScale>
+
             <PressableScale
               onPress={() => setQuestsVisible(true)}
               hitSlop={8}
@@ -615,27 +708,21 @@ export default function HomeScreen() {
             />
             <View style={styles.ground} />
 
-            {guardianTimeLeft ? (
-              <View style={styles.guardianBadge}>
-                <Ionicons name="shield-checkmark" size={12} color="#8B5CF6" />
-                <Text style={styles.guardianText}>
-                  Guardian {guardianTimeLeft}
-                </Text>
-              </View>
-            ) : null}
+            <GuardianBadge />
 
             <View style={styles.petCenter}>
               {celebratingStage === null && (
                 <PetCanvas
                   mood={effectiveMood}
+                  engineMood={deviceMood}
                   reaction={reaction}
                   reactionKey={reactionKey}
                   accessory={accessory}
-                  lifeTimeLeft={lifeTimeLeft}
-                  lifeTimerEndsAt={lifeTimerEndsAt}
                   isSpectral={isSpectral}
                   onTap={handlePetTap}
                   onEvolve={handleEvolve}
+                  onLook={handlePetLook}
+                  onLookEnd={handlePetLookEnd}
                 />
               )}
               {(effectiveMood === 'happy' || effectiveMood === 'proud') && (
@@ -820,6 +907,12 @@ export default function HomeScreen() {
         onClose={() => setWaitlistVisible(false)}
       />
 
+      <ConnectDeviceSheet
+        visible={bleVisible}
+        onClose={() => setBleVisible(false)}
+        ble={ble}
+      />
+
       <FoodSheet
         visible={foodVisible}
         onClose={() => setFoodVisible(false)}
@@ -837,9 +930,11 @@ export default function HomeScreen() {
           deathCount={deathCount}
           balance={balance}
           reviveTokens={reviveTokens}
+          reviveInvites={reviveInvites}
+          reviveInvitesRequired={REVIVE_INVITES_REQUIRED}
           reviveWindowEndsAt={reviveWindowEndsAt}
           onRevive={handleOpenRevive}
-          onEarnFreeRevive={handleEarnFreeRevive}
+          onInvite={handleInviteForRevive}
           onHireGuardian={handleHireGuardian}
           onAskCommunity={handleAskCommunity}
         />
@@ -851,9 +946,11 @@ export default function HomeScreen() {
         creatureName={displayName}
         balance={balance}
         reviveTokens={reviveTokens}
+        reviveInvites={reviveInvites}
+        reviveInvitesRequired={REVIVE_INVITES_REQUIRED}
         reviveWindowEndsAt={reviveWindowEndsAt}
         onRevive={handleRevive}
-        onEarnFreeRevive={handleEarnFreeRevive}
+        onInvite={handleInviteForRevive}
         onHireGuardian={handleHireGuardian}
       />
 
@@ -945,6 +1042,16 @@ const styles = StyleSheet.create({
   headerIconButtonSmall: {
     width: 32,
     height: 32,
+  },
+  bleStatusDot: {
+    position: 'absolute',
+    top: 5,
+    right: 5,
+    width: 7,
+    height: 7,
+    borderRadius: 4,
+    borderWidth: 1,
+    borderColor: colors.surface,
   },
 
   /* PET CARD */

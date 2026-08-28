@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
     Keyboard,
     Platform,
@@ -60,6 +60,19 @@ export function BottomSheet({ visible, onClose, title, children }: Props) {
     const opacity = useSharedValue(0);
     const keyboardOffset = useSharedValue(0);
 
+    // Keep the latest onClose in a ref so `close` stays referentially stable.
+    // Parents pass inline arrows, and without this the visible-effect below
+    // re-fires on every parent render, restarting open/close animations.
+    const onCloseRef = useRef(onClose);
+    onCloseRef.current = onClose;
+
+    // runOnJS must receive a stable JS-realm function. Creating the closure
+    // inside the worklet callback (runOnJS(() => ...)) crashes worklets with
+    // "isHostFunction(runtime)" when the frame callback fires.
+    const notifyClosed = useCallback(() => {
+        onCloseRef.current();
+    }, []);
+
     const [keyboardHeight, setKeyboardHeight] = useState(0);
     const [keyboardOpen, setKeyboardOpen] = useState(false);
 
@@ -111,15 +124,21 @@ export function BottomSheet({ visible, onClose, title, children }: Props) {
         });
         opacity.value = withTiming(0, { duration: 200 }, (finished) => {
             if (finished) {
-                runOnJS(onClose)();
+                runOnJS(notifyClosed)();
             }
         });
-    }, [height, onClose, translateY, opacity, keyboardOffset]);
+    }, [height, translateY, opacity, keyboardOffset, notifyClosed]);
+
+    // Track whether the sheet was ever opened so a `visible=false` render on
+    // mount doesn't run a pointless close animation and fire onClose.
+    const hasOpenedRef = useRef(false);
 
     useEffect(() => {
         if (visible) {
+            hasOpenedRef.current = true;
             open();
-        } else {
+        } else if (hasOpenedRef.current) {
+            hasOpenedRef.current = false;
             close();
         }
     }, [visible, open, close]);

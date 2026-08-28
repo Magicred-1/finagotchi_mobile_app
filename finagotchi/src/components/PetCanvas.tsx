@@ -1,4 +1,4 @@
-import React, { memo, useEffect, useRef } from 'react';
+import React, { memo, useCallback, useEffect, useRef, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import Animated, {
@@ -12,6 +12,7 @@ import Animated, {
 } from 'react-native-reanimated';
 
 import type { StateId } from '../engine/engine';
+import type { PetMood as EngineMood } from '../engine/expressions';
 import {
   usePetStore,
   type PetAccessory,
@@ -33,14 +34,18 @@ export type PetReaction = 'jump' | 'spin' | 'glow' | 'dance';
 
 type Props = {
   mood?: PetMoodLabel;
+  /** Device-driven expression override; bypasses the label mapping when set. */
+  engineMood?: EngineMood | null;
   reaction?: PetReaction;
   reactionKey?: number | string;
   accessory?: PetAccessory;
-  lifeTimeLeft?: string;
-  lifeTimerEndsAt?: string | null;
   isSpectral?: boolean;
   onTap?: () => void;
   onEvolve?: (stage: NumericStage) => void;
+  /** Drag-to-look on the pet: yaw/pitch in degrees, throttled to ~10 Hz. */
+  onLook?: (yaw: number, pitch: number) => void;
+  /** Drag released: resume idle gaze wander. */
+  onLookEnd?: () => void;
 };
 
 const STAGE_TO_RADIAL: Record<NumericStage, StateId> = {
@@ -64,16 +69,78 @@ function toRadialMood(
   }
 }
 
+const LOW_TIME_THRESHOLD_MS = 60 * 60 * 1000;
+
+function formatCountdown(ms: number): string {
+  const totalSeconds = Math.max(0, Math.floor(ms / 1000));
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  return `${hours}h ${minutes}m ${seconds}s`;
+}
+
+/**
+ * Self-ticking life/revive countdown pill. Lives here (instead of receiving a
+ * per-second string prop from the screen) so the 1 Hz tick only re-renders
+ * this pill, not the whole screen and every mounted sheet.
+ */
+function LifeTimerPill() {
+  const isDead = usePetStore((state) => state.isDead);
+  const reviveWindowEndsAt = usePetStore((state) => state.reviveWindowEndsAt);
+  const lifeTimerEndsAt = usePetStore((state) => state.lifeTimerEndsAt);
+  const getLifeTimerRemainingMs = usePetStore(
+    (state) => state.getLifeTimerRemainingMs
+  );
+
+  const [text, setText] = useState('');
+  const [isLow, setIsLow] = useState(false);
+
+  useEffect(() => {
+    const update = () => {
+      const remaining =
+        isDead && reviveWindowEndsAt
+          ? new Date(reviveWindowEndsAt).getTime() - Date.now()
+          : getLifeTimerRemainingMs();
+      setText(formatCountdown(remaining));
+      setIsLow(
+        lifeTimerEndsAt != null &&
+          new Date(lifeTimerEndsAt).getTime() - Date.now() <
+            LOW_TIME_THRESHOLD_MS
+      );
+    };
+
+    update();
+    const interval = setInterval(update, 1000);
+    return () => clearInterval(interval);
+  }, [isDead, reviveWindowEndsAt, lifeTimerEndsAt, getLifeTimerRemainingMs]);
+
+  if (!text) return null;
+
+  return (
+    <View style={[styles.lifeTimerPill, isLow && styles.lifeTimerPillLow]}>
+      <Ionicons
+        name="timer-outline"
+        size={12}
+        color={isLow ? colors.danger : colors.primary}
+      />
+      <Text style={[styles.lifeTimerText, isLow && styles.lifeTimerTextLow]}>
+        {text}
+      </Text>
+    </View>
+  );
+}
+
 function PetCanvasInner({
   mood = 'waiting',
+  engineMood,
   reaction,
   reactionKey,
   accessory = 'none',
-  lifeTimeLeft,
-  lifeTimerEndsAt,
   isSpectral = false,
   onTap,
   onEvolve,
+  onLook,
+  onLookEnd,
 }: Props) {
   const stage = usePetStore((state) => state.stage);
   const previousStage = useRef(stage);
@@ -190,7 +257,9 @@ function PetCanvasInner({
     return { transform: [{ scale }] };
   });
 
-  function handleTap() {
+  // Stable handler so the memoized RadialPet doesn't re-render when this
+  // component re-renders (e.g. when the mood prop changes).
+  const handleTap = useCallback(() => {
     if (onTap) {
       onTap();
       return;
@@ -201,11 +270,7 @@ function PetCanvasInner({
       withSpring(0.94, { damping: 13, stiffness: 260 }),
       withSpring(1, { damping: 14, stiffness: 220 })
     );
-  }
-
-  const isLifeTimerLow =
-    lifeTimerEndsAt != null &&
-    new Date(lifeTimerEndsAt).getTime() - Date.now() < 60 * 60 * 1000;
+  }, [onTap, reactionScale]);
 
   return (
     <View style={styles.canvasWrapper}>
@@ -214,37 +279,18 @@ function PetCanvasInner({
           <Animated.View style={[styles.aura, auraStyle]} />
           <RadialPet
             stage={STAGE_TO_RADIAL[stage]}
-            mood={toRadialMood(mood)}
+            mood={engineMood ?? toRadialMood(mood)}
             size={150}
             onTap={handleTap}
             accessory={accessory}
             isSpectral={isSpectral}
+            onLook={onLook}
+            onLookEnd={onLookEnd}
           />
         </View>
       </Animated.View>
 
-      {lifeTimeLeft ? (
-        <View
-          style={[
-            styles.lifeTimerPill,
-            isLifeTimerLow && styles.lifeTimerPillLow,
-          ]}
-        >
-          <Ionicons
-            name="timer-outline"
-            size={12}
-            color={isLifeTimerLow ? colors.danger : colors.primary}
-          />
-          <Text
-            style={[
-              styles.lifeTimerText,
-              isLifeTimerLow && styles.lifeTimerTextLow,
-            ]}
-          >
-            {lifeTimeLeft}
-          </Text>
-        </View>
-      ) : null}
+      <LifeTimerPill />
     </View>
   );
 }
