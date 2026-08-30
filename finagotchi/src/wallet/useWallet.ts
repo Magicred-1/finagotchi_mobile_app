@@ -1,6 +1,6 @@
 import '../polyfills';
 
-import { useCallback, useEffect, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Platform } from 'react-native';
 import { Buffer } from 'buffer';
 import {
@@ -11,14 +11,11 @@ import {
     Connection,
 } from '@solana/web3.js';
 import type { Web3MobileWallet } from '@solana-mobile/mobile-wallet-adapter-protocol-web3js';
-import {
-    useTurnkey,
-    AuthState,
-    OtpType,
-    type WalletAccount,
-} from '@turnkey/react-native-wallet-kit';
+import type { Wallet as DynamicWallet } from '@dynamic-labs/legacy-client';
+import { useReactiveClient } from '@dynamic-labs/legacy-react-hooks';
 import bs58 from 'bs58';
 
+import { dynamicClient } from './dynamicClient';
 import { useWalletStore, type WalletConnectionType } from '../features/wallet/store';
 
 const APP_URL = 'https://www.finagotchi.app';
@@ -31,31 +28,36 @@ const MINT_TREASURY_ADDRESS = process.env.EXPO_PUBLIC_MINT_TREASURY_ADDRESS;
 const MINT_COST_LAMPORTS = 0.001 * 1_000_000_000;
 const REVIVE_COST_LAMPORTS = 0.05 * 1_000_000_000;
 
+// Mint price plus a buffer for the network fee. Wallets below this cannot
+// pay for the mint and should be offered funding first.
+export const MIN_MINT_BALANCE_LAMPORTS = MINT_COST_LAMPORTS + 10_000;
+
+// Devnet airdrop amount for the funding sheet — comfortably covers the mint
+// plus fees while staying under devnet rate limits.
+const DEVNET_AIRDROP_LAMPORTS = 0.1 * 1_000_000_000;
+
 export type Wallet = {
     publicKey: PublicKey | null;
     connected: boolean;
     connectionType: WalletConnectionType;
     isSeeker: boolean;
+    solBalance: number | null;
+    /** True once the first balance fetch settled (success or failure). */
+    solBalanceLoaded: boolean;
+    refreshBalance: () => Promise<number | null>;
+    /** Airdrops devnet test SOL to the connected wallet, then refreshes the balance. */
+    requestDevnetAirdrop: () => Promise<void>;
     connectWithMwa: () => Promise<void>;
-    connectWithPasskey: () => Promise<string>;
-    connectWithGoogle: () => Promise<string>;
-    requestEmailOtp: (email: string) => Promise<{
-        otpId: string;
-        otpEncryptionTargetBundle: string;
-    }>;
-    verifyEmailOtp: (
-        email: string,
-        otp: string,
-        otpId: string,
-        otpEncryptionTargetBundle: string
-    ) => Promise<string>;
-    ensureTurnkeyWallet: () => Promise<string>;
+    connectWithPasskey: () => Promise<void>;
+    connectWithGoogle: () => Promise<void>;
+    connectWithApple: () => Promise<void>;
+    requestEmailOtp: (email: string) => Promise<void>;
+    verifyEmailOtp: (otp: string) => Promise<void>;
     mintCreatureNft: (
         creatureName: string
     ) => Promise<{ signature: string; mintAddress: string }>;
     payReviveFee: () => Promise<string>;
     disconnect: () => Promise<void>;
-    handleDeepLink: (_url: string) => boolean;
 };
 
 function getIsSeeker(): boolean {
@@ -78,7 +80,7 @@ function normalizeMwaAddress(address: string): string {
         return trimmed;
     } catch {
         const normalized = trimmed.replace(/-/g, '+').replace(/_/g, '/');
-        const bytes = Buffer.from(normalized, 'base64');
+        const bytes = new Uint8Array(Buffer.from(normalized, 'base64'));
         if (bytes.length !== 32) {
             throw new Error('Unexpected account address format from wallet');
         }
@@ -86,12 +88,12 @@ function normalizeMwaAddress(address: string): string {
     }
 }
 
-function findSolanaAccount(
-    walletAccounts: WalletAccount[]
-): WalletAccount | undefined {
-    return walletAccounts.find(
-        (account) => account.addressFormat === 'ADDRESS_FORMAT_SOLANA'
-    );
+function isSolanaWallet(wallet: DynamicWallet): boolean {
+    return wallet.chain?.toUpperCase() === 'SOL';
+}
+
+function findSolanaWallet(wallets: DynamicWallet[]): DynamicWallet | undefined {
+    return wallets.find(isSolanaWallet);
 }
 
 export function useWallet(): Wallet {
@@ -99,12 +101,24 @@ export function useWallet(): Wallet {
     const connectStore = useWalletStore((state) => state.connect);
     const setSession = useWalletStore((state) => state.setSession);
     const disconnectStore = useWalletStore((state) => state.disconnect);
+    const passkeyRegistrationPrompted = useWalletStore(
+        (state) => state.passkeyRegistrationPrompted
+    );
+    const setPasskeyRegistrationPrompted = useWalletStore(
+        (state) => state.setPasskeyRegistrationPrompted
+    );
     const authToken = useWalletStore((state) => state.session.authToken);
     const connectionType = useWalletStore(
         (state) => state.session.connectionType
     );
 
-    const turnkey = useTurnkey();
+    // Reactive Dynamic state: re-renders when auth/wallet state changes inside
+    // the SDK WebView.
+    const { auth, wallets } = useReactiveClient(dynamicClient);
+    const authenticatedUser = auth.authenticatedUser;
+    const userWallets = wallets.userWallets;
+
+    const walletCreationInFlight = useRef(false);
 
     const publicKey = useMemo(() => {
         if (!address) return null;
@@ -118,24 +132,87 @@ export function useWallet(): Wallet {
     const connected = !!publicKey;
     const isSeeker = useMemo(() => getIsSeeker(), []);
 
-    // Sync an existing Turnkey session back to our store on app restart.
-    useEffect(() => {
-        if (connectionType !== 'turnkey') return;
-        if (turnkey.authState !== AuthState.Authenticated) return;
-        if (address) return;
+    const [solBalance, setSolBalance] = useState<number | null>(null);
+    const [solBalanceLoaded, setSolBalanceLoaded] = useState(false);
 
-        const solAccount = findSolanaAccount(
-            turnkey.wallets.flatMap((wallet) => wallet.accounts)
-        );
-        if (solAccount?.address) {
-            connectStore(solAccount.address, 'turnkey');
+    const refreshBalance = useCallback(async (): Promise<number | null> => {
+        if (!publicKey) return null;
+        try {
+            const connection = new Connection(SOLANA_RPC);
+            const balance = await connection.getBalance(publicKey);
+            setSolBalance(balance);
+            return balance;
+        } catch {
+            return null;
+        } finally {
+            setSolBalanceLoaded(true);
         }
+    }, [publicKey]);
+
+    // Fetch the SOL balance whenever the wallet changes.
+    useEffect(() => {
+        setSolBalance(null);
+        setSolBalanceLoaded(false);
+        if (publicKey) {
+            refreshBalance();
+        }
+    }, [publicKey, refreshBalance]);
+
+    const requestDevnetAirdrop = useCallback(async (): Promise<void> => {
+        if (!publicKey) {
+            throw new Error('Wallet not connected');
+        }
+        const connection = new Connection(SOLANA_RPC);
+        const signature = await connection.requestAirdrop(
+            publicKey,
+            DEVNET_AIRDROP_LAMPORTS
+        );
+        await connection.confirmTransaction(signature, 'confirmed');
+        await refreshBalance();
+    }, [publicKey, refreshBalance]);
+
+    // Create the embedded Solana wallet as soon as a Dynamic user signs in
+    // (wallet creation is not automatic in headless flows), then sync the
+    // address to our store. Also covers session restore on app restart.
+    useEffect(() => {
+        if (!authenticatedUser) return;
+
+        const solWallet = findSolanaWallet(userWallets);
+
+        if (solWallet?.address) {
+            if (!address) {
+                connectStore(solWallet.address, 'dynamic');
+            }
+            return;
+        }
+
+        if (walletCreationInFlight.current) return;
+        walletCreationInFlight.current = true;
+        dynamicClient.wallets.embedded
+            .createWallet({ chains: ['Sol'] })
+            .catch(() => {
+                // Creation raced a wallet that already exists; userWallets
+                // will populate and the effect above picks it up.
+            })
+            .finally(() => {
+                walletCreationInFlight.current = false;
+            });
+    }, [authenticatedUser, userWallets, address, connectStore]);
+
+    // Offer passkey registration once after the first Dynamic sign-in, so the
+    // Passkey button becomes useful on subsequent logins.
+    useEffect(() => {
+        if (!authenticatedUser) return;
+        if (passkeyRegistrationPrompted) return;
+
+        setPasskeyRegistrationPrompted(true);
+        dynamicClient.passkeys.register().catch(() => {
+            // User cancelled or passkeys unavailable; ignore.
+        });
     }, [
-        connectionType,
-        turnkey.authState,
-        turnkey.wallets,
-        address,
-        connectStore,
+        authenticatedUser,
+        passkeyRegistrationPrompted,
+        setPasskeyRegistrationPrompted,
     ]);
 
     const connectWithMwa = useCallback(async () => {
@@ -170,150 +247,57 @@ export function useWallet(): Wallet {
         });
     }, [connectStore, setSession]);
 
-    const ensureTurnkeyWallet = useCallback(async (): Promise<string> => {
-        if (turnkey.authState !== AuthState.Authenticated) {
-            throw new Error('Not authenticated with Turnkey');
-        }
-
-        // Refresh wallets so this helper is safe to call immediately after
-        // login/sign-up before React has re-rendered with updated state.
-        const wallets = await turnkey.refreshWallets();
-        const existing = findSolanaAccount(
-            wallets.flatMap((wallet) => wallet.accounts)
-        );
-        if (existing?.address) {
-            const success = connectStore(existing.address, 'turnkey');
-            if (!success) {
-                throw new Error('Invalid address from Turnkey wallet');
-            }
-            return existing.address;
-        }
-
-        const walletId = await turnkey.createWallet({
-            walletName: 'Finagotchi Wallet',
-            accounts: ['ADDRESS_FORMAT_SOLANA'],
-        });
-
-        const refreshedWallets = await turnkey.refreshWallets();
-        const solAccount = findSolanaAccount(
-            refreshedWallets.flatMap((wallet) => wallet.accounts)
-        );
-
-        if (!solAccount?.address) {
-            throw new Error('Turnkey wallet created but no Solana account found');
-        }
-
-        const success = connectStore(solAccount.address, 'turnkey');
-        if (!success) {
-            throw new Error('Invalid address from Turnkey wallet');
-        }
-
-        setSession({
-            turnkeyWalletId: walletId,
-            turnkeyUserId: turnkey.user?.userId ?? null,
-        });
-
-        return solAccount.address;
-    }, [turnkey, connectStore, setSession]);
-
-    function isNoPasskeyCredentialError(err: unknown): boolean {
-        const message = err instanceof Error ? err.message.toLowerCase() : '';
-        const code =
-            err && typeof err === 'object' && 'code' in err
-                ? String((err as { code: unknown }).code).toLowerCase()
-                : '';
-        return (
-            message.includes('passkey') ||
-            message.includes('credential') ||
-            message.includes('not found') ||
-            message.includes('no credentials') ||
-            message.includes('user cancelled') ||
-            message.includes('user canceled') ||
-            message.includes('no matching credential') ||
-            code.includes('credential') ||
-            code.includes('not_found') ||
-            code.includes('nocredentials')
-        );
-    }
-
     const connectWithPasskey = useCallback(async () => {
         try {
-            await turnkey.loginWithPasskey();
-        } catch (err) {
-            // No existing credential -> sign the user up instead.
-            if (isNoPasskeyCredentialError(err)) {
-                await turnkey.signUpWithPasskey({
-                    passkeyDisplayName: 'Finagotchi',
-                });
-            } else {
-                throw err;
-            }
+            await dynamicClient.auth.passkey.signIn();
+        } catch {
+            throw new Error(
+                'No passkey found on this device — sign in with email or Google first'
+            );
         }
-
-        setSession({ connectionType: 'turnkey' });
-        return ensureTurnkeyWallet();
-    }, [turnkey, setSession, ensureTurnkeyWallet]);
+    }, []);
 
     const connectWithGoogle = useCallback(async () => {
-        await turnkey.handleGoogleOauth();
-        setSession({ connectionType: 'turnkey' });
-        return ensureTurnkeyWallet();
-    }, [turnkey, setSession, ensureTurnkeyWallet]);
+        await dynamicClient.auth.social.connect({ provider: 'google' });
+    }, []);
 
-    const requestEmailOtp = useCallback(
-        async (email: string) => {
-            return turnkey.initOtp({
-                otpType: OtpType.Email,
-                contact: email,
-            });
-        },
-        [turnkey]
-    );
+    const connectWithApple = useCallback(async () => {
+        await dynamicClient.auth.social.connect({ provider: 'apple' });
+    }, []);
 
-    const verifyEmailOtp = useCallback(
-        async (
-            email: string,
-            otp: string,
-            otpId: string,
-            otpEncryptionTargetBundle: string
-        ) => {
-            await turnkey.completeOtp({
-                otpId,
-                otpCode: otp,
-                otpEncryptionTargetBundle,
-                contact: email,
-                otpType: OtpType.Email,
-            });
+    const requestEmailOtp = useCallback(async (email: string) => {
+        await dynamicClient.auth.email.sendOTP(email);
+    }, []);
 
-            setSession({ connectionType: 'turnkey' });
-            return ensureTurnkeyWallet();
-        },
-        [turnkey, setSession, ensureTurnkeyWallet]
-    );
+    const verifyEmailOtp = useCallback(async (otp: string) => {
+        await dynamicClient.auth.email.verifyOTP(otp);
+    }, []);
 
-    const signAndSendWithTurnkey = useCallback(
-        async (unsignedTransaction: Transaction): Promise<string> => {
-            const solAccount = findSolanaAccount(
-                turnkey.wallets.flatMap((wallet) => wallet.accounts)
-            );
-            if (!solAccount) {
-                throw new Error('No Turnkey Solana account available');
+    const signAndSendWithDynamic = useCallback(
+        async (transaction: Transaction): Promise<string> => {
+            const primary = dynamicClient.wallets.primary;
+            const solWallet =
+                primary && isSolanaWallet(primary)
+                    ? primary
+                    : findSolanaWallet(dynamicClient.wallets.userWallets);
+            if (!solWallet) {
+                throw new Error('No Dynamic Solana wallet available');
             }
 
-            const serialized = unsignedTransaction.serialize({
-                requireAllSignatures: false,
+            const signer = dynamicClient.solana.getSigner({
+                wallet: solWallet,
             });
-            const unsignedTransactionBase64 =
-                Buffer.from(serialized).toString('base64');
-
-            return turnkey.signAndSendTransaction({
-                walletAccount: solAccount,
-                unsignedTransaction: unsignedTransactionBase64,
-                transactionType: 'TRANSACTION_TYPE_SOLANA',
-                rpcUrl: SOLANA_RPC,
-            });
+            // The Solana extension bundles its own @solana/web3.js copy, so
+            // the Transaction types are structurally identical but not
+            // nominally assignable. Runtime interop is fine.
+            const { signature } = await signer.signAndSendTransaction(
+                transaction as unknown as Parameters<
+                    typeof signer.signAndSendTransaction
+                >[0]
+            );
+            return signature;
         },
-        [turnkey]
+        []
     );
 
     const signAndSendWithMwa = useCallback(
@@ -358,8 +342,8 @@ export function useWallet(): Wallet {
             }
 
             let signature: string;
-            if (connectionType === 'turnkey') {
-                signature = await signAndSendWithTurnkey(transaction);
+            if (connectionType === 'dynamic') {
+                signature = await signAndSendWithDynamic(transaction);
             } else if (connectionType === 'mwa') {
                 signature = await signAndSendWithMwa(transaction);
             } else {
@@ -372,7 +356,7 @@ export function useWallet(): Wallet {
         [
             publicKey,
             connectionType,
-            signAndSendWithTurnkey,
+            signAndSendWithDynamic,
             signAndSendWithMwa,
         ]
     );
@@ -419,7 +403,7 @@ export function useWallet(): Wallet {
             const signature = await signAndSendTransaction(transaction);
 
             // TODO(phase-2): replace this demo placeholder with a real Metaplex
-            // NFT mint transaction built and signed through Turnkey.
+            // NFT mint transaction built and signed through Dynamic.
             const mintAddress = Keypair.generate().publicKey.toBase58();
 
             return { signature, mintAddress };
@@ -454,28 +438,16 @@ export function useWallet(): Wallet {
             }
         }
 
-        if (connectionType === 'turnkey') {
+        if (connectionType === 'dynamic') {
             try {
-                await turnkey.clearSession();
+                await dynamicClient.auth.logout();
             } catch {
                 // Ignore and clear local state anyway.
             }
         }
 
         disconnectStore();
-    }, [connectionType, authToken, disconnectStore, turnkey]);
-
-    const handleDeepLink = useCallback((url: string): boolean => {
-        // Turnkey OAuth flows use InAppBrowser.openAuth internally, so tokens are
-        // already parsed there. We still claim finagotchi:// redirects so other
-        // deep-link handlers don't try to route them.
-        try {
-            const parsed = new URL(url);
-            return parsed.protocol === 'finagotchi:';
-        } catch {
-            return url.startsWith('finagotchi://');
-        }
-    }, []);
+    }, [connectionType, authToken, disconnectStore]);
 
     return useMemo(
         () => ({
@@ -483,32 +455,38 @@ export function useWallet(): Wallet {
             connected,
             connectionType,
             isSeeker,
+            solBalance,
+            solBalanceLoaded,
+            refreshBalance,
+            requestDevnetAirdrop,
             connectWithMwa,
             connectWithPasskey,
             connectWithGoogle,
+            connectWithApple,
             requestEmailOtp,
             verifyEmailOtp,
-            ensureTurnkeyWallet,
             mintCreatureNft,
             payReviveFee,
             disconnect,
-            handleDeepLink,
         }),
         [
             publicKey,
             connected,
             connectionType,
             isSeeker,
+            solBalance,
+            solBalanceLoaded,
+            refreshBalance,
+            requestDevnetAirdrop,
             connectWithMwa,
             connectWithPasskey,
             connectWithGoogle,
+            connectWithApple,
             requestEmailOtp,
             verifyEmailOtp,
-            ensureTurnkeyWallet,
             mintCreatureNft,
             payReviveFee,
             disconnect,
-            handleDeepLink,
         ]
     );
 }

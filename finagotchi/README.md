@@ -26,11 +26,14 @@ Android — requested at runtime).
   queue (writes never overlap; `;`-separated commands are sent one per
   write). Negotiates MTU 185 on Android. Unexpected disconnects trigger
   auto-reconnect with exponential backoff; `reconnect()` retries manually.
-- `types.ts` — UUIDs, status, `<stage>:<streak>:<mood>` parser, hook interface.
+- `types.ts` — UUIDs, status,
+  `<stage>:<streak>:<mood>:<item>:<points>:<happy>` parser, hook interface.
 - `sync.ts` — mirrors state between the app engine and the device
-  (`useDeviceSync`): pushes `stage:`/`mood:`/`streak:` on connect, writes
-  `stage:` on local evolution, and applies device notifications back into the
-  local engine.
+  (`useDeviceSync`): pushes a `stage:`/`mood:`/`item:`/`points:`/`happy:`/
+  `streak:` snapshot on every connect (happiness is RAM-only on the device,
+  so stats must be re-shared each time), writes `stage:` on local evolution
+  and `points:`/`happy:`/`streak:` when the app's balance/happiness/streak
+  change, and applies device notifications back into the local engine.
 
 ## Interactions
 

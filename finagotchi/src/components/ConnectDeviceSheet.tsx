@@ -1,10 +1,11 @@
 import React, { useEffect } from 'react';
-import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
 import { BottomSheet } from './BottomSheet';
 import { Button } from './Button';
 import { PressableScale } from './PressableScale';
+import { SearchingRadar } from './SearchingRadar';
 import { colors, radius, spacing, typography } from '../theme/tokens';
 import { usePetStore, STAGE_NAMES } from '../features/pet/store';
 import {
@@ -31,7 +32,6 @@ export function ConnectDeviceSheet({ visible, onClose, ble }: Props) {
         connect,
         disconnect,
         reconnect,
-        connectMock,
         sendCommand,
     } = ble;
 
@@ -94,6 +94,14 @@ export function ConnectDeviceSheet({ visible, onClose, ble }: Props) {
                                 <Text style={styles.stateValue}>{deviceState.mood}</Text>
                                 <Text style={styles.stateLabel}>mood</Text>
                             </View>
+                            <View style={styles.stateChip}>
+                                <Text style={styles.stateValue}>✨ {deviceState.points}</Text>
+                                <Text style={styles.stateLabel}>points</Text>
+                            </View>
+                            <View style={styles.stateChip}>
+                                <Text style={styles.stateValue}>❤️ {deviceState.happy}</Text>
+                                <Text style={styles.stateLabel}>happy</Text>
+                            </View>
                         </View>
                     )}
 
@@ -140,20 +148,21 @@ export function ConnectDeviceSheet({ visible, onClose, ble }: Props) {
                 </View>
             ) : (
                 <View style={styles.section}>
-                    <View style={styles.statusRow}>
-                        {(scanning || reconnecting) && (
-                            <ActivityIndicator size="small" color={colors.primary} />
-                        )}
-                        <Text style={styles.statusText}>
-                            {scanning
-                                ? 'Searching for nearby Finagotchi…'
-                                : connecting
-                                  ? 'Connecting…'
-                                  : reconnecting
-                                    ? 'Connection lost — reconnecting…'
-                                    : error ?? 'No Finagotchi found nearby.'}
-                        </Text>
-                    </View>
+                    {scanning && <SearchingRadar />}
+                    <Text
+                        style={[
+                            styles.statusText,
+                            scanning && styles.statusTextCentered,
+                        ]}
+                    >
+                        {scanning
+                            ? 'Searching for nearby Finagotchi…'
+                            : connecting
+                              ? 'Connecting…'
+                              : reconnecting
+                                ? 'Connection lost — reconnecting…'
+                                : error ?? 'No Finagotchi found nearby.'}
+                    </Text>
 
                     {devices.map((device) => (
                         <PressableScale
@@ -182,26 +191,6 @@ export function ConnectDeviceSheet({ visible, onClose, ble }: Props) {
                         </PressableScale>
                     ))}
 
-                    {__DEV__ && (
-                        <PressableScale
-                            onPress={connectMock}
-                            style={styles.deviceRow}
-                        >
-                            <Ionicons
-                                name="flask-outline"
-                                size={18}
-                                color={colors.warning}
-                            />
-                            <View style={styles.deviceRowInfo}>
-                                <Text style={styles.deviceName}>Finagotchi (demo)</Text>
-                                <Text style={styles.deviceMeta}>
-                                    Mock device — logs writes, echoes state
-                                </Text>
-                            </View>
-                            <Text style={styles.connectLabel}>Connect</Text>
-                        </PressableScale>
-                    )}
-
                     {!scanning && !reconnecting && (
                         <Button
                             title="Scan again"
@@ -225,15 +214,13 @@ const styles = StyleSheet.create({
         gap: spacing.md,
         paddingBottom: spacing.md,
     },
-    statusRow: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: spacing.sm,
-    },
     statusText: {
         color: colors.textMuted,
         fontSize: typography.small,
         fontFamily: 'Poppins_600SemiBold',
+    },
+    statusTextCentered: {
+        textAlign: 'center',
     },
     deviceRow: {
         flexDirection: 'row',

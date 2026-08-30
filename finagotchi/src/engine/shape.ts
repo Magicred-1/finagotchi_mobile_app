@@ -162,12 +162,22 @@ export function radiusAtAngle(radii: number[], angle: number): number {
 /**
  * Capsule (stadium) centered at the origin.
  * This is the exact eye shape used by the engine.
+ *
+ * Memoized: at rest the eye size is constant, so the same string is reused
+ * instead of being rebuilt (and re-parsed natively) on every frame. r2()
+ * quantizes the output to 0.01, so the cache key does too.
  */
+const capsuleCache = new Map<string, string>();
+
 export function capsulePath(w: number, h: number): string {
   const hw = Math.max(w, 0.01) / 2;
   const hh = Math.max(h, 0.01) / 2;
+  const key = `${Math.round(hw * 100)},${Math.round(hh * 100)}`;
+  const hit = capsuleCache.get(key);
+  if (hit !== undefined) return hit;
+
   const r = Math.min(hw, hh);
-  return (
+  const d =
     `M${r2(-hw)} ${r2(-hh + r)}` +
     `A${r2(r)} ${r2(r)} 0 0 1 ${r2(-hw + r)} ${r2(-hh)}` +
     `L${r2(hw - r)} ${r2(-hh)}` +
@@ -175,6 +185,10 @@ export function capsulePath(w: number, h: number): string {
     `L${r2(hw)} ${r2(hh - r)}` +
     `A${r2(r)} ${r2(r)} 0 0 1 ${r2(hw - r)} ${r2(hh)}` +
     `L${r2(-hw + r)} ${r2(hh)}` +
-    `A${r2(r)} ${r2(r)} 0 0 1 ${r2(-hw)} ${r2(hh - r)}Z`
-  );
+    `A${r2(r)} ${r2(r)} 0 0 1 ${r2(-hw)} ${r2(hh - r)}Z`;
+
+  // Bound the cache: expression morphs sweep continuous sizes for ~0.45 s.
+  if (capsuleCache.size > 64) capsuleCache.clear();
+  capsuleCache.set(key, d);
+  return d;
 }

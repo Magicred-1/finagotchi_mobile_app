@@ -1,13 +1,17 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
+  Alert,
   Modal,
   Pressable,
+  Share,
   StyleSheet,
   Text,
   View,
   useWindowDimensions,
 } from 'react-native';
+import * as Sharing from 'expo-sharing';
 import Svg, { G } from 'react-native-svg';
+import { captureRef } from 'react-native-view-shot';
 
 import { FinagotchiEngine, type StateId } from '../engine/engine';
 import { usePetAnimator } from '../hooks/usePetAnimator';
@@ -45,12 +49,19 @@ const STAGE_TO_RADIAL: Record<NumericStage, StateId> = {
 
 export default function EvolutionCeremony({ visible, stage, petName, onDismiss }: Props) {
   const { width, height } = useWindowDimensions();
-  const frame = usePetAnimator();
-  const timeMs = frame * 33;
+  const [isExiting, setIsExiting] = useState(false);
+  // Only tick while the ceremony is on screen; otherwise this component stays
+  // mounted on the home screen and would re-render at 30 fps forever.
+  const frame = usePetAnimator(visible || isExiting);
+  // Time is measured from the moment the ceremony opens, not from the shared
+  // clock's absolute frame count, so a reopened ceremony starts at zero.
+  const startFrameRef = useRef(0);
+  const frameRef = useRef(0);
+  frameRef.current = frame;
+  const timeMs = Math.max(0, frame - startFrameRef.current) * 33;
   const t = timeMs / 1000;
 
   const lastCelebratedStage = usePetStore((state) => state.lastCelebratedStage);
-  const [isExiting, setIsExiting] = useState(false);
   const [showCurtain, setShowCurtain] = useState(false);
 
   const engineRef = useRef<FinagotchiEngine | null>(null);
@@ -66,6 +77,10 @@ export default function EvolutionCeremony({ visible, stage, petName, onDismiss }
   const hasCompleted = useRef(false);
 
   useEffect(() => {
+    if (visible) startFrameRef.current = frameRef.current;
+  }, [visible]);
+
+  useEffect(() => {
     if (visible && !ceremonyStarted.current) {
       ceremonyStarted.current = true;
       setShowCurtain(true);
@@ -77,6 +92,12 @@ export default function EvolutionCeremony({ visible, stage, petName, onDismiss }
       hasCompleted.current = false;
     }
   }, [visible, engine, lastCelebratedStage, stage]);
+
+  // The modal stays mounted while `visible || isExiting`; once the parent hides
+  // the ceremony, clear the exit flag so the modal can actually unmount.
+  useEffect(() => {
+    if (!visible && isExiting) setIsExiting(false);
+  }, [visible, isExiting]);
 
   const ceremonyTimeMs = visible || isExiting ? timeMs : 0;
   const ceremonyT = ceremonyTimeMs / 1000;
@@ -103,17 +124,46 @@ export default function EvolutionCeremony({ visible, stage, petName, onDismiss }
   }, [ceremonyTimeMs]);
 
   const exit = () => {
-    setIsExiting(true);
     setShowCurtain(false);
+    setIsExiting(true);
+    onDismiss();
   };
 
   const size = 160;
   const particleCount = 10;
 
   const stageName = STAGE_NAMES[stage] ?? STAGE_NAMES[1];
-  const shareableMessage = `${petName || 'My Finny'} evolved into ${
+  const displayName = petName || 'My Finny';
+  const shareableMessage = `${displayName} evolved into ${
     stageName.split('•')[0].trim()
   }! 🔥 #Finagotchi`;
+
+  // The share card is captured to a PNG and handed to the native share sheet,
+  // where the user picks X (or anywhere else). Falls back to plain text if
+  // file sharing or the capture itself is unavailable.
+  const shareCardRef = useRef<View>(null);
+  const [isSharing, setIsSharing] = useState(false);
+
+  const shareEvolution = async () => {
+    if (isSharing) return;
+    setIsSharing(true);
+    try {
+      if ((await Sharing.isAvailableAsync()) && shareCardRef.current) {
+        const uri = await captureRef(shareCardRef, { format: 'png', quality: 1 });
+        await Sharing.shareAsync(uri, {
+          mimeType: 'image/png',
+          UTI: 'public.png',
+          dialogTitle: shareableMessage,
+        });
+      } else {
+        await Share.share({ message: shareableMessage });
+      }
+    } catch {
+      Alert.alert('Sharing failed', 'Could not share your evolution. Please try again.');
+    } finally {
+      setIsSharing(false);
+    }
+  };
 
   return (
     <Modal visible={visible || isExiting} transparent animationType="none" onRequestClose={exit}>
@@ -129,38 +179,51 @@ export default function EvolutionCeremony({ visible, stage, petName, onDismiss }
         <View style={styles.content}>
           <Text style={styles.evolved}>I evolved!</Text>
 
-          <View style={styles.petWrap}>
-            <Svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} style={styles.svg}>
-              <G transform={`translate(${size / 2}, ${size / 2})`}>
-                <PetBody
-                  bodyPath={frameData.bodyPath}
-                  color={frameData.color}
-                  glowColor={frameData.glowColor}
-                  bodyAlpha={frameData.bodyAlpha}
-                />
-                <PetEyes eyes={frameData.eyes} />
+          {/* This card is what gets captured and shared, so it carries the
+              creature, its name, and the stage in the image itself. */}
+          <View ref={shareCardRef} collapsable={false} style={styles.shareCard}>
+            <Text style={styles.petName}>{displayName}</Text>
 
-                {particleProgress > 0
-                  ? Array.from({ length: particleCount }, (_, i) => (
-                      <SparkleParticle
-                        key={i}
-                        index={i}
-                        total={particleCount}
-                        progress={particleProgress}
-                        size={size}
-                      />
-                    ))
-                  : null}
-              </G>
-            </Svg>
+            <View style={styles.petWrap}>
+              <Svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} style={styles.svg}>
+                <G transform={`translate(${size / 2}, ${size / 2})`}>
+                  <PetBody
+                    bodyPath={frameData.bodyPath}
+                    color={frameData.color}
+                    glowColor={frameData.glowColor}
+                    bodyAlpha={frameData.bodyAlpha}
+                  />
+                  <PetEyes eyes={frameData.eyes} />
+
+                  {particleProgress > 0
+                    ? Array.from({ length: particleCount }, (_, i) => (
+                        <SparkleParticle
+                          key={i}
+                          index={i}
+                          total={particleCount}
+                          progress={particleProgress}
+                          size={size}
+                        />
+                      ))
+                    : null}
+                </G>
+              </Svg>
+            </View>
+
+            <Text style={styles.stageName}>{stageName.split('•')[0].trim()}</Text>
+            <Text style={styles.hashtag}>#Finagotchi</Text>
           </View>
 
-          <Text style={styles.stageName}>{stageName.split('•')[0].trim()}</Text>
-          <Text style={styles.shareText}>{shareableMessage}</Text>
-
-          <Pressable onPress={exit} style={styles.button}>
-            <Text style={styles.buttonText}>Continue</Text>
-          </Pressable>
+          <View style={styles.buttonRow}>
+            <Pressable onPress={shareEvolution} style={styles.shareButton} disabled={isSharing}>
+              <Text style={styles.shareButtonText}>
+                {isSharing ? 'Sharing…' : 'Share on X'}
+              </Text>
+            </Pressable>
+            <Pressable onPress={exit} style={styles.button}>
+              <Text style={styles.buttonText}>Continue</Text>
+            </Pressable>
+          </View>
         </View>
       </View>
     </Modal>
@@ -193,12 +256,25 @@ const styles = StyleSheet.create({
     fontFamily: 'Poppins_800ExtraBold',
     marginBottom: spacing.lg,
   },
+  shareCard: {
+    alignSelf: 'stretch',
+    alignItems: 'center',
+    backgroundColor: colors.background,
+    borderRadius: 24,
+    paddingVertical: spacing.lg,
+    paddingHorizontal: spacing.md,
+  },
+  petName: {
+    color: colors.textMuted,
+    fontSize: typography.body,
+    fontFamily: 'Poppins_700Bold',
+    textAlign: 'center',
+  },
   petWrap: {
     width: 180,
     height: 180,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: spacing.lg,
   },
   svg: {
     backgroundColor: 'transparent',
@@ -209,16 +285,31 @@ const styles = StyleSheet.create({
     fontFamily: 'Poppins_700Bold',
     textAlign: 'center',
   },
-  shareText: {
+  hashtag: {
     marginTop: spacing.sm,
-    color: colors.textMuted,
+    color: colors.primary,
     fontSize: typography.body,
     fontFamily: 'Poppins_500Medium',
     textAlign: 'center',
-    lineHeight: 22,
+  },
+  buttonRow: {
+    flexDirection: 'row',
+    gap: spacing.md,
+    marginTop: spacing.xl,
+  },
+  shareButton: {
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.xl,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: colors.primary,
+  },
+  shareButtonText: {
+    color: colors.primary,
+    fontSize: typography.body,
+    fontFamily: 'Poppins_700Bold',
   },
   button: {
-    marginTop: spacing.xl,
     paddingVertical: spacing.md,
     paddingHorizontal: spacing.xl,
     borderRadius: 999,

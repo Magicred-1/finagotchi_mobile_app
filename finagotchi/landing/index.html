@@ -1,0 +1,248 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Finagotchi — Your daily Solana creature</title>
+  <meta name="description" content="Raise a ghost creature on Solana. One check-in a day keeps it alive — keep the streak, watch it evolve." />
+  <meta property="og:title" content="Finagotchi" />
+  <meta property="og:description" content="Your daily Solana creature." />
+  <meta property="og:image" content="./assets/og-image.png" />
+  <link rel="icon" href="./assets/og-image.png" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;700;800&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg: #07111F;
+      --surface: #0E1B2E;
+      --surface-light: #162640;
+      --primary: #35D7FF;
+      --purple: #9945FF;
+      --text: #FFFFFF;
+      --muted: #8FA2B8;
+      --border: #243651;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Poppins', system-ui, sans-serif;
+      -webkit-font-smoothing: antialiased;
+      overflow-x: hidden;
+    }
+    .wrap { max-width: 1120px; margin: 0 auto; padding: 0 24px; }
+
+    header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 20px 0;
+    }
+    header img { height: 40px; width: auto; }
+    .nav-cta {
+      font: 600 14px 'Poppins', sans-serif;
+      color: var(--bg); background: var(--primary);
+      padding: 10px 20px; border-radius: 999px; text-decoration: none;
+      transition: transform .15s ease, background .15s ease;
+    }
+    .nav-cta:hover { background: #16caf7; transform: translateY(-1px); }
+
+    .hero {
+      display: grid; grid-template-columns: 1.1fr 1fr; gap: 40px;
+      align-items: center; padding: 72px 0 96px;
+    }
+    .eyebrow {
+      color: var(--primary); font: 500 13px 'Poppins', sans-serif;
+      letter-spacing: .14em; text-transform: uppercase; margin-bottom: 18px;
+    }
+    h1 {
+      font-size: clamp(40px, 5.2vw, 64px); font-weight: 800;
+      line-height: 1.05; letter-spacing: -0.02em; margin-bottom: 20px;
+    }
+    h1 em { font-style: normal; color: var(--primary); }
+    .sub {
+      color: var(--muted); font-size: 17px; line-height: 1.65;
+      max-width: 44ch; margin-bottom: 34px;
+    }
+    .ctas { display: flex; gap: 14px; flex-wrap: wrap; }
+    .btn {
+      font: 600 15px 'Poppins', sans-serif; text-decoration: none;
+      padding: 14px 28px; border-radius: 999px;
+      transition: transform .15s ease, background .15s ease, border-color .15s ease;
+    }
+    .btn-primary { background: var(--primary); color: var(--bg); }
+    .btn-primary:hover { background: #16caf7; transform: translateY(-2px); }
+    .btn-ghost { border: 1px solid var(--border); color: var(--text); }
+    .btn-ghost:hover { border-color: var(--primary); transform: translateY(-2px); }
+
+    .stage-hint {
+      margin-top: 26px; color: var(--muted); font-size: 13px;
+      display: flex; align-items: center; gap: 8px;
+    }
+    .stage-hint .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--primary); }
+
+    .creature-stage {
+      position: relative; display: flex; flex-direction: column;
+      align-items: center; gap: 22px; user-select: none;
+    }
+    .creature-halo {
+      position: absolute; inset: -8% -14%;
+      background:
+        radial-gradient(42% 42% at 62% 30%, rgba(153, 69, 255, 0.16), transparent 70%),
+        radial-gradient(52% 52% at 45% 60%, rgba(53, 215, 255, 0.14), transparent 70%);
+      pointer-events: none;
+    }
+    #creature {
+      position: relative; width: min(380px, 78vw); aspect-ratio: 1;
+      cursor: pointer; touch-action: none;
+    }
+    #creature svg { width: 100%; height: 100%; display: block; }
+    .stages { display: flex; gap: 10px; position: relative; }
+    .stages button {
+      font: 500 13px 'Poppins', sans-serif; color: var(--muted);
+      background: var(--surface); border: 1px solid var(--border);
+      padding: 8px 16px; border-radius: 999px; cursor: pointer;
+      transition: color .15s ease, border-color .15s ease, background .15s ease;
+    }
+    .stages button:hover { color: var(--text); }
+    .stages button.active {
+      color: var(--bg); background: var(--primary); border-color: var(--primary);
+    }
+
+    .section { padding: 88px 0; }
+    .section h2 {
+      font-size: clamp(26px, 3vw, 36px); font-weight: 800;
+      letter-spacing: -0.01em; margin-bottom: 12px;
+    }
+    .section .lead { color: var(--muted); font-size: 16px; max-width: 56ch; margin-bottom: 44px; }
+
+    .cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
+    .card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 22px; padding: 26px;
+      transition: transform .18s ease, background .18s ease, border-color .18s ease;
+    }
+    .card:hover { transform: translateY(-4px); background: var(--surface-light); border-color: #2e4568; }
+    .card img {
+      width: 100%; aspect-ratio: 1; object-fit: cover;
+      border-radius: 14px; margin-bottom: 18px; display: block;
+    }
+    .card h3 { font-size: 18px; font-weight: 700; margin-bottom: 8px; }
+    .card p { color: var(--muted); font-size: 14px; line-height: 1.6; }
+    .tag {
+      display: inline-block; font: 500 11px 'Poppins', sans-serif;
+      letter-spacing: .08em; text-transform: uppercase;
+      padding: 4px 10px; border-radius: 999px; margin-bottom: 14px;
+    }
+    .tag-cyan { color: var(--primary); background: rgba(53, 215, 255, .1); }
+    .tag-purple { color: #b98aff; background: rgba(153, 69, 255, .12); }
+    .tag-warm { color: #ffdca8; background: rgba(255, 220, 168, .08); }
+
+    .cta-band {
+      background: linear-gradient(120deg, rgba(53,215,255,.1), rgba(153,69,255,.1));
+      border: 1px solid var(--border); border-radius: 28px;
+      padding: 64px 48px; text-align: center;
+    }
+    .cta-band h2 { margin-bottom: 10px; }
+    .cta-band p { color: var(--muted); margin-bottom: 30px; }
+
+    footer {
+      border-top: 1px solid var(--border); padding: 28px 0 40px;
+      color: var(--muted); font-size: 13px;
+      display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;
+    }
+    footer a { color: var(--muted); text-decoration: none; }
+    footer a:hover { color: var(--primary); }
+
+    @media (max-width: 860px) {
+      .hero { grid-template-columns: 1fr; padding: 48px 0 72px; }
+      .creature-stage { order: -1; }
+      .cards { grid-template-columns: 1fr; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      html { scroll-behavior: auto; }
+      .card, .btn, .nav-cta { transition: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <img src="./assets/logo.png" alt="Finagotchi" />
+      <a class="nav-cta" href="#get">Get the app</a>
+    </header>
+
+    <section class="hero">
+      <div>
+        <p class="eyebrow">Solana · Daily ritual · Hardware companion</p>
+        <h1>Your daily<br /><em>Solana creature.</em></h1>
+        <p class="sub">
+          Connect your wallet, check in once a day, and keep a small ghost alive.
+          It grows with your streak, evolves through four forms, and lives on your
+          desk on the Finagotchi hardware companion.
+        </p>
+        <div class="ctas">
+          <a class="btn btn-primary" href="#get">Start raising yours</a>
+          <a class="btn btn-ghost" href="#forms">Meet the forms</a>
+        </div>
+        <p class="stage-hint"><span class="dot"></span> Psst — the ghost on the right watches your cursor. Tap it.</p>
+      </div>
+
+      <div class="creature-stage">
+        <div class="creature-halo"></div>
+        <div id="creature" title="Say hi"></div>
+        <div class="stages" id="stages">
+          <button data-stage="egg">Egg</button>
+          <button data-stage="coinling">Coinling</button>
+          <button data-stage="hodler">Hodler</button>
+          <button data-stage="whale" class="active">Whale</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" id="forms">
+      <h2>One ghost, many moods</h2>
+      <p class="lead">
+        The same creature, recolored by state — calm cyan by default, lavender when it
+        evolves, cream when it's resting. Every form is rendered live by the same
+        engine on your phone and on the hardware display.
+      </p>
+      <div class="cards">
+        <div class="card">
+          <span class="tag tag-cyan">Default</span>
+          <img src="./assets/ghost-cyan.png" alt="Cyan Finagotchi ghost" loading="lazy" />
+          <h3>Daily companion</h3>
+          <p>One check-in a day keeps the streak — and the ghost — alive. Miss a day and it starts fading.</p>
+        </div>
+        <div class="card">
+          <span class="tag tag-purple">Evolution</span>
+          <img src="./assets/ghost-lavender.png" alt="Lavender Finagotchi ghost" loading="lazy" />
+          <h3>Evolves with you</h3>
+          <p>Egg, Coinling, Hodler, Whale. Consistency unlocks each form — no grinding, no noise.</p>
+        </div>
+        <div class="card">
+          <span class="tag tag-warm">Hardware</span>
+          <img src="./assets/ghost-cream.png" alt="Cream Finagotchi ghost" loading="lazy" />
+          <h3>Lives on your desk</h3>
+          <p>The companion device mirrors your creature over Bluetooth — same eyes, same moods, same ghost.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" id="get">
+      <div class="cta-band">
+        <h2>Hatch yours today</h2>
+        <p>Free to start. One wallet, one creature, one tiny daily ritual.</p>
+        <a class="btn btn-primary" href="#">Join the waitlist</a>
+      </div>
+    </section>
+
+    <footer>
+      <span>© 2026 Finagotchi</span>
+      <span><a href="https://x.com" rel="noopener">X / Twitter</a> · <a href="https://finagotchi.app" rel="noopener">finagotchi.app</a></span>
+    </footer>
+  </div>
+
+  <script type="module" src="./main.js"></script>
+</body>
+</html>

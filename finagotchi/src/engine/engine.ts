@@ -7,10 +7,10 @@
  * dated so transitions remain deterministic.
  */
 
-import { clamp, easings, lerp, r2 } from '../utils/math';
+import { clamp, easings, lerp } from '../utils/math';
 import { blendExpression, DEFAULT_EXPRESSION, EXPRESSION_BY_ID, type BotExpression, type PetMood } from './expressions';
 import { blinkScale, eyePoses, liveliness, type HeadGaze, type LivelinessOptions } from './face';
-import { PROFILES, PROFILE_SAMPLES, type ProfileName } from './profiles';
+import { GHOST_PROFILES, PROFILES, PROFILE_SAMPLES, type ProfileName } from './profiles';
 import { blend, capsulePath, circle, closedPath, radiusAtAngle, silhouette, toPoints, type Point, type Silhouette } from './shape';
 
 export type StateId = ProfileName;
@@ -41,6 +41,17 @@ interface StateDef {
   morph: number;
 }
 
+/**
+ * All catalogue poses are time-independent, so each is computed once and the
+ * same object is returned on every frame. Poses are treated as immutable
+ * everywhere (blends and overrides always allocate a fresh object), which
+ * makes sharing them safe and removes steady-state per-frame allocation.
+ */
+function staticPose(make: () => Pose): (t: number) => Pose {
+  let cached: Pose | null = null;
+  return () => (cached ??= make());
+}
+
 export interface Look {
   yaw: number;
   pitch: number;
@@ -50,7 +61,12 @@ export interface Look {
 
 export interface RenderedEye {
   d: string;
-  matrix: string;
+  /**
+   * SVG affine transform as numbers in `matrix(a,b,c,d,e,f)` order. Numeric so
+   * the render hot path never builds or parses a transform string; callers
+   * that need the string form (e.g. PetEyes) format it themselves.
+   */
+  m: [number, number, number, number, number, number];
   alpha: number;
 }
 
@@ -77,7 +93,7 @@ const STATE_DEFS: Record<StateId, StateDef> = {
   egg: {
     id: 'egg',
     morph: 0.45,
-    pose: () => ({
+    pose: staticPose(() => ({
       sil: silhouette('egg'),
       offX: 0,
       offY: 0.04,
@@ -90,13 +106,13 @@ const STATE_DEFS: Record<StateId, StateDef> = {
       eyeAlpha: 1,
       bodyAlpha: 1,
       color: '#D4C8B8',
-    }),
+    })),
   },
   coinling: {
     id: 'coinling',
     morph: 0.45,
-    pose: () => ({
-      sil: silhouette('coinling'),
+    pose: staticPose(() => ({
+      sil: silhouette('coinling', { radii: [...GHOST_PROFILES.hem] }),
       offX: 0,
       offY: 0,
       gaze: { yaw: 0, pitch: -8, roll: 0 },
@@ -109,13 +125,13 @@ const STATE_DEFS: Record<StateId, StateDef> = {
       bodyAlpha: 1,
       color: '#f59e0b',
       glowColor: '#fbbf24',
-    }),
+    })),
   },
   hodler: {
     id: 'hodler',
     morph: 0.45,
-    pose: () => ({
-      sil: silhouette('hodler'),
+    pose: staticPose(() => ({
+      sil: silhouette('hodler', { radii: [...GHOST_PROFILES.curl] }),
       offX: 0,
       offY: -0.03,
       gaze: { yaw: 0, pitch: 2, roll: 0 },
@@ -128,13 +144,13 @@ const STATE_DEFS: Record<StateId, StateDef> = {
       bodyAlpha: 1,
       color: '#3b82f6',
       glowColor: '#60a5fa',
-    }),
+    })),
   },
   whale: {
     id: 'whale',
     morph: 0.55,
-    pose: () => ({
-      sil: silhouette('whale'),
+    pose: staticPose(() => ({
+      sil: silhouette('whale', { radii: [...GHOST_PROFILES.arms] }),
       offX: 0,
       offY: 0.05,
       gaze: { yaw: 0, pitch: -12, roll: 0 },
@@ -147,7 +163,7 @@ const STATE_DEFS: Record<StateId, StateDef> = {
       bodyAlpha: 1,
       color: '#6366f1',
       glowColor: '#818cf8',
-    }),
+    })),
   },
 };
 
@@ -395,7 +411,7 @@ export class FinagotchiEngine {
 
         eyes.push({
           d: capsulePath(cfg.w * R, cfg.h * R),
-          matrix: `matrix(${r2(ax)},${r2(ay * k)},${r2(cx)},${r2(cy * k)},${r2(e.x * fit + offX * R)},${r2(e.y * fit + offY * R)})`,
+          m: [ax, ay * k, cx, cy * k, e.x * fit + offX * R, e.y * fit + offY * R],
           alpha: pose.eyeAlpha * clamp(e.depth / 0.12),
         });
       }

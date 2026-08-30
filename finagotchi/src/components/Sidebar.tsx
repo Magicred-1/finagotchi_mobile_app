@@ -109,12 +109,12 @@ export function Sidebar({
         }
     }, [walletAddress]);
 
-    const internalTranslateX = useSharedValue(SIDEBAR_WIDTH);
+    const internalTranslateX = useSharedValue(-SIDEBAR_WIDTH);
     const internalOpacity = useSharedValue(0);
 
     const translateX = externalTranslateX ?? internalTranslateX;
     const opacity = externalOpacity ?? internalOpacity;
-    const contentShift = useSharedValue(16);
+    const contentShift = useSharedValue(-16);
 
     const dragStartX = useSharedValue(0);
     const dragStartY = useSharedValue(0);
@@ -141,10 +141,10 @@ export function Sidebar({
     }, [translateX, opacity, contentShift]);
 
     const animateClose = useCallback((velocity = 0) => {
-        if (translateX.value >= SIDEBAR_WIDTH - 1 && opacity.value <= 0.01) return;
+        if (translateX.value <= -SIDEBAR_WIDTH + 1 && opacity.value <= 0.01) return;
         const isFlick = Math.abs(velocity) > FLICK_VELOCITY;
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-        translateX.value = withSpring(SIDEBAR_WIDTH, {
+        translateX.value = withSpring(-SIDEBAR_WIDTH, {
             ...(isFlick ? springs.momentum : springs.default),
             velocity,
             reduceMotion: ReduceMotion.System,
@@ -154,7 +154,7 @@ export function Sidebar({
                 runOnJS(onCloseRef.current)();
             }
         });
-        contentShift.value = withTiming(16, { duration: 180 });
+        contentShift.value = withTiming(-16, { duration: 180 });
     }, [translateX, opacity, contentShift]);
 
     useEffect(() => {
@@ -165,7 +165,7 @@ export function Sidebar({
         }
     }, [visible, animateOpen, animateClose]);
 
-    // Drag from the right edge of the screen to open the sidebar.
+    // Drag from the left edge of the screen to open the sidebar.
     // Uses manual activation so taps and vertical scrolling pass through to
     // buttons and lists that sit underneath the full-screen overlay.
     const openPan = Gesture.Pan()
@@ -175,7 +175,7 @@ export function Sidebar({
         .onTouchesDown((event, stateManager) => {
             'worklet';
             const touch = event.allTouches[0];
-            if (touch && touch.absoluteX > width - EDGE_SWIPE_WIDTH) {
+            if (touch && touch.absoluteX < EDGE_SWIPE_WIDTH) {
                 dragStartX.value = touch.absoluteX;
                 dragStartY.value = touch.absoluteY;
             } else {
@@ -191,9 +191,9 @@ export function Sidebar({
             const dx = touch.absoluteX - dragStartX.value;
             const dy = touch.absoluteY - dragStartY.value;
 
-            if (dx < -ACTIVATE_DX && Math.abs(dy) < FAIL_DY) {
+            if (dx > ACTIVATE_DX && Math.abs(dy) < FAIL_DY) {
                 stateManager.activate();
-            } else if (Math.abs(dy) > FAIL_DY * 2 || dx > ACTIVATE_DX * 3) {
+            } else if (Math.abs(dy) > FAIL_DY * 2 || dx < -ACTIVATE_DX * 3) {
                 stateManager.fail();
             }
         })
@@ -203,42 +203,42 @@ export function Sidebar({
         })
         .onUpdate((event) => {
             'worklet';
-            const x = Math.max(0, -event.translationX);
-            translateX.value = Math.max(0, SIDEBAR_WIDTH - x);
+            const x = Math.max(0, event.translationX);
+            translateX.value = Math.min(0, -SIDEBAR_WIDTH + x);
             opacity.value = Math.min(1, x / SIDEBAR_WIDTH);
         })
         .onEnd((event) => {
             'worklet';
             const projectedX = event.translationX + project(event.velocityX);
             const shouldOpen =
-                projectedX < -OPEN_SWIPE_THRESHOLD ||
-                event.translationX < -OPEN_SWIPE_THRESHOLD;
+                projectedX > OPEN_SWIPE_THRESHOLD ||
+                event.translationX > OPEN_SWIPE_THRESHOLD;
 
             if (shouldOpen) {
                 runOnJS(onOpen)();
             } else {
-                translateX.value = withSpring(SIDEBAR_WIDTH, springs.default);
+                translateX.value = withSpring(-SIDEBAR_WIDTH, springs.default);
                 opacity.value = withTiming(0, { duration: 200 });
             }
         });
 
-    // Swipe the sidebar right to close.
+    // Swipe the sidebar left to close.
     const sidebarPan = Gesture.Pan()
         .minDistance(20)
         .failOffsetY([-20, 20])
         .shouldCancelWhenOutside(false)
         .onUpdate((event) => {
             const x = event.translationX;
-            if (x >= 0) {
-                translateX.value = Math.min(SIDEBAR_WIDTH, x);
-                opacity.value = Math.max(0, 1 - x / SIDEBAR_WIDTH);
+            if (x <= 0) {
+                translateX.value = Math.max(-SIDEBAR_WIDTH, x);
+                opacity.value = Math.max(0, 1 + x / SIDEBAR_WIDTH);
             }
         })
         .onEnd((event) => {
             const projectedX = event.translationX + project(event.velocityX);
             const shouldClose =
-                projectedX > SWIPE_THRESHOLD ||
-                event.translationX > SIDEBAR_WIDTH * 0.4;
+                projectedX < -SWIPE_THRESHOLD ||
+                event.translationX < -SIDEBAR_WIDTH * 0.4;
 
             const velocity = event.velocityX;
             const isFlick = Math.abs(velocity) > FLICK_VELOCITY;
@@ -246,7 +246,7 @@ export function Sidebar({
 
             if (shouldClose) {
                 runOnJS(Haptics.impactAsync)(Haptics.ImpactFeedbackStyle.Light);
-                translateX.value = withSpring(SIDEBAR_WIDTH, {
+                translateX.value = withSpring(-SIDEBAR_WIDTH, {
                     ...springConfig,
                     velocity,
                     reduceMotion: ReduceMotion.System,
@@ -585,12 +585,12 @@ const styles = StyleSheet.create({
     container: {
         position: 'absolute',
         top: 0,
-        right: 0,
+        left: 0,
         zIndex: 1000,
     },
     dragOverlay: {
         position: 'absolute',
-        right: 0,
+        left: 0,
         top: 0,
         zIndex: 1001,
         backgroundColor: 'transparent',
@@ -600,14 +600,14 @@ const styles = StyleSheet.create({
     },
     sidebar: {
         position: 'absolute',
-        right: 0,
+        left: 0,
         top: 0,
         backgroundColor: 'rgba(14,27,46,0.96)',
-        borderLeftWidth: 1,
-        borderLeftColor: 'rgba(255,255,255,0.08)',
+        borderRightWidth: 1,
+        borderRightColor: 'rgba(255,255,255,0.08)',
         paddingHorizontal: spacing.lg,
         shadowColor: '#000',
-        shadowOffset: { width: -8, height: 0 },
+        shadowOffset: { width: 8, height: 0 },
         shadowOpacity: 0.35,
         shadowRadius: 40,
         elevation: 20,
@@ -615,7 +615,7 @@ const styles = StyleSheet.create({
     handle: {
         position: 'absolute',
         top: 16,
-        right: spacing.lg,
+        left: spacing.lg,
         width: 36,
         height: 4,
         borderRadius: 2,
@@ -725,12 +725,12 @@ const styles = StyleSheet.create({
     },
     activeAccent: {
         position: 'absolute',
-        right: 0,
+        left: 0,
         top: 12,
         bottom: 12,
         width: 3,
-        borderTopLeftRadius: 3,
-        borderBottomLeftRadius: 3,
+        borderTopRightRadius: 3,
+        borderBottomRightRadius: 3,
         backgroundColor: colors.background,
     },
     divider: {

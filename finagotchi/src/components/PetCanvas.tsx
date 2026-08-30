@@ -117,15 +117,19 @@ function LifeTimerPill() {
   if (!text) return null;
 
   return (
-    <View style={[styles.lifeTimerPill, isLow && styles.lifeTimerPillLow]}>
-      <Ionicons
-        name="timer-outline"
-        size={12}
-        color={isLow ? colors.danger : colors.primary}
-      />
-      <Text style={[styles.lifeTimerText, isLow && styles.lifeTimerTextLow]}>
-        {text}
-      </Text>
+    <View style={styles.lifeTimerRow}>
+      <View style={[styles.lifeTimerLine, isLow && styles.lifeTimerLineLow]} />
+      <View style={styles.lifeTimerPill}>
+        <Ionicons
+          name="timer-outline"
+          size={12}
+          color={isLow ? colors.danger : colors.primary}
+        />
+        <Text style={[styles.lifeTimerText, isLow && styles.lifeTimerTextLow]}>
+          {text}
+        </Text>
+      </View>
+      <View style={[styles.lifeTimerLine, isLow && styles.lifeTimerLineLow]} />
     </View>
   );
 }
@@ -316,22 +320,26 @@ const styles = StyleSheet.create({
     backgroundColor: colors.primary,
     opacity: 0.12,
   },
+  lifeTimerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    marginTop: 4,
+  },
+  lifeTimerLine: {
+    width: 56,
+    height: 1,
+    backgroundColor: 'rgba(255,255,255,0.14)',
+  },
+  lifeTimerLineLow: {
+    backgroundColor: 'rgba(255,100,124,0.30)',
+  },
   lifeTimerPill: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 5,
-    marginTop: 4,
-    paddingVertical: 5,
-    paddingHorizontal: 10,
-    borderRadius: 12,
-    backgroundColor: 'rgba(7,17,31,0.55)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
-  },
-  lifeTimerPillLow: {
-    backgroundColor: 'rgba(255,100,124,0.12)',
-    borderColor: 'rgba(255,100,124,0.25)',
   },
   lifeTimerText: {
     color: colors.text,

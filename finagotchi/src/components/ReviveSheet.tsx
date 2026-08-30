@@ -77,7 +77,7 @@ export default function ReviveSheet({
         <BottomSheet visible={visible} onClose={onClose} title={windowActive ? 'Revive' : 'New companion'}>
             <View style={styles.container}>
                 <View style={styles.petWrap}>
-                    <RadialPet stage="egg" mood="waiting" size={96} />
+                    <RadialPet stage="egg" mood="waiting" size={96} active={visible} />
                 </View>
 
                 <Text style={styles.title}>

@@ -44,11 +44,12 @@ import {
 } from '../../src/features/pet/store';
 import { useWalletStore } from '../../src/features/wallet/store';
 import { useWallet } from '../../src/wallet/useWallet';
-import { useFinagotchiBle } from '../../src/features/ble/useBle';
+import { useFinagotchiDevice } from '../../src/features/ble';
 import {
   useDeviceControlStore,
   useDeviceSync,
 } from '../../src/features/ble/sync';
+import { WaitingForSync } from '../../src/components/WaitingForSync';
 import type { PetMood as EngineMood } from '../../src/engine/expressions';
 import { colors, radius, spacing, tracking, typography } from '../../src/theme/tokens';
 import type { PetMood, PetReaction } from '../../src/components/PetCanvas';
@@ -163,6 +164,11 @@ const PET_ACTIONS: PetAction[] = [
   { id: 'train', icon: 'barbell-outline', label: 'Train', cost: 250, reaction: 'spin', mood: 'proud' },
 ];
 
+// Upper bound for the actions drawer content (one row of action buttons,
+// ~80 pt). Accordion animates maxHeight toward this bound; content is
+// clipped by overflow while collapsed.
+const ACTIONS_DRAWER_MAX_HEIGHT = 120;
+
 export default function HomeScreen() {
   const { width } = useWindowDimensions();
   const insets = useSafeAreaInsets();
@@ -182,6 +188,7 @@ export default function HomeScreen() {
   const [actionMood, setActionMood] = useState<PetMood | undefined>(undefined);
   const [floatingEmoji, setFloatingEmoji] = useState<string | null>(null);
   const [exitToastVisible, setExitToastVisible] = useState(false);
+  const [actionsOpen, setActionsOpen] = useState(false);
 
   const lastBackPress = useRef(0);
   const toastTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -190,9 +197,10 @@ export default function HomeScreen() {
   const exitToastOpacity = useSharedValue(0);
   const emojiOpacity = useSharedValue(0);
   const emojiTranslateY = useSharedValue(0);
+  const actionsProgress = useSharedValue(0);
 
   const wallet = useWallet();
-  const ble = useFinagotchiBle();
+  const ble = useFinagotchiDevice();
 
   const checkIn = useCheckinStore((state) => state.checkIn);
   const hasCheckedInToday = useCheckinStore((state) => state.hasCheckedInToday());
@@ -271,6 +279,14 @@ export default function HomeScreen() {
   // Mirror stage/mood/accessory/reactions to the connected device and back.
   useDeviceSync(ble, currentEngineMood, reaction, reactionKey);
   const deviceMood = useDeviceControlStore((state) => state.deviceMood);
+
+  // While a link attempt is in flight, mirror the device's own waiting scene:
+  // waiting expression + orbiting comets, cleared by the first state
+  // notification (status flips to 'connected').
+  const waitingForSync =
+    ble.status === 'scanning' ||
+    ble.status === 'connecting' ||
+    ble.status === 'reconnecting';
 
   // Tick store-side life/happiness logic once a second. Countdown text lives
   // in self-ticking components (LifeTimerPill, GuardianBadge) so this screen
@@ -478,6 +494,13 @@ export default function HomeScreen() {
     triggerEmotion('jump', 'happy');
   }, [isDead]);
 
+  function toggleActionsDrawer() {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    const next = !actionsOpen;
+    setActionsOpen(next);
+    actionsProgress.value = withTiming(next ? 1 : 0, { duration: 220 });
+  }
+
   // Drag-to-look: steer the on-device gaze too (throttled by RadialPet).
   const handlePetLook = useCallback(
     (yaw: number, pitch: number) => {
@@ -588,6 +611,15 @@ export default function HomeScreen() {
     transform: [{ translateY: emojiTranslateY.value }],
   }));
 
+  const actionsDrawerStyle = useAnimatedStyle(() => ({
+    maxHeight: ACTIONS_DRAWER_MAX_HEIGHT * actionsProgress.value,
+    opacity: actionsProgress.value,
+  }));
+
+  const actionsChevronStyle = useAnimatedStyle(() => ({
+    transform: [{ rotate: `${(1 - actionsProgress.value) * 180}deg` }],
+  }));
+
   return (
     <View
       style={[
@@ -608,11 +640,20 @@ export default function HomeScreen() {
       >
         {/* TOP BAR */}
         <View style={[styles.topBar, isTinyDevice && styles.topBarWrap]}>
-          <Image
-            source={require('../../assets/icon.png')}
-            style={styles.appIcon}
-            resizeMode="contain"
-          />
+          <PressableScale
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              setSidebarVisible(true);
+            }}
+            hitSlop={8}
+            accessibilityLabel="Open menu"
+          >
+            <Image
+              source={require('../../assets/ghost-icon-animated.gif')}
+              style={styles.appIcon}
+              resizeMode="contain"
+            />
+          </PressableScale>
 
           <View style={styles.topBarRight}>
             <PressableScale
@@ -654,17 +695,6 @@ export default function HomeScreen() {
               ]}
             >
               <Ionicons name="flag-outline" size={isTinyDevice ? 16 : 18} color={colors.text} />
-            </PressableScale>
-
-            <PressableScale
-              onPress={() => setSidebarVisible(true)}
-              hitSlop={8}
-              style={[
-                styles.headerIconButton,
-                isTinyDevice && styles.headerIconButtonSmall,
-              ]}
-            >
-              <Ionicons name="menu" size={isTinyDevice ? 16 : 18} color={colors.text} />
             </PressableScale>
           </View>
         </View>
@@ -710,11 +740,16 @@ export default function HomeScreen() {
 
             <GuardianBadge />
 
+            <View style={styles.streakPill}>
+              <Ionicons name="flame" size={12} color={colors.primary} />
+              <Text style={styles.streakPillText}>{streak}</Text>
+            </View>
+
             <View style={styles.petCenter}>
               {celebratingStage === null && (
                 <PetCanvas
                   mood={effectiveMood}
-                  engineMood={deviceMood}
+                  engineMood={waitingForSync ? 'waiting' : deviceMood}
                   reaction={reaction}
                   reactionKey={reactionKey}
                   accessory={accessory}
@@ -725,6 +760,7 @@ export default function HomeScreen() {
                   onLookEnd={handlePetLookEnd}
                 />
               )}
+              {waitingForSync && <WaitingForSync />}
               {(effectiveMood === 'happy' || effectiveMood === 'proud') && (
                 <Text style={styles.floatingHeart}>❤️</Text>
               )}
@@ -755,11 +791,6 @@ export default function HomeScreen() {
 
           <View style={styles.statsRow}>
             <View style={styles.statChip}>
-              <Ionicons name="flame-outline" size={14} color={colors.primary} />
-              <Text style={styles.statValue}>{streak}</Text>
-              <Text style={styles.statLabel}>streak</Text>
-            </View>
-            <View style={styles.statChip}>
               <Ionicons name="wallet-outline" size={14} color={colors.warning} />
               <Text style={styles.statValue}>{formatNumber(balance)}</Text>
               <Text style={styles.statLabel}>points</Text>
@@ -787,85 +818,111 @@ export default function HomeScreen() {
             </View>
           </View>
 
-          <View style={styles.petActionsRow}>
-            {PET_ACTIONS.map((action) => {
-              const canAfford = balance >= action.cost;
-              return (
-                <PressableScale
-                  key={action.id}
-                  onPress={() => handlePetAction(action)}
-                  disabled={!canAfford}
-                  style={[
-                    styles.petActionButton,
-                    !canAfford && styles.petActionButtonDisabled,
-                  ]}
-                >
+          {waitingForSync && (
+            <Text style={styles.syncCaption}>
+              {'waiting for sync…\nopen the Finagotchi app'}
+            </Text>
+          )}
+
+          <View style={styles.actionsDrawer}>
+            <PressableScale
+              onPress={toggleActionsDrawer}
+              style={styles.actionsHandle}
+            >
+              <View style={styles.actionsHandleBar} />
+              <View style={styles.actionsHandleRow}>
+                <Text style={styles.actionsHandleText}>Actions</Text>
+                <Animated.View style={actionsChevronStyle}>
                   <Ionicons
-                    name={action.icon}
-                    size={18}
-                    color={canAfford ? colors.text : colors.textMuted}
+                    name="chevron-up"
+                    size={14}
+                    color={colors.textMuted}
                   />
-                  <Text
-                    style={[
-                      styles.petActionLabel,
-                      !canAfford && styles.petActionLabelDisabled,
-                    ]}
-                    numberOfLines={1}
-                  >
-                    {action.label}
-                  </Text>
-                  <View
-                    style={[
-                      styles.petActionPricePill,
-                      action.cost === 0 && styles.petActionPricePillFree,
-                      !canAfford && styles.petActionPricePillDisabled,
-                    ]}
-                  >
-                    <Text
+                </Animated.View>
+              </View>
+            </PressableScale>
+
+            <Animated.View style={[styles.actionsDrawerClip, actionsDrawerStyle]}>
+              <View style={styles.petActionsRow}>
+                {PET_ACTIONS.map((action) => {
+                  const canAfford = balance >= action.cost;
+                  return (
+                    <PressableScale
+                      key={action.id}
+                      onPress={() => handlePetAction(action)}
+                      disabled={!canAfford}
                       style={[
-                        styles.petActionPriceText,
-                        action.cost === 0 && styles.petActionPriceTextFree,
-                        !canAfford && styles.petActionPriceTextDisabled,
+                        styles.petActionButton,
+                        !canAfford && styles.petActionButtonDisabled,
                       ]}
                     >
-                      {action.cost === 0 ? 'Free' : formatNumber(action.cost)}
-                    </Text>
-                  </View>
-                </PressableScale>
-              );
-            })}
+                      <Ionicons
+                        name={action.icon}
+                        size={18}
+                        color={canAfford ? colors.text : colors.textMuted}
+                      />
+                      <Text
+                        style={[
+                          styles.petActionLabel,
+                          !canAfford && styles.petActionLabelDisabled,
+                        ]}
+                        numberOfLines={1}
+                      >
+                        {action.label}
+                      </Text>
+                      <View
+                        style={[
+                          styles.petActionPricePill,
+                          action.cost === 0 && styles.petActionPricePillFree,
+                          !canAfford && styles.petActionPricePillDisabled,
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            styles.petActionPriceText,
+                            action.cost === 0 && styles.petActionPriceTextFree,
+                            !canAfford && styles.petActionPriceTextDisabled,
+                          ]}
+                        >
+                          {action.cost === 0 ? 'Free' : formatNumber(action.cost)}
+                        </Text>
+                      </View>
+                    </PressableScale>
+                  );
+                })}
+              </View>
+            </Animated.View>
           </View>
         </View>
 
-        {/* ACTION ROW */}
-        <View style={styles.actionRow}>
+        {/* TABS */}
+        <View style={styles.tabBar}>
           <PressableScale
             onPress={handleCollectibles}
-            style={styles.actionTile}
+            style={styles.tab}
           >
             <Ionicons
               name="color-palette-outline"
-              size={22}
+              size={20}
               color={colors.text}
             />
-            <Text style={styles.actionTileText}>Collectibles</Text>
+            <Text style={styles.tabText}>Collectibles</Text>
           </PressableScale>
-
 
           <PressableScale
             onPress={handleHardware}
-            style={styles.actionTile}
+            style={styles.tab}
           >
-            <Ionicons name="hardware-chip-outline" size={22} color={colors.text} />
-            <Text style={styles.actionTileText}>Hardware</Text>
+            <Ionicons name="hardware-chip-outline" size={20} color={colors.text} />
+            <Text style={styles.tabText}>Hardware</Text>
           </PressableScale>
 
           <PressableScale
             onPress={handleGames}
-            style={[styles.actionTile, styles.actionTileMuted]}
+            style={[styles.tab, styles.tabMuted]}
           >
-            <Ionicons name="game-controller-outline" size={22} color={colors.textMuted} />
-            <Text style={[styles.actionTileText, styles.actionTileTextMuted]}>Games</Text>
+            <Ionicons name="game-controller-outline" size={20} color={colors.textMuted} />
+            <Text style={[styles.tabText, styles.tabTextMuted]}>Games</Text>
             <View style={styles.comingSoonBadge}>
               <Text style={styles.comingSoonText}>Soon</Text>
             </View>
@@ -1058,7 +1115,7 @@ const styles = StyleSheet.create({
   petCard: {
     flex: 1,
     width: '100%',
-    padding: 12,
+    paddingVertical: 12,
     borderRadius: 24,
     backgroundColor: colors.surface,
     borderWidth: 1,
@@ -1071,6 +1128,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: 12,
+    paddingHorizontal: 12,
   },
   petName: {
     color: colors.text,
@@ -1111,7 +1169,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderRadius: 14,
-    backgroundColor: colors.primary,
+    backgroundColor: colors.background,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.10)',
   },
   feedButtonTiny: {
     width: 38,
@@ -1192,6 +1252,34 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontFamily: 'Poppins_800ExtraBold',
   },
+  streakPill: {
+    position: 'absolute',
+    top: 10,
+    left: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingVertical: 5,
+    paddingHorizontal: 10,
+    borderRadius: 12,
+    backgroundColor: 'rgba(7,17,31,0.55)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+    zIndex: 5,
+  },
+  streakPillText: {
+    color: colors.text,
+    fontSize: 10,
+    fontFamily: 'Poppins_800ExtraBold',
+  },
+  syncCaption: {
+    width: '100%',
+    textAlign: 'center',
+    color: colors.textMuted,
+    fontSize: 10,
+    lineHeight: 15,
+    fontFamily: 'Poppins_600SemiBold',
+  },
 
   /* EVOLUTION OVERLAY */
   evolutionOverlay: {
@@ -1235,6 +1323,7 @@ const styles = StyleSheet.create({
     width: '100%',
     flexDirection: 'row',
     gap: 8,
+    paddingHorizontal: 12,
   },
   statChip: {
     flex: 1,
@@ -1319,35 +1408,77 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
   },
 
-  /* ACTION ROW */
-  actionRow: {
+  /* ACTIONS DRAWER */
+  actionsDrawer: {
+    marginHorizontal: 12,
+    borderRadius: 14,
+    backgroundColor: colors.background,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+    overflow: 'hidden',
+  },
+  actionsHandle: {
+    alignItems: 'center',
+    paddingTop: 6,
+    paddingBottom: 6,
+    gap: 4,
+  },
+  actionsHandleBar: {
+    width: 36,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: 'rgba(255,255,255,0.15)',
+  },
+  actionsHandleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  actionsHandleText: {
+    color: colors.textMuted,
+    fontSize: 10,
+    fontFamily: 'Poppins_700Bold',
+    letterSpacing: 0.6,
+    textTransform: 'uppercase',
+  },
+  actionsDrawerClip: {
+    overflow: 'hidden',
+  },
+
+  /* TABS */
+  tabBar: {
     width: '100%',
     flexDirection: 'row',
-    gap: 10,
+    gap: 4,
+    padding: 4,
+    borderRadius: 18,
+    backgroundColor: colors.background,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.06)',
   },
-  actionTile: {
+  tab: {
     flex: 1,
     minWidth: 0,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 6,
-    paddingVertical: 12,
-    borderRadius: 18,
+    gap: 4,
+    paddingVertical: 10,
+    borderRadius: 14,
     backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.06)',
   },
-  actionTileText: {
+  tabText: {
     color: colors.text,
     fontSize: 12,
     fontFamily: 'Poppins_700Bold',
     textAlign: 'center',
   },
-  actionTileMuted: {
+  tabMuted: {
     backgroundColor: 'rgba(14,27,46,0.60)',
     borderColor: 'rgba(255,255,255,0.04)',
   },
-  actionTileTextMuted: {
+  tabTextMuted: {
     color: colors.textMuted,
   },
   comingSoonBadge: {

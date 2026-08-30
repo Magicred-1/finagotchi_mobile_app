@@ -68,6 +68,8 @@ type PetState = {
     lastFedAt: string | null;
     /** ISO date of the last time the creature was engaged (fed, played, trained, caressed). */
     lastInteractionAt: string | null;
+    /** ISO watermark up to which happiness decay has been applied. */
+    lastHappinessDecayAt: string | null;
     /** True when the creature has died. Blocks normal interaction until revived. */
     isDead: boolean;
     /** True when the creature is in spectral (soft-death) form. Alias for isDead kept for clarity. */
@@ -191,6 +193,7 @@ export const usePetStore = create<PetState>()(
             happiness: 100,
             lastFedAt: null,
             lastInteractionAt: null,
+            lastHappinessDecayAt: null,
             isDead: false,
             isSpectral: false,
             deathCount: 0,
@@ -223,6 +226,7 @@ export const usePetStore = create<PetState>()(
                     evolvedAt: now,
                     happiness: 100,
                     lastInteractionAt: now,
+                    lastHappinessDecayAt: now,
                     lifeTimerEndsAt: new Date(
                         Date.now() + LIFE_DURATION_MS
                     ).toISOString(),
@@ -298,6 +302,7 @@ export const usePetStore = create<PetState>()(
                     happiness: Math.min(100, get().happiness + 20),
                     lastFedAt: now,
                     lastInteractionAt: now,
+                    lastHappinessDecayAt: now,
                     lifeTimerEndsAt: new Date(
                         Date.now() + LIFE_DURATION_MS
                     ).toISOString(),
@@ -309,6 +314,7 @@ export const usePetStore = create<PetState>()(
                 set({
                     happiness: Math.min(100, get().happiness + Math.max(0, amount)),
                     lastInteractionAt: now,
+                    lastHappinessDecayAt: now,
                 });
             },
 
@@ -317,18 +323,28 @@ export const usePetStore = create<PetState>()(
             },
 
             decayHappiness: () => {
-                const { lastInteractionAt, happiness, isDead } = get();
+                const { lastInteractionAt, lastHappinessDecayAt, happiness, isDead } = get();
                 if (isDead || !lastInteractionAt || happiness <= 0) return;
 
                 const now = Date.now();
-                const lastInteraction = new Date(lastInteractionAt).getTime();
+                // Consume whole hours since the decay watermark. Without it,
+                // the per-second tick would re-charge the same elapsed hours
+                // and drain happiness to 0 almost immediately.
+                const checkpoint = new Date(
+                    lastHappinessDecayAt ?? lastInteractionAt
+                ).getTime();
                 const hoursSince = Math.floor(
-                    (now - lastInteraction) / (1000 * 60 * 60)
+                    (now - checkpoint) / (1000 * 60 * 60)
                 );
 
                 if (hoursSince > 0) {
                     const decay = hoursSince * 5;
-                    set({ happiness: Math.max(0, happiness - decay) });
+                    set({
+                        happiness: Math.max(0, happiness - decay),
+                        lastHappinessDecayAt: new Date(
+                            checkpoint + hoursSince * 1000 * 60 * 60
+                        ).toISOString(),
+                    });
                 }
             },
 
@@ -380,6 +396,7 @@ export const usePetStore = create<PetState>()(
                     totalCheckins: resetProgress ? 0 : state.totalCheckins,
                     lastFedAt: now.toISOString(),
                     lastInteractionAt: now.toISOString(),
+                    lastHappinessDecayAt: now.toISOString(),
                     lifeTimerEndsAt: new Date(
                         now.getTime() + LIFE_DURATION_MS
                     ).toISOString(),
@@ -539,6 +556,14 @@ export const usePetStore = create<PetState>()(
                     if (typeof migrated.reviveInvites !== 'number') {
                         migrated.reviveInvites = 0;
                     }
+                    // Decay watermark: start from the last interaction so
+                    // existing pets aren't re-charged for elapsed hours.
+                    if (typeof migrated.lastHappinessDecayAt !== 'string') {
+                        migrated.lastHappinessDecayAt =
+                            typeof migrated.lastInteractionAt === 'string'
+                                ? migrated.lastInteractionAt
+                                : null;
+                    }
 
                     return migrated as PetState;
                 }
@@ -571,5 +596,6 @@ export function feedPet() {
         happiness: Math.min(100, pet.happiness + 50),
         lastFedAt: now,
         lastInteractionAt: now,
+        lastHappinessDecayAt: now,
     }));
 }

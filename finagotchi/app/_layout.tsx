@@ -1,12 +1,11 @@
 import '../src/polyfills';
 
-declare const process: { env: Record<string, string | undefined> };
-
 import React, { useEffect, useMemo } from 'react';
 import { Stack } from 'expo-router';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
-import { TurnkeyProvider } from '@turnkey/react-native-wallet-kit';
 import * as SplashScreen from 'expo-splash-screen';
+
+import { dynamicClient } from '../src/wallet/dynamicClient';
 
 import OnboardingFlow from '../src/features/onboarding/OnboardingFlow';
 import { useOnboardingStore } from '../src/features/onboarding/store';
@@ -26,49 +25,14 @@ import {
 
 SplashScreen.preventAutoHideAsync();
 
-const TURNKEY_ORGANIZATION_ID =
-  process.env.EXPO_PUBLIC_TURNKEY_ORGANIZATION_ID ?? '';
-const TURNKEY_AUTH_PROXY_CONFIG_ID =
-  process.env.EXPO_PUBLIC_TURNKEY_AUTH_PROXY_CONFIG_ID ?? '';
-const TURNKEY_RPID = process.env.EXPO_PUBLIC_TURNKEY_RPID ?? '';
-const GOOGLE_WEB_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID;
-const APPLE_IOS_BUNDLE_ID = process.env.EXPO_PUBLIC_APPLE_IOS_BUNDLE_ID;
-const APPLE_SERVICES_ID = process.env.EXPO_PUBLIC_APPLE_SERVICES_ID;
-
 export default function RootLayout() {
   return (
-    <TurnkeyProvider
-      config={{
-        organizationId: TURNKEY_ORGANIZATION_ID,
-        authProxyConfigId: TURNKEY_AUTH_PROXY_CONFIG_ID,
-        passkeyConfig: {
-          rpId: TURNKEY_RPID,
-          rpName: 'Finagotchi',
-        },
-        auth: {
-          passkey: true,
-          otp: { email: true },
-          oauth: {
-            appScheme: 'finagotchi',
-            ...(GOOGLE_WEB_CLIENT_ID && {
-              google: {
-                primaryClientId: { webClientId: GOOGLE_WEB_CLIENT_ID },
-              },
-            }),
-            ...(APPLE_IOS_BUNDLE_ID && {
-              apple: {
-                primaryClientId: {
-                  iosBundleId: APPLE_IOS_BUNDLE_ID,
-                  serviceId: APPLE_SERVICES_ID,
-                },
-              },
-            }),
-          },
-        },
-      }}
-    >
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      {/* Dynamic's SDK requires its WebView mounted at the root, even for
+          headless flows — auth silently fails without it. */}
+      <dynamicClient.reactNative.WebView />
       <AppContent />
-    </TurnkeyProvider>
+    </GestureHandlerRootView>
   );
 }
 
@@ -149,9 +113,5 @@ function AppContent() {
     </Stack>
   );
 
-  return (
-    <GestureHandlerRootView style={{ flex: 1 }}>
-      {content}
-    </GestureHandlerRootView>
-  );
+  return content;
 }

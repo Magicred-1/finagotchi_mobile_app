@@ -22,21 +22,16 @@ type Props = {
     isSeeker: boolean;
     onConnectPasskey: () => Promise<void>;
     onConnectGoogle: () => Promise<void>;
-    onRequestEmailOtp: (
-        email: string
-    ) => Promise<{ otpId: string; otpEncryptionTargetBundle: string }>;
-    onVerifyEmailOtp: (
-        email: string,
-        otp: string,
-        otpId: string,
-        otpEncryptionTargetBundle: string
-    ) => Promise<void>;
+    onConnectApple: () => Promise<void>;
+    onRequestEmailOtp: (email: string) => Promise<void>;
+    onVerifyEmailOtp: (otp: string) => Promise<void>;
     onConnectMwa: () => Promise<void>;
 };
 
 type AuthMethod =
     | 'passkey'
     | 'google'
+    | 'apple'
     | 'email-request'
     | 'email-verify'
     | 'mwa';
@@ -49,6 +44,7 @@ export default function ConnectWalletStep({
     isSeeker,
     onConnectPasskey,
     onConnectGoogle,
+    onConnectApple,
     onRequestEmailOtp,
     onVerifyEmailOtp,
     onConnectMwa,
@@ -58,20 +54,19 @@ export default function ConnectWalletStep({
     const [showEmail, setShowEmail] = useState(false);
     const [email, setEmail] = useState('');
     const [otp, setOtp] = useState('');
-    const [otpId, setOtpId] = useState<string | null>(null);
-    const [otpBundle, setOtpBundle] = useState<string | null>(null);
+    const [otpSent, setOtpSent] = useState(false);
 
     const emailInputRef = useRef<TextInput>(null);
 
     useEffect(() => {
-        if (showEmail && !otpId) {
+        if (showEmail && !otpSent) {
             // Small delay so the input is mounted when the keyboard opens.
             const timeout = setTimeout(() => {
                 emailInputRef.current?.focus();
             }, 100);
             return () => clearTimeout(timeout);
         }
-    }, [showEmail, otpId]);
+    }, [showEmail, otpSent]);
 
     const { width, height } = useWindowDimensions();
     const isSmall = height < 700;
@@ -113,6 +108,11 @@ export default function ConnectWalletStep({
         [run, onConnectGoogle]
     );
 
+    const handleApple = useCallback(
+        () => run('apple', onConnectApple),
+        [run, onConnectApple]
+    );
+
     const handleMwa = useCallback(
         () => run('mwa', onConnectMwa),
         [run, onConnectMwa]
@@ -125,14 +125,13 @@ export default function ConnectWalletStep({
             return;
         }
         run('email-request', async () => {
-            const result = await onRequestEmailOtp(trimmed);
-            setOtpId(result.otpId);
-            setOtpBundle(result.otpEncryptionTargetBundle);
+            await onRequestEmailOtp(trimmed);
+            setOtpSent(true);
         });
     }, [email, run, onRequestEmailOtp]);
 
     const handleVerifyOtp = useCallback(() => {
-        if (!otpId || !otpBundle) {
+        if (!otpSent) {
             setError('Request an OTP code first.');
             return;
         }
@@ -142,13 +141,12 @@ export default function ConnectWalletStep({
             return;
         }
         run('email-verify', async () => {
-            await onVerifyEmailOtp(email.trim(), code, otpId, otpBundle);
+            await onVerifyEmailOtp(code);
         });
-    }, [email, otp, otpId, otpBundle, run, onVerifyEmailOtp]);
+    }, [otp, otpSent, run, onVerifyEmailOtp]);
 
     const resetEmail = useCallback(() => {
-        setOtpId(null);
-        setOtpBundle(null);
+        setOtpSent(false);
         setOtp('');
         setEmail('');
         clearError();
@@ -156,7 +154,7 @@ export default function ConnectWalletStep({
 
     const renderEmailForm = () => (
         <View style={styles.emailBox}>
-            {otpId ? (
+            {otpSent ? (
                 <>
                     <Text style={styles.emailLabel}>
                         Enter the code sent to {email}
@@ -285,9 +283,9 @@ export default function ConnectWalletStep({
                         </View>
 
                         <View style={styles.footer}>
-                            <View style={styles.stack}>
-                                {isSeeker || platform === 'android' ? (
-                                    <>
+                            {(isSeeker || platform === 'android') && (
+                                <>
+                                    <View style={styles.stack}>
                                         <Button
                                             title="Connect Solana Mobile Wallet"
                                             onPress={handleMwa}
@@ -306,47 +304,33 @@ export default function ConnectWalletStep({
                                                 ? 'Use the built-in Seeker wallet.'
                                                 : 'Solana Mobile Wallet or any MWA-compatible wallet.'}
                                         </Text>
-                                    </>
-                                ) : (
-                                    <>
-                                        <Button
-                                            title="Continue with Passkey"
-                                            onPress={handlePasskey}
-                                            loading={isLoading('passkey')}
-                                            disabled={isBusy}
-                                            icon={
-                                                <Ionicons
-                                                    name="finger-print-outline"
-                                                    size={20}
-                                                    color="#07111F"
-                                                />
-                                            }
-                                        />
-                                        <Text style={styles.hint}>
-                                            Uses your device passkey. No password
-                                            needed.
-                                        </Text>
-                                    </>
-                                )}
-                            </View>
+                                    </View>
 
-                            <View style={styles.divider}>
-                                <View style={styles.dividerLine} />
-                                <Text style={styles.dividerText}>or</Text>
-                                <View style={styles.dividerLine} />
-                            </View>
+                                    <View style={styles.divider}>
+                                        <View style={styles.dividerLine} />
+                                        <Text style={styles.dividerText}>
+                                            or
+                                        </Text>
+                                        <View style={styles.dividerLine} />
+                                    </View>
+                                </>
+                            )}
 
                             <View style={styles.stack}>
-                                {platform === 'android' && (
+                                {showEmail ? (
+                                    renderEmailForm()
+                                ) : (
                                     <Button
-                                        title="Continue with Passkey"
-                                        onPress={handlePasskey}
-                                        loading={isLoading('passkey')}
+                                        title="Continue with Email"
+                                        onPress={() => {
+                                            setShowEmail(true);
+                                            clearError();
+                                        }}
                                         disabled={isBusy}
                                         variant="secondary"
                                         icon={
                                             <Ionicons
-                                                name="finger-print-outline"
+                                                name="mail-outline"
                                                 size={20}
                                                 color={colors.text}
                                             />
@@ -369,26 +353,41 @@ export default function ConnectWalletStep({
                                     }
                                 />
 
-                                {showEmail ? (
-                                    renderEmailForm()
-                                ) : (
+                                {platform === 'ios' && (
                                     <Button
-                                        title="Continue with Email"
-                                        onPress={() => {
-                                            setShowEmail(true);
-                                            clearError();
-                                        }}
+                                        title="Continue with Apple"
+                                        onPress={handleApple}
+                                        loading={isLoading('apple')}
                                         disabled={isBusy}
                                         variant="secondary"
                                         icon={
                                             <Ionicons
-                                                name="mail-outline"
+                                                name="logo-apple"
                                                 size={20}
                                                 color={colors.text}
                                             />
                                         }
                                     />
                                 )}
+
+                                <Button
+                                    title="Continue with Passkey"
+                                    onPress={handlePasskey}
+                                    loading={isLoading('passkey')}
+                                    disabled={isBusy}
+                                    variant="secondary"
+                                    icon={
+                                        <Ionicons
+                                            name="finger-print-outline"
+                                            size={20}
+                                            color={colors.text}
+                                        />
+                                    }
+                                />
+                                <Text style={styles.hint}>
+                                    Passkey sign-in works once you have signed
+                                    in with email or Google on this device.
+                                </Text>
                             </View>
 
                             {error ? (
