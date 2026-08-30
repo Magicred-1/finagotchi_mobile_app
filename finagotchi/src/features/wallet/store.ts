@@ -11,13 +11,11 @@ function todayKey() {
     )}-${String(date.getDate()).padStart(2, '0')}`;
 }
 
-export type WalletConnectionType = 'turnkey' | 'mwa' | null;
+export type WalletConnectionType = 'dynamic' | 'mwa' | null;
 
 export type WalletSession = {
     authToken: string | null;
     connectionType: WalletConnectionType;
-    turnkeyUserId: string | null;
-    turnkeyWalletId: string | null;
 };
 
 type WalletState = {
@@ -25,9 +23,11 @@ type WalletState = {
     session: WalletSession;
     transactionsToday: number;
     transactionsResetAt: string | null;
+    passkeyRegistrationPrompted: boolean;
 
     connect: (address: string, connectionType: WalletConnectionType) => boolean;
     setSession: (session: Partial<WalletSession>) => void;
+    setPasskeyRegistrationPrompted: (prompted: boolean) => void;
     recordTransaction: () => void;
     resetTransactionsIfNeeded: () => void;
     disconnect: () => void;
@@ -36,8 +36,6 @@ type WalletState = {
 const defaultSession: WalletSession = {
     authToken: null,
     connectionType: null,
-    turnkeyUserId: null,
-    turnkeyWalletId: null,
 };
 
 export const useWalletStore = create<WalletState>()(
@@ -47,6 +45,7 @@ export const useWalletStore = create<WalletState>()(
             session: defaultSession,
             transactionsToday: 0,
             transactionsResetAt: null,
+            passkeyRegistrationPrompted: false,
 
             connect: (address, connectionType) => {
                 try {
@@ -73,6 +72,10 @@ export const useWalletStore = create<WalletState>()(
                         ...session,
                     },
                 }));
+            },
+
+            setPasskeyRegistrationPrompted: (prompted) => {
+                set({ passkeyRegistrationPrompted: prompted });
             },
 
             recordTransaction: () => {

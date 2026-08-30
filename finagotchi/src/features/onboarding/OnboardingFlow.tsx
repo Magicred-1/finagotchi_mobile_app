@@ -16,6 +16,7 @@ import HatchStep from './HatchStep';
 import ReminderStep from './ReminderStep';
 
 import { useWallet } from '../../wallet/useWallet';
+import { MIN_MINT_BALANCE_LAMPORTS } from '../../wallet/useWallet';
 import { useWalletStore } from '../../features/wallet/store';
 import { usePetStore } from '../../features/pet/store';
 
@@ -56,6 +57,8 @@ export default function OnboardingFlow({
     const [step, setStep] = useState<Step>(initialStep);
     const [displayedStep, setDisplayedStep] = useState<Step>(initialStep);
     const [creatureName, setCreatureName] = useState('');
+    const [fundingDismissed, setFundingDismissed] = useState(false);
+    const [mintBalanceChecked, setMintBalanceChecked] = useState(false);
 
     const wallet = useWallet();
     const walletAddress = useWalletStore((state) => state.address);
@@ -100,6 +103,39 @@ export default function OnboardingFlow({
         });
     }, [displayedStep, opacity, translateX]);
 
+    // Re-offer funding if the user reconnects with a different wallet.
+    useEffect(() => {
+        setFundingDismissed(false);
+    }, [walletAddress]);
+
+    // Re-verify the embedded wallet's SOL balance when the mint step is
+    // reached (right after naming), so the funding sheet reflects a fresh
+    // balance rather than the connect-time snapshot.
+    const refreshBalance = wallet.refreshBalance;
+    const connectionType = wallet.connectionType;
+    useEffect(() => {
+        setMintBalanceChecked(false);
+        if (step !== 'mint' || connectionType !== 'dynamic') return;
+
+        let cancelled = false;
+        refreshBalance().finally(() => {
+            if (!cancelled) setMintBalanceChecked(true);
+        });
+        return () => {
+            cancelled = true;
+        };
+    }, [step, walletAddress, connectionType, refreshBalance]);
+
+    // Only embedded (Dynamic) wallets get the funding prompt; external MWA
+    // wallet users manage their own SOL. Shown once the pre-mint balance
+    // check above has settled and the wallet cannot cover the mint.
+    const needsFunding =
+        step === 'mint' &&
+        mintBalanceChecked &&
+        connectionType === 'dynamic' &&
+        wallet.solBalance !== null &&
+        wallet.solBalance < MIN_MINT_BALANCE_LAMPORTS;
+
     // Auto-advance from connect once the wallet authorizes.
     useEffect(() => {
         if (wallet.connected && step === 'connect') {
@@ -136,17 +172,16 @@ export default function OnboardingFlow({
         await wallet.connectWithGoogle();
     };
 
+    const handleApple = async () => {
+        await wallet.connectWithApple();
+    };
+
     const handleRequestEmailOtp = async (email: string) => {
         return wallet.requestEmailOtp(email);
     };
 
-    const handleVerifyEmailOtp = async (
-        email: string,
-        otp: string,
-        otpId: string,
-        otpEncryptionTargetBundle: string
-    ) => {
-        await wallet.verifyEmailOtp(email, otp, otpId, otpEncryptionTargetBundle);
+    const handleVerifyEmailOtp = async (otp: string) => {
+        await wallet.verifyEmailOtp(otp);
     };
 
     const handleMwa = async () => {
@@ -193,6 +228,7 @@ export default function OnboardingFlow({
                         isSeeker={wallet.isSeeker}
                         onConnectPasskey={handlePasskey}
                         onConnectGoogle={handleGoogle}
+                        onConnectApple={handleApple}
                         onRequestEmailOtp={handleRequestEmailOtp}
                         onVerifyEmailOtp={handleVerifyEmailOtp}
                         onConnectMwa={handleMwa}
@@ -205,6 +241,15 @@ export default function OnboardingFlow({
                     <MintStep
                         creatureName={creatureName}
                         walletAddress={walletAddress}
+                        funding={{
+                            visible: needsFunding && !fundingDismissed,
+                            walletAddress,
+                            balanceLamports: wallet.solBalance,
+                            requiredLamports: MIN_MINT_BALANCE_LAMPORTS,
+                            onRefreshBalance: wallet.refreshBalance,
+                            onRequestAirdrop: wallet.requestDevnetAirdrop,
+                            onDismiss: () => setFundingDismissed(true),
+                        }}
                         onMint={handleMint}
                     />
                 ) : null;

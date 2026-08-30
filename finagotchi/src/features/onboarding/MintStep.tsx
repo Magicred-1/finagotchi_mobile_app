@@ -17,10 +17,13 @@ import Animated, {
 import { Button } from '../../components/Button';
 import { RadialPet } from '../../components/RadialPet';
 import { colors, spacing, typography } from '../../theme/tokens';
+import { FundWalletSheet, type FundingRequest } from './FundWalletSheet';
 
 type Props = {
     creatureName: string;
     walletAddress: string;
+    /** Present when the connected embedded wallet may need SOL to mint. */
+    funding?: FundingRequest;
     onMint: () => Promise<void>;
 };
 
@@ -29,6 +32,7 @@ type MintStatus = 'idle' | 'minting' | 'success' | 'error';
 export default function MintStep({
     creatureName,
     walletAddress,
+    funding,
     onMint,
 }: Props) {
     const [status, setStatus] = useState<MintStatus>('idle');
@@ -178,6 +182,18 @@ export default function MintStep({
                     </View>
                 ) : null}
             </View>
+
+            {funding?.walletAddress ? (
+                <FundWalletSheet
+                    visible={funding.visible}
+                    onClose={funding.onDismiss}
+                    walletAddress={funding.walletAddress}
+                    balanceLamports={funding.balanceLamports}
+                    requiredLamports={funding.requiredLamports}
+                    onRefreshBalance={funding.onRefreshBalance}
+                    onRequestAirdrop={funding.onRequestAirdrop}
+                />
+            ) : null}
         </SafeAreaView>
     );
 }

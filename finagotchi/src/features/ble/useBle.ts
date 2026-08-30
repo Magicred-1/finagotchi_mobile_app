@@ -80,8 +80,6 @@ export function useFinagotchiBle(): FinagotchiBle {    const [status, setStatus]
     const writePayload = useRef(DEFAULT_WRITE_PAYLOAD);
     // Serializes characteristic writes: firmware must never see overlapping writes.
     const writeQueue = useRef<Promise<void>>(Promise.resolve());
-    // __DEV__ mock device: sendCommand logs writes and echoes state back.
-    const mockActive = useRef(false);
 
     // Bumped to re-run the auto-reconnect effect for the next attempt.
     const [reconnectTick, setReconnectTick] = useState(0);
@@ -256,7 +254,6 @@ export function useFinagotchiBle(): FinagotchiBle {    const [status, setStatus]
             stopScan();
             clearReconnectTimer();
             intentionalDisconnect.current = false;
-            mockActive.current = false;
             setStatus('connecting');
             setError(null);
             try {
@@ -323,7 +320,6 @@ export function useFinagotchiBle(): FinagotchiBle {    const [status, setStatus]
             return;
         }
 
-        mockActive.current = false;
         setDevices([]);
         setError(null);
         setStatus('scanning');
@@ -372,7 +368,6 @@ export function useFinagotchiBle(): FinagotchiBle {    const [status, setStatus]
 
     const disconnect = useCallback(async () => {
         intentionalDisconnect.current = true;
-        mockActive.current = false;
         clearReconnectTimer();
         monitorSub.current?.remove();
         monitorSub.current = null;
@@ -380,7 +375,7 @@ export function useFinagotchiBle(): FinagotchiBle {    const [status, setStatus]
         disconnectSub.current = null;
         const device = connectedDeviceRef.current;
         connectedDeviceRef.current = null;
-        if (device && !mockActive.current) {
+        if (device) {
             try {
                 await device.cancelConnection();
             } catch {
@@ -396,25 +391,6 @@ export function useFinagotchiBle(): FinagotchiBle {    const [status, setStatus]
         const device = connectedDeviceRef.current;
         if (!device) {
             console.warn('[BLE] sendCommand while disconnected, dropped:', cmd);
-            return;
-        }
-
-        if (mockActive.current) {
-            // __DEV__ mock: log the write and echo the resulting state like
-            // the firmware would (stage/streak/mood/item notification).
-            console.log('[BLE mock] write:', cmd);
-            setDeviceState((prev) => {
-                const next = { ...(prev ?? { stage: 'egg', streak: 1, mood: 0, item: 0 }) };
-                for (const part of cmd.split(';')) {
-                    const [key, value] = part.trim().split(':');
-                    if (!key || value === undefined) continue;
-                    if (key === 'stage') next.stage = mockStageName(value);
-                    if (key === 'mood') next.mood = Number(value) || 0;
-                    if (key === 'item') next.item = Number(value) || 0;
-                    if (key === 'streak') next.streak = Number(value) || 0;
-                }
-                return next;
-            });
             return;
         }
 
@@ -444,24 +420,6 @@ export function useFinagotchiBle(): FinagotchiBle {    const [status, setStatus]
         });
     }, []);
 
-    // __DEV__ mock: pretend a Finagotchi connected so UI work needs no hardware.
-    const connectMock = useCallback(() => {
-        stopScan();
-        clearReconnectTimer();
-        intentionalDisconnect.current = false;
-        mockActive.current = true;
-        lastDeviceId.current = null;
-        const fake = {
-            id: 'mock-finagotchi',
-            name: 'Finagotchi (demo)',
-        } as unknown as Device;
-        connectedDeviceRef.current = fake;
-        setConnectedDevice(fake);
-        setDeviceState({ stage: 'egg', streak: 1, mood: 0, item: 0 });
-        setError(null);
-        setStatus('connected');
-    }, [stopScan, clearReconnectTimer]);
-
     // Stop scanning and any pending reconnect when the screen unmounts;
     // keep the connection alive.
     useEffect(
@@ -484,24 +442,6 @@ export function useFinagotchiBle(): FinagotchiBle {    const [status, setStatus]
         connect,
         disconnect,
         reconnect,
-        connectMock,
         sendCommand,
     };
-}
-
-// Mock helper: stage command value ("3" or "coinling") → firmware stage name.
-function mockStageName(value: string): string {
-    switch (value) {
-        case '1':
-            return 'egg';
-        case '2':
-        case '3':
-            return 'coinling';
-        case '4':
-            return 'hodler';
-        case '5':
-            return 'whale';
-        default:
-            return value;
-    }
 }

@@ -10,14 +10,14 @@ import { clamp, createRng, loopNoise, toRadians } from '../utils/math';
 export type Vec3 = [number, number, number];
 
 /** Half eye separation on the sphere, in degrees. */
-export const EYE_SPLIT = 15.46;
+export const EYE_SPLIT = 19;
 
-/** Rest eye size in ball-radius units. */
-export const EYE_W = 0.186;
-export const EYE_H = 0.412;
+/** Rest eye size in ball-radius units. Round-ish, matching the ghost IP. */
+export const EYE_W = 0.2;
+export const EYE_H = 0.28;
 
-/** Rest head orientation tuned to Finagotchi's upward gaze. */
-export const REST_GAZE: HeadGaze = { yaw: 0, pitch: -18, roll: 0 };
+/** Rest head orientation tuned to the ghost's gentle forward gaze. */
+export const REST_GAZE: HeadGaze = { yaw: 0, pitch: -12, roll: 0 };
 
 export interface EyePose {
   x: number;

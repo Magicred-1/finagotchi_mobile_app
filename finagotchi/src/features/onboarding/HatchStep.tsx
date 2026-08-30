@@ -188,11 +188,11 @@ export default function HatchStep({ creatureName, onFinished }: Props) {
                     <View style={styles.stageContent} pointerEvents="none">
                         <View style={styles.petWrap}>
                             <Animated.View style={[StyleSheet.absoluteFill, eggStyle]}>
-                                <RadialPet stage="egg" mood="calm" size={200} />
+                                <RadialPet stage="egg" mood="calm" size={200} active={!showWelcome} />
                             </Animated.View>
 
                             <Animated.View style={[StyleSheet.absoluteFill, creatureStyle]}>
-                                <RadialPet stage="coinling" mood="excited" size={200} />
+                                <RadialPet stage="coinling" mood="excited" size={200} active={cracked} />
                             </Animated.View>
 
                             {cracked && (

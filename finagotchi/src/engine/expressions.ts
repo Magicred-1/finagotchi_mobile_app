@@ -48,32 +48,32 @@ export const EXPRESSIONS: BotExpression[] = [
   {
     id: 'happy',
     gaze: { yaw: 2, pitch: -10, roll: 0 },
-    split: 16.5,
+    split: 19.5,
     eyes: pair(0.24, 0.15, 18),
   },
   {
     id: 'excited',
     gaze: { yaw: 4, pitch: -16, roll: 0 },
-    split: 18.5,
-    eyes: pair(0.4, 0.5, -8),
+    split: 20.5,
+    eyes: pair(0.3, 0.34, -8),
   },
   {
     id: 'waiting',
     gaze: { yaw: -8, pitch: -4, roll: -6 },
-    split: 16,
-    eyes: pair(0.22, 0.36, -6),
+    split: 18.5,
+    eyes: pair(0.22, 0.32, -6),
   },
   {
     id: 'sleepy',
-    gaze: { yaw: 0, pitch: 8, roll: 0 },
-    split: 15,
-    eyes: pair(0.2, 0.42, 0, 0.42),
+    gaze: { yaw: 0, pitch: -4, roll: 0 },
+    split: 18,
+    eyes: pair(0.2, 0.34, 0, 0.42),
   },
   {
     id: 'sad',
-    gaze: { yaw: 2, pitch: 10, roll: 0 },
-    split: 15.5,
-    eyes: pair(0.22, 0.36, -24),
+    gaze: { yaw: 2, pitch: -2, roll: 0 },
+    split: 18.5,
+    eyes: pair(0.22, 0.32, -24),
   },
 ];
 

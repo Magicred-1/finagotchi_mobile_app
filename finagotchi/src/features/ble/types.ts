@@ -14,12 +14,14 @@ export type BleStatus =
     | 'reconnecting'
     | 'error';
 
-/** Parsed form of the "<stage>:<streak>:<mood>:<item>" notification string. */
+/** Parsed form of the "<stage>:<streak>:<mood>:<item>:<points>:<happy>" notification string. */
 export type FinagotchiState = {
     stage: string;
     streak: number;
     mood: number;
     item: number;
+    points: number;
+    happy: number;
 };
 
 /**
@@ -37,8 +39,6 @@ export interface FinagotchiBle {
     disconnect: () => void;
     /** Reconnect to the last connected device, if any. */
     reconnect: () => void;
-    /** __DEV__ only: connect a fake device that logs writes and echoes state. */
-    connectMock: () => void;
     /**
      * Queue a UTF-8 command write ("stage:3", "look:-15,8", ...).
      * Writes are serialized: a command is only sent once the previous one
@@ -47,14 +47,16 @@ export interface FinagotchiBle {
     sendCommand: (cmd: string) => void;
 }
 
-/** Parse "<stage>:<streak>:<mood>:<item>" (already UTF-8 decoded). */
+/** Parse "<stage>:<streak>:<mood>:<item>:<points>:<happy>" (already UTF-8 decoded). Older 4-field firmware strings default points/happy to 0. */
 export function parseStateString(raw: string): FinagotchiState | null {
-    const [stage, streak, mood, item] = raw.trim().split(':');
+    const [stage, streak, mood, item, points, happy] = raw.trim().split(':');
     if (!stage) return null;
     return {
         stage,
         streak: Number(streak) || 0,
         mood: Number(mood) || 0,
         item: Number(item) || 0,
+        points: Number(points) || 0,
+        happy: Number(happy) || 0,
     };
 }

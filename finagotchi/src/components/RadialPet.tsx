@@ -1,12 +1,13 @@
-import React, { memo, useEffect, useRef } from 'react';
+import React, { memo, useEffect, useRef, useState } from 'react';
 import {
+    AppState,
     PanResponder,
     Pressable,
     StyleSheet,
     View,
     type GestureResponderEvent,
 } from 'react-native';
-import Svg, { G, Path } from 'react-native-svg';
+import Svg, { Circle, Defs, G, Path, RadialGradient, Stop } from 'react-native-svg';
 
 import { FinagotchiEngine, type Frame, type StateId } from '../engine/engine';
 import type { PetMood } from '../engine/expressions';
@@ -20,29 +21,13 @@ const MAX_PITCH = 25;
 /** BLE look writes are throttled to ~10 Hz. */
 const LOOK_EMIT_INTERVAL_MS = 100;
 
-const GLOW_SCALE = 1.15;
 const GLOW_OPACITY = 0.22;
+/** Radius of the halo gradient, relative to the engine scale (size / 2). */
+const GLOW_RADIUS = 1.0;
 const EYE_FILL = '#f5f5f5';
 
-/**
- * react-native-svg delivers a `transform="matrix(a,b,c,d,e,f)"` string to the
- * native side as a column-major `matrix` prop [a, c, b, d, e, f] (see
- * extractTransform). Since frames bypass React via setNativeProps, do the
- * conversion here, into a scratch array to avoid per-frame allocations.
- */
-function writeEyeMatrix(
-    matrix: string,
-    out: [number, number, number, number, number, number]
-): void {
-    // engine always emits "matrix(a,b,c,d,e,f)"
-    const parts = matrix.slice(7, -1).split(',');
-    out[0] = +parts[0];
-    out[1] = +parts[2];
-    out[2] = +parts[1];
-    out[3] = +parts[3];
-    out[4] = +parts[4];
-    out[5] = +parts[5];
-}
+/** Unique gradient id per mounted pet — several RadialPets share one screen. */
+let glowIdCounter = 0;
 
 export interface RadialPetProps {
   stage: StateId;
@@ -51,6 +36,11 @@ export interface RadialPetProps {
   onTap?: () => void;
   accessory?: PetAccessory;
   isSpectral?: boolean;
+  /**
+   * Set false while the pet is not visible (closed sheet, hidden cross-fade)
+   * to stop its animation loop entirely. Defaults to true.
+   */
+  active?: boolean;
   /** Drag-to-look: yaw/pitch in degrees, throttled to ~10 Hz. */
   onLook?: (yaw: number, pitch: number) => void;
   /** Drag released: resume idle gaze wander. */
@@ -64,6 +54,7 @@ function RadialPetInner({
   onTap,
   accessory = 'none',
   isSpectral = false,
+  active = true,
   onLook,
   onLookEnd,
 }: RadialPetProps) {
@@ -87,8 +78,27 @@ function RadialPetInner({
    */
   const lastFrameRef = useRef<Frame>(engine.sample(0));
   const bodyRef = useRef<Path>(null);
-  const glowRef = useRef<Path>(null);
   const eyeRefs = [useRef<Path>(null), useRef<Path>(null)];
+  const glowIdRef = useRef(`petGlow${++glowIdCounter}`);
+
+  /**
+   * The halo color only flips on evolution, so it goes through React state
+   * (one cheap re-render per state change) instead of per-frame native writes
+   * — react-native-svg `Stop` cannot receive props via setNativeProps.
+   */
+  const [glowColor, setGlowColor] = useState(
+    () => lastFrameRef.current.glowColor ?? lastFrameRef.current.color
+  );
+
+  /**
+   * Last values pushed natively, so unchanged props are not re-sent (and
+   * re-parsed) every frame. At rest the eye capsule path is constant, the
+   * body color only flips on evolution, and the eye fill never changes.
+   */
+  const lastBodyDRef = useRef('');
+  const lastColorRef = useRef('');
+  const lastEyeDRefs = [useRef(''), useRef('')];
+  const eyeHiddenRefs = [useRef(false), useRef(false)];
   const eyeMatrixRef = useRef<
     [number, number, number, number, number, number]
   >([1, 0, 0, 1, 0, 0]);
@@ -105,16 +115,18 @@ function RadialPetInner({
     const applyFrame = (frame: Frame) => {
       lastFrameRef.current = frame;
 
-      bodyRef.current?.setNativeProps({
-        d: frame.bodyPath,
-        fill: frame.color,
-        opacity: frame.bodyAlpha,
-      });
-      glowRef.current?.setNativeProps({
-        d: frame.bodyPath,
-        fill: frame.glowColor ?? frame.color,
-        opacity: frame.bodyAlpha * GLOW_OPACITY,
-      });
+      if (frame.bodyPath !== lastBodyDRef.current) {
+        lastBodyDRef.current = frame.bodyPath;
+        bodyRef.current?.setNativeProps({ d: frame.bodyPath });
+      }
+      if (frame.color !== lastColorRef.current) {
+        lastColorRef.current = frame.color;
+        bodyRef.current?.setNativeProps({
+          fill: frame.color,
+          opacity: frame.bodyAlpha,
+        });
+        setGlowColor(frame.glowColor ?? frame.color);
+      }
 
       const scratch = eyeMatrixRef.current;
       for (let i = 0; i < 2; i++) {
@@ -122,16 +134,34 @@ function RadialPetInner({
         if (!eyeRef) continue;
         const eye = frame.eyes[i];
         if (!eye) {
-          eyeRef.setNativeProps({ opacity: 0 });
+          if (!eyeHiddenRefs[i].current) {
+            eyeHiddenRefs[i].current = true;
+            eyeRef.setNativeProps({ opacity: 0 });
+          }
           continue;
         }
-        writeEyeMatrix(eye.matrix, scratch);
-        eyeRef.setNativeProps({
-          d: eye.d,
+        eyeHiddenRefs[i].current = false;
+
+        // engine emits SVG order [a,b,c,d,e,f]; the native `matrix` prop is
+        // column-major [a, c, b, d, e, f] (see react-native-svg
+        // extractTransform).
+        const m = eye.m;
+        scratch[0] = m[0];
+        scratch[1] = m[2];
+        scratch[2] = m[1];
+        scratch[3] = m[3];
+        scratch[4] = m[4];
+        scratch[5] = m[5];
+
+        const props: { d?: string; matrix: typeof scratch; opacity: number } = {
           matrix: scratch,
-          fill: EYE_FILL,
           opacity: eye.alpha,
-        });
+        };
+        if (eye.d !== lastEyeDRefs[i].current) {
+          lastEyeDRefs[i].current = eye.d;
+          props.d = eye.d;
+        }
+        eyeRef.setNativeProps(props);
       }
     };
 
@@ -141,14 +171,41 @@ function RadialPetInner({
       rafRef.current = requestAnimationFrame(tick);
     };
 
-    rafRef.current = requestAnimationFrame(tick);
-    return () => {
-      if (rafRef.current !== null) {
-        cancelAnimationFrame(rafRef.current);
+    const start = () => {
+      if (rafRef.current === null) {
+        // Apply one frame immediately so a reactivated pet never shows stale
+        // geometry for a frame.
+        tick();
       }
     };
+    const stop = () => {
+      if (rafRef.current !== null) {
+        cancelAnimationFrame(rafRef.current);
+        rafRef.current = null;
+      }
+    };
+
+    if (!active) {
+      return;
+    }
+
+    // Pause with the app: no point burning battery on frames nobody sees.
+    const sub = AppState.addEventListener('change', (next) => {
+      if (next === 'active') {
+        startTimeRef.current = Date.now() - elapsedRef.current * 1000;
+        start();
+      } else {
+        stop();
+      }
+    });
+    start();
+
+    return () => {
+      sub.remove();
+      stop();
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [engine]);
+  }, [engine, active]);
 
   // --- Drag-to-look -------------------------------------------------------
 
@@ -207,6 +264,7 @@ function RadialPetInner({
 
   const center = size / 2;
   const frame = lastFrameRef.current;
+  const glowR = center * GLOW_RADIUS;
 
   return (
     <View
@@ -222,14 +280,33 @@ function RadialPetInner({
           style={[styles.svg, isSpectral && styles.svgSpectral]}
         >
           <G transform={`translate(${center}, ${center})`}>
-            <G transform={`scale(${GLOW_SCALE})`}>
-              <Path
-                ref={glowRef}
-                d={frame.bodyPath}
-                fill={frame.glowColor ?? frame.color}
-                opacity={frame.bodyAlpha * GLOW_OPACITY}
-              />
-            </G>
+            {/**
+             * The halo is a static radial-gradient circle instead of a scaled
+             * copy of the body path: same look, but no second 64-curve path
+             * string parsed natively every frame. Only its color is updated,
+             * and only when the body color flips.
+             */}
+            <Defs>
+              <RadialGradient
+                id={glowIdRef.current}
+                cx={0}
+                cy={0}
+                r={glowR}
+                gradientUnits="userSpaceOnUse"
+              >
+                <Stop
+                  offset="0.55"
+                  stopColor={glowColor}
+                  stopOpacity={GLOW_OPACITY}
+                />
+                <Stop
+                  offset="1"
+                  stopColor={glowColor}
+                  stopOpacity="0"
+                />
+              </RadialGradient>
+            </Defs>
+            <Circle cx={0} cy={0} r={glowR} fill={`url(#${glowIdRef.current})`} />
             <Path
               ref={bodyRef}
               d={frame.bodyPath}

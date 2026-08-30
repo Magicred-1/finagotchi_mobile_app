@@ -7,7 +7,7 @@
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "splash": {
-      "image": "./assets/icon.png",
+      "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
       "backgroundColor": "#07111F"
     },
@@ -28,7 +28,9 @@
     "android": {
       "adaptiveIcon": {
         "backgroundColor": "#07111F",
-        "foregroundImage": "./assets/icon.png"
+        "backgroundImage": "./assets/android-icon-background.png",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
       },
       "predictiveBackGestureEnabled": false,
       "softwareKeyboardLayoutMode": "resize",
@@ -36,10 +38,19 @@
       "intentFilters": [
         {
           "action": "VIEW",
-          "category": ["BROWSABLE", "DEFAULT"],
+          "category": [
+            "BROWSABLE",
+            "DEFAULT"
+          ],
           "data": [
-            { "scheme": "https", "host": "finagotchi.app" },
-            { "scheme": "https", "host": "www.finagotchi.app" }
+            {
+              "scheme": "https",
+              "host": "finagotchi.app"
+            },
+            {
+              "scheme": "https",
+              "host": "www.finagotchi.app"
+            }
           ]
         }
       ]
@@ -71,7 +82,8 @@
             "newArchEnabled": true
           }
         }
-      ]
+      ],
+      "expo-web-browser"
     ],
     "extra": {
       "router": {},
