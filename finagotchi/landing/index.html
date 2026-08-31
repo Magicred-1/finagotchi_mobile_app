@@ -138,6 +138,37 @@
     .tag-purple { color: #b98aff; background: rgba(153, 69, 255, .12); }
     .tag-warm { color: #ffdca8; background: rgba(255, 220, 168, .08); }
 
+    .hw { display: grid; grid-template-columns: 1.25fr 1fr; gap: 24px; align-items: stretch; }
+    .hw-viewer {
+      background: radial-gradient(70% 70% at 50% 42%, #0d1c30, var(--surface));
+      border: 1px solid var(--border); border-radius: 22px; overflow: hidden;
+      min-height: 460px;
+    }
+    .hw-viewer model-viewer { width: 100%; height: 100%; min-height: 460px; }
+    .hw-side { display: flex; flex-direction: column; gap: 12px; justify-content: center; }
+    .hw-fact {
+      display: flex; justify-content: space-between; align-items: baseline; gap: 16px;
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 14px; padding: 14px 18px;
+    }
+    .hw-fact .k { font: 500 12px 'Poppins', sans-serif; letter-spacing: .1em; text-transform: uppercase; color: var(--primary); white-space: nowrap; }
+    .hw-fact .v { color: var(--muted); font-size: 13px; text-align: right; }
+    .hw-side .btn { align-self: flex-start; margin-top: 8px; }
+
+    .hero-viewer {
+      position: relative;
+      background: radial-gradient(70% 70% at 50% 42%, #0d1c30, var(--surface));
+      border: 1px solid var(--border); border-radius: 22px; overflow: hidden;
+      min-height: 480px;
+    }
+    .hero-viewer model-viewer { width: 100%; height: 100%; min-height: 480px; }
+    .hero-viewer .creature-halo { z-index: 0; }
+    .hero-viewer model-viewer { position: relative; z-index: 1; }
+
+    .creature-section { text-align: center; }
+    .creature-section .lead { margin: 0 auto 40px; }
+    .creature-section .creature-stage { margin: 0 auto; }
+
     .cta-band {
       background: linear-gradient(120deg, rgba(53,215,255,.1), rgba(153,69,255,.1));
       border: 1px solid var(--border); border-radius: 28px;
@@ -158,6 +189,8 @@
       .hero { grid-template-columns: 1fr; padding: 48px 0 72px; }
       .creature-stage { order: -1; }
       .cards { grid-template-columns: 1fr; }
+      .hw { grid-template-columns: 1fr; }
+      .hw-fact .v { text-align: left; }
     }
     @media (prefers-reduced-motion: reduce) {
       html { scroll-behavior: auto; }
@@ -185,9 +218,31 @@
           <a class="btn btn-primary" href="#get">Start raising yours</a>
           <a class="btn btn-ghost" href="#forms">Meet the forms</a>
         </div>
-        <p class="stage-hint"><span class="dot"></span> Psst — the ghost on the right watches your cursor. Tap it.</p>
+        <p class="stage-hint"><span class="dot"></span> That's the real device on the right — drag to spin it.</p>
       </div>
 
+      <div class="hero-viewer">
+        <div class="creature-halo"></div>
+        <model-viewer
+          src="./assets/finagotchi-device.glb"
+          alt="Finagotchi companion device on its charging dock"
+          camera-controls
+          auto-rotate
+          auto-rotate-delay="0"
+          rotation-per-second="16deg"
+          interaction-prompt="none"
+          shadow-intensity="0.6"
+          exposure="1.35"
+          camera-orbit="6deg 76deg 16"
+          min-camera-orbit="auto 30deg auto"
+          max-camera-orbit="auto 120deg auto"
+        ></model-viewer>
+      </div>
+    </section>
+
+    <section class="section creature-section" id="creature-demo">
+      <h2>It watches you back</h2>
+      <p class="lead">The same engine drives the app, the device, and this page. Move your cursor — tap it to cycle moods.</p>
       <div class="creature-stage">
         <div class="creature-halo"></div>
         <div id="creature" title="Say hi"></div>
@@ -229,6 +284,28 @@
       </div>
     </section>
 
+    <section class="section" id="hardware">
+      <h2>A ghost that lives on your desk</h2>
+      <p class="lead">
+        The Finagotchi companion device mirrors your creature over Bluetooth — same
+        eyes, same moods, same ghost. E-ink style display, D-pad and two buttons,
+        USB-C charging dock, and a chain ring for the road.
+      </p>
+      <div class="hw">
+        <div class="hw-viewer">
+          <img src="./assets/nft-device-front.png" alt="Finagotchi companion device render" style="width:100%;height:100%;object-fit:cover;display:block" />
+        </div>
+        <div class="hw-side">
+          <div class="hw-fact"><span class="k">Display</span><span class="v">128 × 128 ghost, live from the engine</span></div>
+          <div class="hw-fact"><span class="k">Brain</span><span class="v">ESP32-S3, BLE sync with the app</span></div>
+          <div class="hw-fact"><span class="k">Controls</span><span class="v">D-pad + A/B, drag-to-look included</span></div>
+          <div class="hw-fact"><span class="k">Charging</span><span class="v">USB-C dock — drop it in, done</span></div>
+          <div class="hw-fact"><span class="k">Portability</span><span class="v">Strap lug + chain ring included</span></div>
+          <a class="btn btn-ghost" href="#get">Get the hardware</a>
+        </div>
+      </div>
+    </section>
+
     <section class="section" id="get">
       <div class="cta-band">
         <h2>Hatch yours today</h2>
@@ -243,6 +320,7 @@
     </footer>
   </div>
 
+  <script type="module" src="https://ajax.googleapis.com/ajax/libs/model-viewer/3.5.0/model-viewer.min.js"></script>
   <script type="module" src="./main.js"></script>
 </body>
 </html>
