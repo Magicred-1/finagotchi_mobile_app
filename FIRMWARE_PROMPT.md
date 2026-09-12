@@ -46,7 +46,7 @@ Background is always `#07111F`. Eye defaults: split 19°, w 0.20, h 0.28, rest g
 ## BLE contract (already in the device — keep compatible)
 
 - Device name `Finagotchi`, service `0000f1a0-0000-1000-8000-00805f9b34fb`, characteristic `0000f1a1-0000-1000-8000-00805f9b34fb`.
-- Notify state as UTF-8 `"<stage>:<streak>:<mood>:<item>"` (stage name string; mood = index into expressions order above, 0–5; item 0–5 accessory).
+- Notify state as UTF-8 `"<stage>:<streak>:<mood>:<item>"` (stage name string; mood = index into expressions order above, 0–5; item 0–6 accessory — see `FIRMWARE_COSMETICS_PROMPT.md` for the anchored-cosmetics follow-up).
 - Accept writes: `"stage:<n>"` (1=egg, 2/3=coinling, 4=hodler, 5=whale), `"mood:<index>"`, `"look:<yaw>,<pitch>"` in degrees — clamp yaw ±30, pitch ±25, applied with mix 0.85; on release the app stops writing, resume idle wander. Look writes arrive at ~10 Hz; the render loop must not block on BLE.
 
 ## Constraints

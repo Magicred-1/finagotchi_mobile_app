@@ -12,6 +12,8 @@ import { useOnboardingStore } from '../src/features/onboarding/store';
 import { useWalletStore } from '../src/features/wallet/store';
 import { usePetStore } from '../src/features/pet/store';
 import { useWallet } from '../src/wallet/useWallet';
+import { useFillWatcher } from '../src/services/dca';
+import { useQuestEngine } from '../src/features/quest-engine/useQuestEngine';
 
 import {
   Poppins_400Regular,
@@ -58,6 +60,12 @@ function AppContent() {
 
   // Keep the wallet hook mounted so it syncs wallet state to our store.
   useWallet();
+
+  // Verified quest engine: wallet auth signer, daily quest sync, claim flush.
+  useQuestEngine();
+
+  // Poll on-chain DCA accounts for fills; a fill feeds the existing pet loop.
+  useFillWatcher();
 
   // Wallet connection and creature mint are mandatory. If any required state
   // is missing, force the user back into onboarding at the appropriate step.
@@ -110,6 +118,8 @@ function AppContent() {
           headerShown: false,
         }}
       />
+      <Stack.Screen name="dca/[id]" options={{ headerShown: false }} />
+      <Stack.Screen name="hardware/binding" options={{ headerShown: false }} />
     </Stack>
   );
 

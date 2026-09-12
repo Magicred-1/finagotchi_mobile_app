@@ -1,6 +1,7 @@
 import React, { useEffect } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
 
 import { BottomSheet } from './BottomSheet';
 import { Button } from './Button';
@@ -22,6 +23,7 @@ type Props = {
 };
 
 export function ConnectDeviceSheet({ visible, onClose, ble }: Props) {
+    const router = useRouter();
     const {
         status,
         devices,
@@ -203,6 +205,15 @@ export function ConnectDeviceSheet({ visible, onClose, ble }: Props) {
                     {!scanning && !connecting && !reconnecting && status === 'error' && (
                         <Button title="Reconnect" onPress={reconnect} />
                     )}
+
+                    <Button
+                        title="Pair new device (Wi-Fi setup)"
+                        variant="secondary"
+                        onPress={() => {
+                            onClose();
+                            router.push('/hardware/binding');
+                        }}
+                    />
                 </View>
             )}
         </BottomSheet>

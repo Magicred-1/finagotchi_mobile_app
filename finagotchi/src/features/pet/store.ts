@@ -5,7 +5,7 @@ import { persist, createJSONStorage } from 'zustand/middleware';
 export type PetStage = 1 | 2 | 3 | 4 | 5;
 
 export type PetBackground = 'default' | 'aurora' | 'sunset' | 'midnight' | 'galaxy' | 'gold';
-export type PetAccessory = 'none' | 'crown' | 'glasses' | 'bowtie' | 'halo' | 'diamond';
+export type PetAccessory = 'none' | 'crown' | 'glasses' | 'bowtie' | 'halo' | 'diamond' | 'tshirt';
 
 export const BACKGROUND_COLORS: Record<PetBackground, readonly [string, string]> = {
     default: ['rgba(93,226,166,0.06)', 'rgba(93,226,166,0.12)'],
@@ -26,7 +26,21 @@ export const STAGE_NAMES: Record<PetStage, string> = {
 
 export const STAGE_THRESHOLDS = [0, 1, 7, 30, 90];
 
-export const LIFE_DURATION_MS = 24 * 60 * 60 * 1000;
+/** XP required to go from `level` to `level + 1`. Single source for the curve. */
+export function xpForNextLevel(level: number): number {
+    return level * 100;
+}
+
+/** The creature dies of neglect when the life timer runs out. */
+export const LIFE_DURATION_MS = 7 * 24 * 60 * 60 * 1000;
+
+/**
+ * Life time granted per completed quest. Quests extend the timer by this
+ * amount (capped at LIFE_DURATION_MS) instead of resetting it, so quests
+ * support the creature but a daily check-in remains the strongest way to
+ * keep it alive.
+ */
+export const QUEST_LIFE_BONUS_MS = 24 * 60 * 60 * 1000;
 
 /** Progressive revive window: 1st death 30 min, 2nd 2 hours, 3rd+ 5 hours. */
 export const REVIVE_COOLDOWNS_MS = [
@@ -82,7 +96,7 @@ type PetState = {
     causeOfDeath: CauseOfDeath | null;
     /** ISO date when the paid revive window closes. */
     reviveWindowEndsAt: string | null;
-    /** ISO date when the 24-hour life timer expires. */
+    /** ISO date when the 7-day life timer expires. */
     lifeTimerEndsAt: string | null;
     /** ISO date when the hired guardian expires. */
     guardianExpiresAt: string | null;
@@ -116,7 +130,7 @@ type PetState = {
     ownBackground: (id: PetBackground) => void;
     /** Own an accessory without spending (e.g. streak unlocks). */
     ownAccessory: (id: PetAccessory) => void;
-    /** Feed the creature, giving a happiness boost and resetting the 24-hour life timer. */
+    /** Feed the creature, giving a happiness boost and resetting the 7-day life timer. */
     feedPet: () => void;
     /** Restore a flat amount of happiness. */
     boostHappiness: (amount: number) => void;
@@ -144,12 +158,17 @@ type PetState = {
     isReviveWindowActive: () => boolean;
     /** Time remaining in the revive window, in ms. */
     getReviveWindowRemainingMs: () => number;
-    /** Check the 24-hour life timer and kill the creature if it expired. */
+    /** Check the 7-day life timer and kill the creature if it expired. */
     checkLifeTimer: () => void;
-    /** Time remaining on the 24-hour life timer, in ms. */
+    /** Time remaining on the 7-day life timer, in ms. */
     getLifeTimerRemainingMs: () => number;
     /** Add XP and check for level up. */
     addXp: (amount: number) => void;
+    /**
+     * Apply a server-verified reward (the server is the payout authority).
+     * Points mirror XP 1:1 and land in the spendable balance; XP drives level.
+     */
+    applyServerGrant: (grant: { xp: number; points: number }) => void;
     /** Buy a revive token with balance. */
     buyReviveToken: (price: number) => boolean;
     /** Buy a streak freeze with balance. */
@@ -160,8 +179,10 @@ type PetState = {
     isGuardianActive: () => boolean;
     /** Time remaining on the guardian timer, in ms. */
     getGuardianRemainingMs: () => number;
-    /** Reset the 24-hour life timer (e.g. a quest was completed). */
+    /** Reset the life timer to its full duration (e.g. a daily check-in). */
     resetLifeTimer: () => void;
+    /** Extend the life timer by QUEST_LIFE_BONUS_MS, capped at full duration (e.g. a quest was completed). */
+    extendLifeTimer: () => void;
     /** Count one more friend invited toward a free revive. */
     addReviveInvite: () => void;
 };
@@ -189,7 +210,7 @@ export const usePetStore = create<PetState>()(
             accessory: 'none',
             balance: 750,
             ownedBackgrounds: ['default', 'aurora', 'sunset', 'midnight', 'galaxy', 'gold'],
-            ownedAccessories: ['none', 'crown', 'glasses', 'bowtie', 'halo', 'diamond'],
+            ownedAccessories: ['none', 'crown', 'glasses', 'bowtie', 'halo', 'diamond', 'tshirt'],
             happiness: 100,
             lastFedAt: null,
             lastInteractionAt: null,
@@ -443,18 +464,20 @@ export const usePetStore = create<PetState>()(
             },
 
             addXp: (amount) => {
-                const state = get();
-                const newXp = state.xp + Math.max(0, amount);
-                const xpNeeded = state.level * 100;
-
-                if (newXp >= xpNeeded) {
-                    set({
-                        xp: newXp - xpNeeded,
-                        level: state.level + 1,
-                    });
-                } else {
-                    set({ xp: newXp });
+                let { xp, level } = get();
+                xp += Math.max(0, amount);
+                // Loop so a grant larger than one level's threshold still
+                // levels up repeatedly instead of eating the overflow.
+                while (xp >= xpForNextLevel(level)) {
+                    xp -= xpForNextLevel(level);
+                    level += 1;
                 }
+                set({ xp, level });
+            },
+
+            applyServerGrant: ({ xp, points }) => {
+                if (points > 0) get().addBalance(points);
+                if (xp > 0) get().addXp(xp);
             },
 
             buyReviveToken: (price) => {
@@ -512,6 +535,24 @@ export const usePetStore = create<PetState>()(
                         Date.now() + LIFE_DURATION_MS
                     ).toISOString(),
                 });
+            },
+
+            extendLifeTimer: () => {
+                const state = get();
+                if (state.isDead) return;
+
+                const currentEnd = state.lifeTimerEndsAt
+                    ? new Date(state.lifeTimerEndsAt).getTime()
+                    : Date.now();
+
+                // From wherever the timer currently sits, add the quest
+                // bonus but never let it exceed a full life duration.
+                const nextEnd = Math.min(
+                    Math.max(currentEnd, Date.now()) + QUEST_LIFE_BONUS_MS,
+                    Date.now() + LIFE_DURATION_MS
+                );
+
+                set({ lifeTimerEndsAt: new Date(nextEnd).toISOString() });
             },
 
             addReviveInvite: () => {

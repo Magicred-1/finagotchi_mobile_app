@@ -247,7 +247,6 @@ export default function OnboardingFlow({
                             balanceLamports: wallet.solBalance,
                             requiredLamports: MIN_MINT_BALANCE_LAMPORTS,
                             onRefreshBalance: wallet.refreshBalance,
-                            onRequestAirdrop: wallet.requestDevnetAirdrop,
                             onDismiss: () => setFundingDismissed(true),
                         }}
                         onMint={handleMint}

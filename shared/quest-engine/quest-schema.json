@@ -1,0 +1,83 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://finagotchi.xyz/schemas/quest-schema.json",
+  "title": "Finagotchi Daily Quest List",
+  "description": "Quest list payload exchanged between the Finagotchi server and the Solana Mobile app. Both sides regenerate it deterministically from (wallet, day, ActivityProfile, questHistory) using @finagotchi/quest-engine.",
+  "type": "object",
+  "required": ["schemaVersion", "wallet", "day", "generatedAt", "quests"],
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": {
+      "type": "integer",
+      "const": 1,
+      "description": "Bump on any breaking change to the determinism contract."
+    },
+    "wallet": {
+      "type": "string",
+      "minLength": 32,
+      "description": "Base58 Solana wallet address the quests were generated for."
+    },
+    "day": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+      "description": "UTC day the quest list belongs to."
+    },
+    "generatedAt": {
+      "type": "integer",
+      "description": "unix ms when this payload was materialized. Informational only; never feeds generation."
+    },
+    "quests": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/quest" }
+    }
+  },
+  "$defs": {
+    "quest": {
+      "type": "object",
+      "required": ["id", "day", "kind", "programId", "goal", "windowDays", "xp", "title", "description"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{16}$",
+          "description": "First 16 hex chars of SHA256(`${day}:${kind}:${programId}:${index}`)."
+        },
+        "day": {
+          "type": "string",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+        },
+        "kind": {
+          "type": "string",
+          "enum": ["count", "streak", "explore"],
+          "description": "count: >= goal txs in window; streak: >= goal distinct active UTC days in window; explore: >= 1 tx on a program outside the wallet's habits."
+        },
+        "programId": {
+          "type": "string",
+          "minLength": 32,
+          "description": "Target Solana program id (base58)."
+        },
+        "goal": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "count: required tx count; streak: required distinct active days; explore: always 1."
+        },
+        "windowDays": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Length of the trailing UTC-day window the quest is evaluated over (currently always 7)."
+        },
+        "xp": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "XP credited on verification. clamp(10 * goal, 10, 200); explore quests are 25."
+        },
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "sponsor": {
+          "type": "string",
+          "description": "Present on sponsored/explore quests."
+        }
+      }
+    }
+  }
+}

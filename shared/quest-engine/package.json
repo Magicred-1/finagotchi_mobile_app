@@ -1,0 +1,8 @@
+{
+  "name": "@finagotchi/quest-engine",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Deterministic quest generation engine shared by the Finagotchi app and server. Pure TypeScript, zero runtime dependencies.",
+  "main": "index.ts",
+  "types": "index.ts"
+}

@@ -4,4 +4,5 @@
 
 export type { PetMood } from './expressions';
 export type { ProfileName } from './profiles';
-export type { StateId, Frame, Look, RenderedEye, FinagotchiEngineOptions } from './engine';
+export type { CreatureClassName, CreatureClass, BodyPalette } from './classes';
+export type { StateId, Frame, Look, RenderedEye, FinagotchiEngineOptions, AnchorName, AnchorMatrix, Anchors } from './engine';

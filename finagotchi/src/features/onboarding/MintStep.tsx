@@ -123,9 +123,8 @@ export default function MintStep({
                             isSmall && styles.bodySmall,
                         ]}
                     >
-                        Minting your creature requires a small SOL fee. On
-                        devnet this uses test SOL, and the NFT metadata will be
-                        tied to your wallet.
+                        Minting your creature requires a small SOL fee, and
+                        the NFT metadata will be tied to your wallet.
                     </Text>
                     <Text style={styles.address}>
                         Wallet: {truncatedAddress}
@@ -191,7 +190,6 @@ export default function MintStep({
                     balanceLamports={funding.balanceLamports}
                     requiredLamports={funding.requiredLamports}
                     onRefreshBalance={funding.onRefreshBalance}
-                    onRequestAirdrop={funding.onRequestAirdrop}
                 />
             ) : null}
         </SafeAreaView>

@@ -7,7 +7,7 @@
  * dated so transitions remain deterministic.
  */
 
-import { clamp, easings, lerp } from '../utils/math';
+import { clamp, easings, lerp, r2, TAU } from '../utils/math';
 import { blendExpression, DEFAULT_EXPRESSION, EXPRESSION_BY_ID, type BotExpression, type PetMood } from './expressions';
 import { blinkScale, eyePoses, liveliness, type HeadGaze, type LivelinessOptions } from './face';
 import { GHOST_PROFILES, PROFILES, PROFILE_SAMPLES, type ProfileName } from './profiles';
@@ -70,12 +70,30 @@ export interface RenderedEye {
   alpha: number;
 }
 
+/**
+ * Named points on the creature that accessories attach to, so cosmetics ride
+ * the same pose math as the eyes instead of sitting at fixed coordinates.
+ */
+export type AnchorName = 'face' | 'headTop' | 'aboveHead' | 'chest' | 'torso' | 'cheek';
+
+/** SVG affine transform in matrix(a,b,c,d,e,f) order, same as RenderedEye.m. */
+export type AnchorMatrix = [number, number, number, number, number, number];
+
+export type Anchors = Partial<Record<AnchorName, AnchorMatrix>>;
+
 export interface Frame {
   bodyPath: string;
   bodyAlpha: number;
   color: string;
   glowColor?: string;
   eyes: RenderedEye[];
+  anchors: Anchors;
+  /**
+   * Tee geometry derived from the live body contour, so the shirt wraps the
+   * creature's actual silhouette. Only present while the tee is equipped
+   * (see setShirtEnabled). `d` is the shirt body, `collar` the collar trim.
+   */
+  shirt?: { d: string; collar: string };
 }
 
 const NO_LOOK: Look = { yaw: 0, pitch: 0, mix: 0, wander: 1 };
@@ -197,12 +215,152 @@ function blendPose(a: Pose, b: Pose, t: number): Pose {
   };
 }
 
+/** Glasses artwork rests with lens centers at ±0.22R; scale x to the live eye separation. */
+const GLASSES_REST_HALF_SEP = 0.22;
+/** Rest direction of the cheek charm (normalized from the original 0.46, -0.34 spot). */
+const CHEEK_DIR = { x: 0.804, y: -0.595 };
+/**
+ * Body radius the accessory artwork is drawn for. Anchors scale the artwork
+ * by (contour fit / REF_RADIUS) so the same cosmetic fits a small egg and a
+ * wide whale instead of being one absolute size.
+ */
+const REF_RADIUS = 0.5;
+
+/**
+ * Accessory anchors derived from the same pose math that places the eyes:
+ * contour fit, body drift, gaze roll, and breath. Accessories rendered through
+ * these matrices track the creature's posture instead of floating at fixed
+ * canvas fractions.
+ */
+function composeAnchors(
+  eyeCenters: Point[],
+  gaze: HeadGaze,
+  radii: number[],
+  rot: number,
+  offX: number,
+  offY: number,
+  breath: number,
+  R: number
+): Anchors {
+  const anchors: Anchors = {};
+  const roll = (gaze.roll * Math.PI) / 180;
+
+  const matrix = (x: number, y: number, rotAngle: number, sx: number, sy: number): AnchorMatrix => {
+    const c = Math.cos(rotAngle);
+    const s = Math.sin(rotAngle);
+    return [sx * c, sx * s, -sy * s, sy * c, x, y];
+  };
+
+  /** Contour radius along a unit direction, same fit math as the eyes. */
+  const fitAt = (dx: number, dy: number): number => {
+    // radiusAtAngle indexes by floor, so the angle must be normalized to
+    // [0, TAU) — raw atan2 goes negative for the whole upper half.
+    const angle = (((Math.atan2(dy, dx) - rot) % TAU) + TAU) % TAU;
+    return radiusAtAngle(radii, angle);
+  };
+
+  /** Point on the body contour along a unit direction. */
+  const contour = (dx: number, dy: number, frac: number): Point => {
+    const fit = fitAt(dx, dy);
+    return { x: dx * fit * frac * R + offX * R, y: dy * fit * frac * R + offY * R };
+  };
+
+  /** Artwork scale for a direction: body size relative to the reference body. */
+  const sizeAt = (dx: number, dy: number): number =>
+    clamp(fitAt(dx, dy) / REF_RADIUS, 0.7, 1.4);
+
+  const [left, right] = eyeCenters;
+  if (left && right) {
+    const mx = (left.x + right.x) / 2;
+    const my = (left.y + right.y) / 2;
+    const tilt = Math.atan2(right.y - left.y, right.x - left.x);
+    const sep = Math.hypot(right.x - left.x, right.y - left.y) / 2;
+    const sx = clamp(sep / (GLASSES_REST_HALF_SEP * R), 0.4, 1.6);
+    anchors.face = matrix(mx, my, tilt, sx, 1);
+  }
+
+  const top = contour(0, -1, 1);
+  const headSize = breath * sizeAt(0, -1);
+  anchors.headTop = matrix(top.x, top.y, roll, headSize, headSize);
+  anchors.aboveHead = matrix(top.x, top.y - 0.18 * R * headSize, roll, headSize, headSize);
+
+  const chest = contour(0, 1, 0.78);
+  const chestSize = breath * sizeAt(0, 1);
+  anchors.chest = matrix(chest.x, chest.y, roll, chestSize, chestSize);
+
+  // Shirt center sits higher than the bowtie and wraps the whole torso.
+  const torso = contour(0, 1, 0.42);
+  anchors.torso = matrix(torso.x, torso.y, roll, chestSize, chestSize);
+
+  const cheek = contour(CHEEK_DIR.x, CHEEK_DIR.y, 0.95);
+  const cheekSize = breath * sizeAt(CHEEK_DIR.x, CHEEK_DIR.y);
+  anchors.cheek = matrix(cheek.x, cheek.y, roll, cheekSize, cheekSize);
+
+  return anchors;
+}
+
+/**
+ * Tee outline built from the live body contour points: the hem follows the
+ * creature's silhouette (slightly inset, leaving a body-colored hem line),
+ * with sleeves poking out at the shoulders and a scooped collar chord.
+ * Screen angles, y-down: 90° is the bottom of the creature.
+ */
+function composeShirt(
+  body: Point[],
+  cx: number,
+  cy: number,
+  R: number
+): { d: string; collar: string } {
+  /** Contour point at a screen angle, lerped between the two nearest samples. */
+  const ptAt = (deg: number): Point => {
+    const t = (deg / 360) * body.length;
+    const i0 = ((Math.floor(t) % body.length) + body.length) % body.length;
+    const i1 = (i0 + 1) % body.length;
+    const k = t - Math.floor(t);
+    const a = body[i0];
+    const b = body[i1];
+    if (!a || !b) return { x: cx, y: cy };
+    return { x: lerp(a.x, b.x, k), y: lerp(a.y, b.y, k) };
+  };
+
+  /** Contour point scaled toward (k < 1) or past (k > 1) the body center. */
+  const at = (deg: number, k: number): Point => {
+    const p = ptAt(deg);
+    return { x: cx + (p.x - cx) * k, y: cy + (p.y - cy) * k };
+  };
+
+  const outline: Point[] = [
+    at(20, 0.9), // right collar
+    at(25, 1.16), // right sleeve
+    at(37, 1.16),
+    at(45, 0.93), // right underarm
+    at(54, 0.95),
+    at(66, 0.95),
+    at(78, 0.95),
+    at(90, 0.95), // hem bottom
+    at(102, 0.95),
+    at(114, 0.95),
+    at(126, 0.95),
+    at(135, 0.93), // left underarm
+    at(143, 1.16), // left sleeve
+    at(155, 1.16),
+    at(160, 0.9), // left collar
+  ];
+
+  const c1 = at(24, 0.87);
+  const c2 = at(156, 0.87);
+  const collar =
+    `M${r2(c1.x)} ${r2(c1.y)}` +
+    `Q${r2((c1.x + c2.x) / 2)} ${r2(Math.max(c1.y, c2.y) + 0.06 * R)} ${r2(c2.x)} ${r2(c2.y)}`;
+
+  return { d: closedPath(outline), collar };
+}
+
 export interface FinagotchiEngineOptions {
   scale?: number;
   initial?: StateId;
   liveliness?: LivelinessOptions;
 }
-
 export class FinagotchiEngine {
   readonly scale: number;
   private readonly liveOpt: LivelinessOptions;
@@ -225,6 +383,9 @@ export class FinagotchiEngine {
   private lookPrev: Look = NO_LOOK;
   private lookAt = -10;
   private lookMorph = 0.24;
+
+  /** Whether frames include fitted-tee geometry (on while the tee is equipped). */
+  private shirtEnabled = false;
 
   private pts: Point[] = [];
 
@@ -278,6 +439,11 @@ export class FinagotchiEngine {
     this.look = look ?? NO_LOOK;
     this.lookAt = now;
     this.lookMorph = morph;
+  }
+
+  /** Compute the fitted-tee path each frame (only while the tee is equipped). */
+  setShirtEnabled(enabled: boolean) {
+    this.shirtEnabled = enabled;
   }
 
   private shapeAtTime(now: number): number[] | null {
@@ -387,10 +553,17 @@ export class FinagotchiEngine {
 
     const bodyPath = closedPath(toPoints(sil, R, this.pts));
 
+    // Fitted tee: derived from the same contour points as the body, so it
+    // wraps the current silhouette (and breathes) instead of a fixed shape.
+    const shirt = this.shirtEnabled
+      ? composeShirt(this.pts, sil.cx * R, sil.cy * R, R)
+      : undefined;
+
     const bodyRadius = (x: number, y: number) =>
       radiusAtAngle(pose.sil.radii, Math.atan2(y, x) - pose.sil.rot);
 
     const eyes: RenderedEye[] = [];
+    const eyeCenters: Point[] = [];
     if (pose.eyeAlpha > 0.01) {
       const poses = eyePoses(gaze, R, pose.split);
       for (let i = 0; i < 2; i++) {
@@ -400,6 +573,9 @@ export class FinagotchiEngine {
         if (!cfg) continue;
 
         const fit = bodyRadius(e.x, e.y);
+        const ex = e.x * fit + offX * R;
+        const ey = e.y * fit + offY * R;
+        eyeCenters.push({ x: ex, y: ey });
         const phi = (cfg.tilt * Math.PI) / 180;
         const cp = Math.cos(phi);
         const sp = Math.sin(phi);
@@ -411,11 +587,13 @@ export class FinagotchiEngine {
 
         eyes.push({
           d: capsulePath(cfg.w * R, cfg.h * R),
-          m: [ax, ay * k, cx, cy * k, e.x * fit + offX * R, e.y * fit + offY * R],
+          m: [ax, ay * k, cx, cy * k, ex, ey],
           alpha: pose.eyeAlpha * clamp(e.depth / 0.12),
         });
       }
     }
+
+    const anchors = composeAnchors(eyeCenters, gaze, pose.sil.radii, pose.sil.rot, offX, offY, life.breath, R);
 
     return {
       bodyPath,
@@ -423,6 +601,8 @@ export class FinagotchiEngine {
       color: pose.color,
       glowColor: pose.glowColor,
       eyes,
+      anchors,
+      shirt,
     };
   }
 

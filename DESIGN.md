@@ -19,6 +19,7 @@ A dark, handheld-toy interface for a mobile Solana creature-raising app. The sur
 | `colors.textMuted` | `#8FA2B8` | Secondary text, labels |
 | `colors.danger` | `#FF647C` | Errors, destructive actions |
 | `colors.warning` | `#FFD166` | Warnings, points, currency |
+| `colors.success` | `#5DE2A6` | Positive change, success states |
 | `colors.border` | `#243651` | Subtle borders and dividers |
 
 Neutrals are tinted toward the cyan/blue hue rather than pure gray.

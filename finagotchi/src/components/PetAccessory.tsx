@@ -6,6 +6,12 @@ import type { PetAccessory } from '../features/pet/store';
 interface PetAccessoryProps {
   accessory: PetAccessory;
   size: number;
+  /**
+   * Tee only: render just the emblem. RadialPet sets this because the engine
+   * draws the shirt itself from the live body contour; previews leave it off
+   * and get the standalone static tee.
+   */
+  fitted?: boolean;
 }
 
 const COLORS = {
@@ -17,26 +23,35 @@ const COLORS = {
   halo: '#fbbf24',
   diamond: '#22d3ee',
   diamondLight: '#cffafe',
+  shirt: '#f1f5f9',
+  shirtTrim: '#94a3b8',
+  shirtEmblem: '#fbbf24',
+  shirtEmblemDark: '#d97706',
 };
 
+/**
+ * All artwork is drawn around the origin, which is the accessory's anchor
+ * point (base center for the crown, lens midpoint for the glasses, center for
+ * the rest). RadialPet places it through the engine's per-frame anchor matrix
+ * so it follows the creature's posture; AccessoryPreview just centers it.
+ */
+
 function crownPath(R: number): string {
-  const yBase = -0.58 * R;
-  const yMid = -0.66 * R;
-  const yPeak = -0.78 * R;
+  const yMid = -0.08 * R;
+  const yPeak = -0.20 * R;
   const w = 0.28 * R;
   const notch = 0.55 * w;
   return (
-    `M${-w} ${yBase}` +
+    `M${-w} 0` +
     `L${-notch} ${yMid}` +
     `L0 ${yPeak}` +
     `L${notch} ${yMid}` +
-    `L${w} ${yBase}` +
-    `Q0 ${yBase + 0.08 * R} ${-w} ${yBase}Z`
+    `L${w} 0` +
+    `Q0 ${0.08 * R} ${-w} 0Z`
   );
 }
 
 function glassesPaths(R: number) {
-  const cy = -0.10 * R;
   const rx = 0.18 * R;
   const ry = 0.14 * R;
   const gap = 0.08 * R;
@@ -46,64 +61,81 @@ function glassesPaths(R: number) {
   const ellipse = (cx: number, cy: number, rx: number, ry: number) =>
     `M${cx - rx} ${cy}a${rx} ${ry} 0 1 0 ${rx * 2} 0a${rx} ${ry} 0 1 0 -${rx * 2} 0`;
   return {
-    left: ellipse(leftCx, cy, rx, ry),
-    right: ellipse(rightCx, cy, rx, ry),
-    bridge: `M${leftCx + rx} ${cy}L${rightCx - rx} ${cy}`,
+    left: ellipse(leftCx, 0, rx, ry),
+    right: ellipse(rightCx, 0, rx, ry),
+    bridge: `M${leftCx + rx} 0L${rightCx - rx} 0`,
     frameW,
   };
 }
 
 function bowtiePath(R: number): string {
-  const cy = 0.48 * R;
   const w = 0.24 * R;
   const h = 0.14 * R;
   const knot = 0.06 * R;
   return (
-    `M0 ${cy - knot}` +
-    `L${-w} ${cy - h}` +
-    `L${-w} ${cy + h}` +
-    `L0 ${cy + knot}` +
-    `L${w} ${cy + h}` +
-    `L${w} ${cy - h}Z`
+    `M0 ${-knot}` +
+    `L${-w} ${-h}` +
+    `L${-w} ${h}` +
+    `L0 ${knot}` +
+    `L${w} ${h}` +
+    `L${w} ${-h}Z`
   );
 }
 
 function haloPath(R: number): string {
-  const cy = -0.82 * R;
   const rx = 0.34 * R;
   const ry = 0.07 * R;
   const stroke = 0.04 * R;
-  const outer = `M${-rx} ${cy}a${rx} ${ry} 0 1 0 ${rx * 2} 0a${rx} ${ry} 0 1 0 -${rx * 2} 0`;
+  const outer = `M${-rx} 0a${rx} ${ry} 0 1 0 ${rx * 2} 0a${rx} ${ry} 0 1 0 -${rx * 2} 0`;
   const irx = Math.max(0.01, rx - stroke);
   const iry = Math.max(0.01, ry - stroke);
-  const inner = `M${-irx} ${cy}a${irx} ${iry} 0 1 0 ${irx * 2} 0a${irx} ${iry} 0 1 0 -${irx * 2} 0`;
+  const inner = `M${-irx} 0a${irx} ${iry} 0 1 0 ${irx * 2} 0a${irx} ${iry} 0 1 0 -${irx * 2} 0`;
   return `${outer} ${inner}`;
 }
 
 function diamondPath(R: number): string {
-  const cx = 0.46 * R;
-  const cy = -0.34 * R;
   const s = 0.16 * R;
-  return (
-    `M${cx} ${cy - s}` +
-    `L${cx + s} ${cy}` +
-    `L${cx} ${cy + s}` +
-    `L${cx - s} ${cy}Z`
-  );
+  return `M0 ${-s}L${s} 0L0 ${s}L${-s} 0Z`;
 }
 
 function diamondFacetPath(R: number): string {
-  const cx = 0.46 * R;
-  const cy = -0.34 * R;
   const s = 0.16 * R;
   return (
-    `M${cx} ${cy - s}L${cx - s * 0.35} ${cy}L${cx + s * 0.35} ${cy}Z` +
-    `M${cx - s} ${cy}L${cx - s * 0.35} ${cy}L${cx} ${cy + s}Z` +
-    `M${cx + s} ${cy}L${cx + s * 0.35} ${cy}L${cx} ${cy + s}Z`
+    `M0 ${-s}L${-s * 0.35} 0L${s * 0.35} 0Z` +
+    `M${-s} 0L${-s * 0.35} 0L0 ${s}Z` +
+    `M${s} 0L${s * 0.35} 0L0 ${s}Z`
   );
 }
 
-export const PetAccessoryArt = React.memo(function PetAccessoryArt({ accessory, size }: PetAccessoryProps) {
+/**
+ * Tee drawn around the torso anchor, sized to wrap a body of radius 0.5R;
+ * the anchor scales it to the actual stage. Slight A-line, short sleeves,
+ * scoop collar, and a coin emblem.
+ */
+function tshirtPath(R: number): string {
+  const u = (v: number) => v * R;
+  return (
+    `M${u(-0.3)} ${u(-0.16)}` +
+    `L${u(-0.46)} ${u(-0.06)}` +
+    `L${u(-0.4)} ${u(0.06)}` +
+    `L${u(-0.3)} ${u(0)}` +
+    `L${u(-0.36)} ${u(0.3)}` +
+    `L${u(0.36)} ${u(0.3)}` +
+    `L${u(0.3)} ${u(0)}` +
+    `L${u(0.4)} ${u(0.06)}` +
+    `L${u(0.46)} ${u(-0.06)}` +
+    `L${u(0.3)} ${u(-0.16)}` +
+    `Q0 ${u(-0.02)} ${u(-0.3)} ${u(-0.16)}Z`
+  );
+}
+
+function tshirtEmblemPath(R: number): string {
+  const r = 0.06 * R;
+  const cy = 0.12 * R;
+  return `M${-r} ${cy}a${r} ${r} 0 1 0 ${r * 2} 0a${r} ${r} 0 1 0 -${r * 2} 0`;
+}
+
+export const PetAccessoryArt = React.memo(function PetAccessoryArt({ accessory, size, fitted = false }: PetAccessoryProps) {
   if (accessory === 'none') return null;
 
   const R = size / 2;
@@ -114,7 +146,7 @@ export const PetAccessoryArt = React.memo(function PetAccessoryArt({ accessory, 
         <G>
           <Path d={crownPath(R)} fill={COLORS.crown} />
           <Path
-            d={`M${-0.12 * R} ${-0.70 * R}L0 ${-0.62 * R}L${0.12 * R} ${-0.70 * R}`}
+            d={`M${-0.12 * R} ${-0.12 * R}L0 ${-0.04 * R}L${0.12 * R} ${-0.12 * R}`}
             stroke={COLORS.crownDark}
             strokeWidth={0.02 * R}
             fill="none"
@@ -143,7 +175,7 @@ export const PetAccessoryArt = React.memo(function PetAccessoryArt({ accessory, 
         <G>
           <Path d={bowtiePath(R)} fill={COLORS.bowtie} />
           <Path
-            d={`M0 ${0.44 * R}L0 ${0.52 * R}`}
+            d={`M0 ${-0.04 * R}L0 ${0.04 * R}`}
             stroke={COLORS.bowtieDark}
             strokeWidth={0.02 * R}
             strokeLinecap="round"
@@ -168,8 +200,48 @@ export const PetAccessoryArt = React.memo(function PetAccessoryArt({ accessory, 
           <Path d={diamondFacetPath(R)} fill={COLORS.diamondLight} opacity={0.55} />
         </G>
       );
+    case 'tshirt': {
+      const emblem = (
+        <>
+          <Path d={tshirtEmblemPath(R)} fill={COLORS.shirtEmblem} />
+          <Path
+            d={tshirtEmblemPath(R * 0.55)}
+            fill="none"
+            stroke={COLORS.shirtEmblemDark}
+            strokeWidth={0.02 * R}
+            transform={`translate(0 ${0.12 * R * 0.45})`}
+          />
+        </>
+      );
+      // Fitted mode: the engine-drawn shirt wraps the body; only the emblem
+      // rides the torso anchor here.
+      if (fitted) return <G>{emblem}</G>;
+      return (
+        <G>
+          <Path d={tshirtPath(R)} fill={COLORS.shirt} />
+          <Path
+            d={`M${-0.26 * R} ${-0.12 * R}Q0 ${-0.04 * R} ${0.26 * R} ${-0.12 * R}`}
+            stroke={COLORS.shirtTrim}
+            strokeWidth={0.03 * R}
+            strokeLinecap="round"
+            fill="none"
+          />
+          <Path
+            d={`M${-0.33 * R} ${0.25 * R}L${0.33 * R} ${0.25 * R}`}
+            stroke={COLORS.shirtTrim}
+            strokeWidth={0.03 * R}
+            strokeLinecap="round"
+          />
+          {emblem}
+        </G>
+      );
+    }
   }
 });
+
+/** Colors of the engine-drawn fitted tee (kept in sync with COLORS above). */
+export const SHIRT_FILL = COLORS.shirt;
+export const SHIRT_TRIM = COLORS.shirtTrim;
 
 interface AccessoryPreviewProps {
   accessory: PetAccessory;
