@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import { create } from 'zustand';
 
 import type { StateId } from '../../engine/engine';
@@ -52,7 +52,7 @@ export function moodByIndex(index: number): PetMood | null {
     return EXPRESSIONS[index]?.id ?? null;
 }
 
-/** Firmware item id → accessory (contract: 0 none … 5 diamond). */
+/** Firmware item id → accessory (contract: 0 none … 5 diamond, 6 tshirt). */
 const ACCESSORIES: PetAccessory[] = [
     'none',
     'crown',
@@ -60,6 +60,7 @@ const ACCESSORIES: PetAccessory[] = [
     'bowtie',
     'halo',
     'diamond',
+    'tshirt',
 ];
 
 export function accessoryIndex(accessory: PetAccessory): number {
@@ -68,6 +69,25 @@ export function accessoryIndex(accessory: PetAccessory): number {
 
 export function accessoryByIndex(index: number): PetAccessory | null {
     return ACCESSORIES[index] ?? null;
+}
+
+/** Debounce window for points:/happy:/streak: pushes after local changes. */
+const STATS_PUSH_DEBOUNCE_MS = 500;
+
+/**
+ * Grace window after connect/snapshot during which device notifications are
+ * ignored. The first notifications after connect carry the firmware's
+ * pre-push state (or echoes of our own serialized writes); applying them
+ * back would clobber the app stores with device defaults.
+ */
+const REMOTE_ECHO_GRACE_MS = 1500;
+
+/** True once both persisted stores have finished loading from AsyncStorage. */
+function petStoresHydrated(): boolean {
+    return (
+        usePetStore.persist.hasHydrated() &&
+        useCheckinStore.persist.hasHydrated()
+    );
 }
 
 /**
@@ -105,18 +125,23 @@ export const useDeviceControlStore = create<{
  * Mirrors pet state between the app engine and the device. While connected
  * the app is authoritative (the firmware pauses its demo auto-evolve):
  *
- * - On connect: push a `stage:<n>;mood:<m>;item:<i>;points:<p>;happy:<h>;streak:<s>`
- *   snapshot. Points persist on the device (NVS), but happiness is RAM-only,
+ * - On connect: once both persisted stores have hydrated, push a
+ *   `stage:<n>;mood:<m>;item:<i>;points:<p>;happy:<h>;streak:<s>` snapshot.
+ *   Points persist on the device (NVS), but happiness is RAM-only,
  *   so the stats must be re-shared on every connect for the on-device stats
- *   bar to match the app.
+ *   bar to match the app. If hydration is still in flight at connect time,
+ *   the snapshot is deferred until both stores finish loading — never
+ *   serialized from defaults.
  * - On local stage/accessory/mood change: write `stage:<n>` / `item:<i>` /
  *   `mood:<m>`.
- * - On local balance/happiness/streak change: write `points:<p>` /
- *   `happy:<h>` / `streak:<s>`.
+ * - On local balance/happiness/streak change while connected: write
+ *   `points:<p>` / `happy:<h>` / `streak:<s>`, debounced so rapid changes
+ *   collapse into one push.
  * - On reaction: write `react:<name>`.
  * - On device notification: apply `stage:`/`mood:`/`item:`/`streak:` back into
  *   the local engine only when the device genuinely initiated the change —
- *   never for the connect-time state snapshot or echoes of our own pushes.
+ *   never within the post-connect/post-snapshot echo grace window, and never
+ *   for echoes of our own pushes.
  *
  * `currentMood` is the app's current engine mood; `reaction`/`reactionKey`
  * are the PetCanvas reaction currently playing.
@@ -130,19 +155,85 @@ export function useDeviceSync(
     const connected = ble.connectedDevice !== null;
     // Guard so state applied from a notification is not echoed straight back.
     const applyingRemote = useRef(false);
-    // The first notification after connect is the firmware's pre-push state
-    // snapshot, not a device-initiated change: skip it once.
-    const skipInitialState = useRef(false);
+    // Notifications before this timestamp are the firmware's pre-push state
+    // or echoes of our own writes — never device-initiated changes.
+    const ignoreRemoteUntil = useRef(0);
+    const connectedRef = useRef(connected);
+    connectedRef.current = connected;
     const currentMoodRef = useRef(currentMood);
     currentMoodRef.current = currentMood;
 
     const sendCommandRef = useRef(ble.sendCommand);
     sendCommandRef.current = ble.sendCommand;
 
-    // On connect: push app state to the device. On disconnect: reset.
+    // Debounced points:/happy:/streak: push. Rapid local changes (e.g. a
+    // check-in that bumps balance, happiness and streak together) collapse
+    // into a single trailing-edge write batch 500 ms after the last change.
+    const statsPushTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const pendingStats = useRef<{
+        points?: number;
+        happy?: number;
+        streak?: number;
+    }>({});
+
+    const scheduleStatsPush = useCallback(
+        (patch: { points?: number; happy?: number; streak?: number }) => {
+            if (!connectedRef.current) return;
+            Object.assign(pendingStats.current, patch);
+            if (statsPushTimer.current) clearTimeout(statsPushTimer.current);
+            statsPushTimer.current = setTimeout(() => {
+                statsPushTimer.current = null;
+                const pending = pendingStats.current;
+                pendingStats.current = {};
+                if (!connectedRef.current) return;
+
+                const ctrl = useDeviceControlStore.getState();
+                const commands: string[] = [];
+                if (
+                    pending.points !== undefined &&
+                    pending.points !== ctrl.lastSentPoints
+                ) {
+                    useDeviceControlStore.setState({
+                        lastSentPoints: pending.points,
+                    });
+                    commands.push(`points:${pending.points}`);
+                }
+                if (
+                    pending.happy !== undefined &&
+                    pending.happy !== ctrl.lastSentHappy
+                ) {
+                    useDeviceControlStore.setState({
+                        lastSentHappy: pending.happy,
+                    });
+                    commands.push(`happy:${pending.happy}`);
+                }
+                if (
+                    pending.streak !== undefined &&
+                    pending.streak !== ctrl.lastSentStreak
+                ) {
+                    useDeviceControlStore.setState({
+                        lastSentStreak: pending.streak,
+                    });
+                    commands.push(`streak:${pending.streak}`);
+                }
+                if (commands.length > 0) {
+                    sendCommandRef.current(commands.join(';'));
+                }
+            }, STATS_PUSH_DEBOUNCE_MS);
+        },
+        []
+    );
+
+    // On connect: push app state to the device once the persisted stores are
+    // hydrated. On disconnect: reset.
     useEffect(() => {
         if (!connected) {
-            skipInitialState.current = false;
+            ignoreRemoteUntil.current = 0;
+            if (statsPushTimer.current) {
+                clearTimeout(statsPushTimer.current);
+                statsPushTimer.current = null;
+            }
+            pendingStats.current = {};
             useDeviceControlStore.setState({
                 deviceMood: null,
                 lastSentStage: null,
@@ -155,27 +246,61 @@ export function useDeviceSync(
             return;
         }
 
-        const pet = usePetStore.getState();
-        const mood = moodIndex(currentMoodRef.current);
-        const item = accessoryIndex(pet.accessory);
-        const points = Math.round(pet.balance);
-        const happy = Math.round(pet.happiness);
-        const streak = useCheckinStore.getState().streak;
+        ignoreRemoteUntil.current = Date.now() + REMOTE_ECHO_GRACE_MS;
 
-        skipInitialState.current = true;
-        useDeviceControlStore.setState({
-            lastSentStage: pet.stage,
-            lastSentMood: mood,
-            lastSentItem: item,
-            lastSentPoints: points,
-            lastSentHappy: happy,
-            lastSentStreak: streak,
-        });
-        // Happiness is RAM-only on the device and points drive its stats bar,
-        // so stats are part of every connect snapshot, not just on change.
-        sendCommandRef.current(
-            `stage:${pet.stage};mood:${mood};item:${item};points:${points};happy:${happy};streak:${streak}`
-        );
+        let cancelled = false;
+        let pushed = false;
+        let unHydrate: (() => void) | null = null;
+
+        const pushSnapshot = () => {
+            if (pushed || cancelled || !connectedRef.current) return;
+            pushed = true;
+
+            const pet = usePetStore.getState();
+            const mood = moodIndex(currentMoodRef.current);
+            const item = accessoryIndex(pet.accessory);
+            const points = Math.round(pet.balance);
+            const happy = Math.round(pet.happiness);
+            const streak = useCheckinStore.getState().streak;
+
+            // The snapshot's own echoes trail the serialized writes; keep
+            // ignoring notifications so they are never applied back.
+            ignoreRemoteUntil.current = Date.now() + REMOTE_ECHO_GRACE_MS;
+            useDeviceControlStore.setState({
+                lastSentStage: pet.stage,
+                lastSentMood: mood,
+                lastSentItem: item,
+                lastSentPoints: points,
+                lastSentHappy: happy,
+                lastSentStreak: streak,
+            });
+            // Happiness is RAM-only on the device and points drive its stats
+            // bar, so stats are part of every connect snapshot.
+            sendCommandRef.current(
+                `stage:${pet.stage};mood:${mood};item:${item};points:${points};happy:${happy};streak:${streak}`
+            );
+        };
+
+        if (petStoresHydrated()) {
+            pushSnapshot();
+        } else {
+            // Stores still loading from AsyncStorage: defer the snapshot
+            // until both finish so it never serializes default values.
+            const tryPush = () => {
+                if (petStoresHydrated()) pushSnapshot();
+            };
+            const unPet = usePetStore.persist.onFinishHydration(tryPush);
+            const unCheckin = useCheckinStore.persist.onFinishHydration(tryPush);
+            unHydrate = () => {
+                unPet();
+                unCheckin();
+            };
+        }
+
+        return () => {
+            cancelled = true;
+            unHydrate?.();
+        };
     }, [connected]);
 
     // Local stage changes → write stage:<n> to the device.
@@ -202,24 +327,18 @@ export function useDeviceSync(
                 }
 
                 // Stats bar on the device: points persist in NVS, happiness is
-                // RAM-only — both follow the app's balance/happiness.
+                // RAM-only — both follow the app's balance/happiness. Pushes
+                // are debounced and only happen while connected; the connect
+                // snapshot re-covers anything changed while disconnected.
                 if (state.balance !== prev.balance) {
-                    const points = Math.round(state.balance);
-                    if (points !== useDeviceControlStore.getState().lastSentPoints) {
-                        useDeviceControlStore.setState({ lastSentPoints: points });
-                        sendCommandRef.current(`points:${points}`);
-                    }
+                    scheduleStatsPush({ points: Math.round(state.balance) });
                 }
 
                 if (state.happiness !== prev.happiness) {
-                    const happy = Math.round(state.happiness);
-                    if (happy !== useDeviceControlStore.getState().lastSentHappy) {
-                        useDeviceControlStore.setState({ lastSentHappy: happy });
-                        sendCommandRef.current(`happy:${happy}`);
-                    }
+                    scheduleStatsPush({ happy: Math.round(state.happiness) });
                 }
             }),
-        []
+        [scheduleStatsPush]
     );
 
     // Local streak changes (check-in, freeze, reset) → streak:<n> so the
@@ -229,13 +348,9 @@ export function useDeviceSync(
             useCheckinStore.subscribe((state, prev) => {
                 if (applyingRemote.current) return;
                 if (state.streak === prev.streak) return;
-                if (state.streak === useDeviceControlStore.getState().lastSentStreak) {
-                    return;
-                }
-                useDeviceControlStore.setState({ lastSentStreak: state.streak });
-                sendCommandRef.current(`streak:${state.streak}`);
+                scheduleStatsPush({ streak: state.streak });
             }),
-        []
+        [scheduleStatsPush]
     );
 
     // Engine mood changes → write mood:<id>. The mood picker pushes directly
@@ -256,15 +371,14 @@ export function useDeviceSync(
     }, [connected, reaction, reactionKey]);
 
     // Device notifications → apply genuinely device-initiated stage/mood/item
-    // changes to the local engine. Echoes of our own pushes are ignored.
+    // changes to the local engine. Notifications inside the post-connect /
+    // post-snapshot grace window (the firmware's pre-push state and echoes of
+    // our own writes) are ignored.
     useEffect(() => {
         const state = ble.deviceState;
         if (!connected || !state) return;
 
-        if (skipInitialState.current) {
-            skipInitialState.current = false;
-            return;
-        }
+        if (Date.now() < ignoreRemoteUntil.current) return;
 
         const { lastSentStage, lastSentMood, lastSentItem, lastSentStreak } =
             useDeviceControlStore.getState();

@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { GestureDetector } from 'react-native-gesture-handler';
 import * as Haptics from 'expo-haptics';
 import Animated, {
   runOnJS,
@@ -23,7 +24,7 @@ import Animated, {
 import { PetCanvas } from '../../src/components/PetCanvas';
 import { PressableScale } from '../../src/components/PressableScale';
 import { LevelUpAnimation } from '../../src/components/LevelUpAnimation';
-import { Sidebar } from '../../src/components/Sidebar';
+import { Sidebar, SIDEBAR_WIDTH, useSidebarOpenGesture } from '../../src/components/Sidebar';
 import EvolutionCeremony from '../../src/components/EvolutionCeremony';
 import CollectiblesSheet from '../../src/components/CollectiblesSheet';
 import QuestsSheet from '../../src/components/QuestsSheet';
@@ -33,6 +34,9 @@ import DeathOverlay from '../../src/components/DeathOverlay';
 import ReviveSheet from '../../src/components/ReviveSheet';
 import CommunityResurrectSheet from '../../src/components/CommunityResurrectSheet';
 import { ConnectDeviceSheet } from '../../src/components/ConnectDeviceSheet';
+import { DCAHome } from '../../src/screens/dca/DCAHome';
+import { useDcaSyncEngine } from '../../src/services/ble/SyncEngine';
+import { dcaEvents, useDcaUiStore } from '../../src/services/dca';
 import { useCheckinStore } from '../../src/features/checkin/store';
 import {
   BACKGROUND_COLORS,
@@ -40,6 +44,7 @@ import {
   STAGE_NAMES,
   STAGE_THRESHOLDS,
   usePetStore,
+  xpForNextLevel,
   type PetStage,
 } from '../../src/features/pet/store';
 import { useWalletStore } from '../../src/features/wallet/store';
@@ -51,7 +56,7 @@ import {
 } from '../../src/features/ble/sync';
 import { WaitingForSync } from '../../src/components/WaitingForSync';
 import type { PetMood as EngineMood } from '../../src/engine/expressions';
-import { colors, radius, spacing, tracking, typography } from '../../src/theme/tokens';
+import { colors, radius, spacing, typography } from '../../src/theme/tokens';
 import type { PetMood, PetReaction } from '../../src/components/PetCanvas';
 
 function getMood(
@@ -137,7 +142,7 @@ function GuardianBadge() {
 
   return (
     <View style={styles.guardianBadge}>
-      <Ionicons name="shield-checkmark" size={12} color="#8B5CF6" />
+      <Ionicons name="shield-checkmark" size={12} color={colors.purple} />
       <Text style={styles.guardianText}>Guardian {timeLeft}</Text>
     </View>
   );
@@ -189,6 +194,7 @@ export default function HomeScreen() {
   const [floatingEmoji, setFloatingEmoji] = useState<string | null>(null);
   const [exitToastVisible, setExitToastVisible] = useState(false);
   const [actionsOpen, setActionsOpen] = useState(false);
+  const [overdueSad, setOverdueSad] = useState(false);
 
   const lastBackPress = useRef(0);
   const toastTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -198,6 +204,8 @@ export default function HomeScreen() {
   const emojiOpacity = useSharedValue(0);
   const emojiTranslateY = useSharedValue(0);
   const actionsProgress = useSharedValue(0);
+  const sidebarTranslateX = useSharedValue(-SIDEBAR_WIDTH);
+  const sidebarOpacity = useSharedValue(0);
 
   const wallet = useWallet();
   const ble = useFinagotchiDevice();
@@ -243,6 +251,27 @@ export default function HomeScreen() {
     stage > lastCelebratedStage ? stage : null
   );
 
+  // Edge-swipe opens the sidebar. The gesture wraps the screen content, so
+  // buttons stay tappable; it only engages on horizontal pulls from the left
+  // edge and stays disabled while any sheet or overlay is open.
+  const anyOverlayOpen =
+    bleVisible ||
+    collectiblesVisible ||
+    questsVisible ||
+    waitlistVisible ||
+    foodVisible ||
+    reviveVisible ||
+    communityResurrectVisible ||
+    celebratingStage !== null ||
+    isDead;
+
+  const sidebarOpenGesture = useSidebarOpenGesture({
+    translateX: sidebarTranslateX,
+    opacity: sidebarOpacity,
+    enabled: !sidebarVisible && !anyOverlayOpen,
+    onOpen: () => setSidebarVisible(true),
+  });
+
   const horizontalPadding = Math.min(Math.max(width * 0.05, 16), 24);
   const isSmallDevice = width < 360;
   const isTinyDevice = width < 330;
@@ -260,13 +289,13 @@ export default function HomeScreen() {
     [streak, stage]
   );
 
-  const xpNeeded = level * 100;
+  const xpNeeded = xpForNextLevel(level);
   const xpPercent = Math.min(100, Math.max(0, (xp / xpNeeded) * 100));
 
   const nextStageName =
     stage < 5 ? STAGE_NAMES[(stage + 1) as 2 | 3 | 4 | 5] : 'Max';
 
-  const effectiveMood = actionMood ?? mood;
+  const effectiveMood = actionMood ?? (overdueSad ? 'sad' : mood);
 
   // App label → engine expression; proud renders as happy, sleeping as sleepy.
   const currentEngineMood: EngineMood =
@@ -279,6 +308,39 @@ export default function HomeScreen() {
   // Mirror stage/mood/accessory/reactions to the connected device and back.
   useDeviceSync(ble, currentEngineMood, reaction, reactionKey);
   const deviceMood = useDeviceControlStore((state) => state.deviceMood);
+
+  // DCA layer, in required order: a fill is points bump (FillWatcher's feed,
+  // upstream) → pet dance (subscription here, registered first) → dca:hit
+  // BLE write (SyncEngine subscription, registered second).
+  const triggerEmotionRef = useRef(triggerEmotion);
+  triggerEmotionRef.current = triggerEmotion;
+
+  useEffect(
+    () =>
+      dcaEvents.on('dcaHit', () => {
+        triggerEmotionRef.current('dance', 'happy');
+      }),
+    []
+  );
+
+  // Overdue plans nudge the pet mood toward sad until the plan recovers.
+  useEffect(
+    () =>
+      dcaEvents.on('overdueChange', ({ overdue }) => {
+        setOverdueSad(overdue);
+      }),
+    []
+  );
+
+  // Wizard success asks for an immediate dance on return.
+  useEffect(() => {
+    if (useDcaUiStore.getState().consumeReaction()) {
+      triggerEmotionRef.current('dance', 'happy');
+    }
+  });
+
+  // Frozen-contract epoch/plan/dca:hit writes to the device.
+  useDcaSyncEngine(ble);
 
   // While a link attempt is in flight, mirror the device's own waiting scene:
   // waiting expression + orbiting comets, cleared by the first state
@@ -630,14 +692,15 @@ export default function HomeScreen() {
         },
       ]}
     >
-      <View
-        style={[
-          styles.container,
-          {
-            paddingHorizontal: horizontalPadding,
-          },
-        ]}
-      >
+      <GestureDetector gesture={sidebarOpenGesture}>
+        <View
+          style={[
+            styles.container,
+            {
+              paddingHorizontal: horizontalPadding,
+            },
+          ]}
+        >
         {/* TOP BAR */}
         <View style={[styles.topBar, isTinyDevice && styles.topBarWrap]}>
           <PressableScale
@@ -761,9 +824,6 @@ export default function HomeScreen() {
                 />
               )}
               {waitingForSync && <WaitingForSync />}
-              {(effectiveMood === 'happy' || effectiveMood === 'proud') && (
-                <Text style={styles.floatingHeart}>❤️</Text>
-              )}
               {floatingEmoji && (
                 <Animated.View style={[styles.floatingEmoji, emojiStyle]}>
                   <Text style={styles.floatingEmojiText}>{floatingEmoji}</Text>
@@ -789,6 +849,10 @@ export default function HomeScreen() {
             </View>
           </View>
 
+          <View style={styles.dcaCardWrap}>
+            <DCAHome />
+          </View>
+
           <View style={styles.statsRow}>
             <View style={styles.statChip}>
               <Ionicons name="wallet-outline" size={14} color={colors.warning} />
@@ -804,7 +868,7 @@ export default function HomeScreen() {
               <Ionicons
                 name="happy-outline"
                 size={14}
-                color={happiness > 30 ? '#FF8E9E' : colors.danger}
+                color={colors.danger}
               />
               <Text
                 style={[
@@ -928,14 +992,16 @@ export default function HomeScreen() {
             </View>
           </PressableScale>
         </View>
-      </View>
+        </View>
+      </GestureDetector>
 
       <Sidebar
         visible={sidebarVisible}
-        onOpen={() => setSidebarVisible(true)}
         onClose={() => setSidebarVisible(false)}
         onOpenQuests={() => setQuestsVisible(true)}
         onOpenWaitlist={() => setWaitlistVisible(true)}
+        translateX={sidebarTranslateX}
+        opacity={sidebarOpacity}
       />
 
       <EvolutionCeremony
@@ -1042,9 +1108,9 @@ const styles = StyleSheet.create({
   },
   container: {
     flex: 1,
-    paddingTop: 12,
-    paddingBottom: 12,
-    gap: 10,
+    paddingTop: spacing.sm,
+    paddingBottom: spacing.sm,
+    gap: spacing.sm,
     justifyContent: 'space-between',
   },
   exitToast: {
@@ -1055,7 +1121,7 @@ const styles = StyleSheet.create({
     borderRadius: radius.pill,
     backgroundColor: 'rgba(14,27,46,0.92)',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.10)',
+    borderColor: colors.border,
     zIndex: 3000,
   },
   exitToastText: {
@@ -1070,8 +1136,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 10,
-    gap: 8,
+    gap: spacing.sm,
   },
   topBarWrap: {
     flexWrap: 'wrap',
@@ -1079,34 +1144,34 @@ const styles = StyleSheet.create({
   appIcon: {
     width: 32,
     height: 32,
-    borderRadius: 10,
+    borderRadius: radius.sm,
   },
   topBarRight: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 7,
+    gap: spacing.sm,
   },
   headerIconButton: {
-    width: 36,
-    height: 36,
+    width: 40,
+    height: 40,
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: 12,
+    borderRadius: radius.md,
     backgroundColor: colors.surface,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.06)',
+    borderColor: colors.border,
   },
   headerIconButtonSmall: {
-    width: 32,
-    height: 32,
+    width: 36,
+    height: 36,
   },
   bleStatusDot: {
     position: 'absolute',
-    top: 5,
-    right: 5,
+    top: 6,
+    right: 6,
     width: 7,
     height: 7,
-    borderRadius: 4,
+    borderRadius: radius.pill,
     borderWidth: 1,
     borderColor: colors.surface,
   },
@@ -1115,30 +1180,30 @@ const styles = StyleSheet.create({
   petCard: {
     flex: 1,
     width: '100%',
-    paddingVertical: 12,
-    borderRadius: 24,
+    paddingVertical: spacing.md,
+    borderRadius: radius.lg,
     backgroundColor: colors.surface,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.06)',
-    gap: 10,
+    borderColor: colors.border,
+    gap: spacing.sm + spacing.xs,
   },
   petCardHeader: {
     width: '100%',
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    gap: 12,
-    paddingHorizontal: 12,
+    gap: spacing.sm + spacing.xs,
+    paddingHorizontal: spacing.md,
   },
   petName: {
     color: colors.text,
-    fontSize: 22,
-    fontFamily: 'Poppins_800ExtraBold',
+    fontSize: typography.heading,
+    fontFamily: 'Poppins_700Bold',
   },
   levelRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: spacing.sm,
     marginTop: 2,
   },
   levelText: {
@@ -1149,14 +1214,14 @@ const styles = StyleSheet.create({
   xpTrackMini: {
     width: 80,
     height: 5,
-    borderRadius: 3,
+    borderRadius: radius.pill,
     backgroundColor: 'rgba(255,255,255,0.10)',
     overflow: 'hidden',
   },
   xpFillMini: {
     height: '100%',
-    borderRadius: 3,
-    backgroundColor: '#8B5CF6',
+    borderRadius: radius.pill,
+    backgroundColor: colors.purple,
   },
   xpTextMini: {
     color: colors.textMuted,
@@ -1168,15 +1233,15 @@ const styles = StyleSheet.create({
     height: 44,
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: 14,
+    borderRadius: radius.md,
     backgroundColor: colors.background,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.10)',
+    borderColor: colors.border,
   },
   feedButtonTiny: {
-    width: 38,
-    height: 38,
-    borderRadius: 12,
+    width: 40,
+    height: 40,
+    borderRadius: radius.md,
   },
   fruitIcon: {
     fontSize: 22,
@@ -1187,7 +1252,7 @@ const styles = StyleSheet.create({
     flex: 1,
     width: '100%',
     minHeight: 180,
-    borderRadius: 20,
+    borderRadius: radius.lg,
     overflow: 'hidden',
     alignItems: 'center',
     justifyContent: 'center',
@@ -1216,13 +1281,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     zIndex: 2,
   },
-  floatingHeart: {
-    position: 'absolute',
-    top: -6,
-    right: -18,
-    fontSize: 20,
-    zIndex: 3,
-  },
   floatingEmoji: {
     position: 'absolute',
     top: -8,
@@ -1241,14 +1299,14 @@ const styles = StyleSheet.create({
     gap: 5,
     paddingVertical: 5,
     paddingHorizontal: 10,
-    borderRadius: 12,
-    backgroundColor: 'rgba(139,92,246,0.14)',
+    borderRadius: radius.pill,
+    backgroundColor: 'rgba(153,69,255,0.14)',
     borderWidth: 1,
-    borderColor: 'rgba(139,92,246,0.30)',
+    borderColor: 'rgba(153,69,255,0.32)',
     zIndex: 5,
   },
   guardianText: {
-    color: '#8B5CF6',
+    color: colors.purple,
     fontSize: 10,
     fontFamily: 'Poppins_800ExtraBold',
   },
@@ -1261,10 +1319,10 @@ const styles = StyleSheet.create({
     gap: 5,
     paddingVertical: 5,
     paddingHorizontal: 10,
-    borderRadius: 12,
+    borderRadius: radius.pill,
     backgroundColor: 'rgba(7,17,31,0.55)',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
+    borderColor: colors.border,
     zIndex: 5,
   },
   streakPillText: {
@@ -1288,12 +1346,12 @@ const styles = StyleSheet.create({
     right: 10,
     bottom: 10,
     gap: 5,
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 14,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.sm + spacing.xs,
+    borderRadius: radius.md,
     backgroundColor: 'rgba(7,17,31,0.45)',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.06)',
+    borderColor: colors.border,
   },
   evolutionStageName: {
     color: colors.text,
@@ -1303,27 +1361,32 @@ const styles = StyleSheet.create({
   evolutionTrack: {
     width: '100%',
     height: 5,
-    borderRadius: 3,
+    borderRadius: radius.pill,
     backgroundColor: 'rgba(255,255,255,0.12)',
     overflow: 'hidden',
   },
   evolutionFill: {
     height: '100%',
-    borderRadius: 3,
+    borderRadius: radius.pill,
     backgroundColor: colors.primary,
   },
   evolutionNext: {
     color: colors.textMuted,
-    fontSize: 9,
+    fontSize: 10,
     fontFamily: 'Poppins_600SemiBold',
   },
 
   /* STATS ROW */
+  dcaCardWrap: {
+    width: '100%',
+    paddingHorizontal: spacing.md,
+    marginBottom: spacing.xs,
+  },
   statsRow: {
     width: '100%',
     flexDirection: 'row',
-    gap: 8,
-    paddingHorizontal: 12,
+    gap: spacing.sm,
+    paddingHorizontal: spacing.md,
   },
   statChip: {
     flex: 1,
@@ -1331,8 +1394,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 5,
-    paddingVertical: 8,
-    borderRadius: 12,
+    paddingVertical: spacing.sm,
+    borderRadius: radius.md,
     backgroundColor: colors.background,
   },
   statChipDanger: {
@@ -1348,7 +1411,7 @@ const styles = StyleSheet.create({
   },
   statLabel: {
     color: colors.textMuted,
-    fontSize: 9,
+    fontSize: 10,
     fontFamily: 'Poppins_600SemiBold',
   },
 
@@ -1356,20 +1419,22 @@ const styles = StyleSheet.create({
   petActionsRow: {
     width: '100%',
     flexDirection: 'row',
-    gap: 8,
+    gap: spacing.sm,
+    paddingHorizontal: spacing.sm,
+    paddingBottom: spacing.sm,
   },
   petActionButton: {
     flex: 1,
     minWidth: 0,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 4,
-    paddingVertical: 10,
-    paddingHorizontal: 4,
-    borderRadius: 14,
+    gap: spacing.xs,
+    paddingVertical: spacing.sm + spacing.xs,
+    paddingHorizontal: spacing.xs,
+    borderRadius: radius.md,
     backgroundColor: colors.background,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
+    borderColor: colors.border,
   },
   petActionButtonDisabled: {
     backgroundColor: 'rgba(14,27,46,0.50)',
@@ -1387,18 +1452,18 @@ const styles = StyleSheet.create({
   petActionPricePill: {
     paddingVertical: 2,
     paddingHorizontal: 6,
-    borderRadius: 6,
+    borderRadius: radius.sm,
     backgroundColor: 'rgba(255,255,255,0.08)',
   },
   petActionPricePillFree: {
-    backgroundColor: 'rgba(93,226,166,0.12)',
+    backgroundColor: 'rgba(53,215,255,0.10)',
   },
   petActionPricePillDisabled: {
     backgroundColor: 'rgba(255,255,255,0.05)',
   },
   petActionPriceText: {
     color: colors.text,
-    fontSize: 9,
+    fontSize: 10,
     fontFamily: 'Poppins_800ExtraBold',
   },
   petActionPriceTextFree: {
@@ -1410,23 +1475,23 @@ const styles = StyleSheet.create({
 
   /* ACTIONS DRAWER */
   actionsDrawer: {
-    marginHorizontal: 12,
-    borderRadius: 14,
+    marginHorizontal: spacing.md,
+    borderRadius: radius.md,
     backgroundColor: colors.background,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
+    borderColor: colors.border,
     overflow: 'hidden',
   },
   actionsHandle: {
     alignItems: 'center',
     paddingTop: 6,
     paddingBottom: 6,
-    gap: 4,
+    gap: spacing.xs,
   },
   actionsHandleBar: {
     width: 36,
     height: 4,
-    borderRadius: 2,
+    borderRadius: radius.pill,
     backgroundColor: 'rgba(255,255,255,0.15)',
   },
   actionsHandleRow: {
@@ -1449,24 +1514,24 @@ const styles = StyleSheet.create({
   tabBar: {
     width: '100%',
     flexDirection: 'row',
-    gap: 4,
-    padding: 4,
-    borderRadius: 18,
+    gap: spacing.xs,
+    padding: spacing.xs,
+    borderRadius: radius.lg,
     backgroundColor: colors.background,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.06)',
+    borderColor: colors.border,
   },
   tab: {
     flex: 1,
     minWidth: 0,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 4,
-    paddingVertical: 10,
-    borderRadius: 14,
+    gap: spacing.xs,
+    paddingVertical: spacing.sm + spacing.xs,
+    borderRadius: radius.md,
     backgroundColor: colors.surface,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.06)',
+    borderColor: colors.border,
   },
   tabText: {
     color: colors.text,
@@ -1487,12 +1552,14 @@ const styles = StyleSheet.create({
     right: 8,
     paddingVertical: 3,
     paddingHorizontal: 6,
-    borderRadius: 6,
-    backgroundColor: 'rgba(255,255,255,0.08)',
+    borderRadius: radius.sm,
+    backgroundColor: 'rgba(153,69,255,0.16)',
+    borderWidth: 1,
+    borderColor: 'rgba(153,69,255,0.35)',
   },
   comingSoonText: {
-    color: colors.textMuted,
-    fontSize: 8,
+    color: colors.purple,
+    fontSize: 9,
     fontFamily: 'Poppins_800ExtraBold',
     letterSpacing: 0.4,
     textTransform: 'uppercase',

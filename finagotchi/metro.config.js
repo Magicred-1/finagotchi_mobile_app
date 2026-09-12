@@ -3,6 +3,10 @@ const { getDefaultConfig } = require('expo/metro-config');
 
 const config = getDefaultConfig(__dirname);
 
+// The shared quest engine lives OUTSIDE the app root (../shared/quest-engine).
+// Watch it so Metro resolves and hot-reloads those imports.
+config.watchFolders = [path.resolve(__dirname, '../shared')];
+
 // Solana/web3.js and noble-hashes ship CommonJS builds with strict
 // "exports" maps; Metro warns but falls back. Adding "cjs" to the
 // recognized source extensions makes the fallback explicit and clean.

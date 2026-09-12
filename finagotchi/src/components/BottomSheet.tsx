@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
     Keyboard,
+    Modal,
     Platform,
     Pressable,
     StyleSheet,
@@ -53,12 +54,17 @@ function rubberband(overshoot: number, dimension: number, constant = 0.55) {
 }
 
 export function BottomSheet({ visible, onClose, title, children }: Props) {
-    const { width, height } = useWindowDimensions();
+    const { height } = useWindowDimensions();
     const insets = useSafeAreaInsets();
 
     const translateY = useSharedValue(height);
     const opacity = useSharedValue(0);
     const keyboardOffset = useSharedValue(0);
+
+    // The sheet renders inside a Modal so it escapes the parent's layout and
+    // clipping (RN has no portals). The Modal stays mounted through the close
+    // animation and unmounts only when it finishes.
+    const [modalVisible, setModalVisible] = useState(visible);
 
     // Keep the latest onClose in a ref so `close` stays referentially stable.
     // Parents pass inline arrows, and without this the visible-effect below
@@ -70,6 +76,7 @@ export function BottomSheet({ visible, onClose, title, children }: Props) {
     // inside the worklet callback (runOnJS(() => ...)) crashes worklets with
     // "isHostFunction(runtime)" when the frame callback fires.
     const notifyClosed = useCallback(() => {
+        setModalVisible(false);
         onCloseRef.current();
     }, []);
 
@@ -136,6 +143,7 @@ export function BottomSheet({ visible, onClose, title, children }: Props) {
     useEffect(() => {
         if (visible) {
             hasOpenedRef.current = true;
+            setModalVisible(true);
             open();
         } else if (hasOpenedRef.current) {
             hasOpenedRef.current = false;
@@ -182,57 +190,59 @@ export function BottomSheet({ visible, onClose, title, children }: Props) {
     }));
 
     return (
-        <View
-            style={[styles.container, { width, height }]}
-            pointerEvents={visible ? 'auto' : 'none'}
+        <Modal
+            visible={modalVisible}
+            transparent
+            animationType="none"
+            statusBarTranslucent
+            onRequestClose={() => close()}
         >
-            <Animated.View
-                style={[
-                    StyleSheet.absoluteFill,
-                    styles.backdrop,
-                    backdropStyle,
-                ]}
-            >
-                <Pressable
-                    style={StyleSheet.absoluteFill}
-                    onPress={() => close()}
-                />
-            </Animated.View>
+            <View style={styles.container}>
+                <Animated.View
+                    style={[
+                        StyleSheet.absoluteFill,
+                        styles.backdrop,
+                        backdropStyle,
+                    ]}
+                >
+                    <Pressable
+                        style={StyleSheet.absoluteFill}
+                        onPress={() => close()}
+                    />
+                </Animated.View>
 
-            <Animated.View
-                style={[
-                    styles.sheet,
-                    {
-                        paddingBottom: Math.max(insets.bottom, 16),
-                        maxHeight: keyboardOpen
-                            ? height - keyboardHeight - 24
-                            : height * 0.88,
-                    },
-                    sheetStyle,
-                ]}
-            >
-                <GestureDetector gesture={panGesture}>
-                    <View style={styles.dragHandle}>
-                        <View style={styles.handle} />
-                    </View>
-                </GestureDetector>
+                <Animated.View
+                    style={[
+                        styles.sheet,
+                        {
+                            paddingBottom: Math.max(insets.bottom, 16),
+                            maxHeight: keyboardOpen
+                                ? height - keyboardHeight - 24
+                                : height * 0.88,
+                        },
+                        sheetStyle,
+                    ]}
+                >
+                    <GestureDetector gesture={panGesture}>
+                        <View style={styles.dragHandle}>
+                            <View style={styles.handle} />
+                        </View>
+                    </GestureDetector>
 
-                {title ? (
-                    <Text style={styles.title}>{title}</Text>
-                ) : null}
+                    {title ? (
+                        <Text style={styles.title}>{title}</Text>
+                    ) : null}
 
-                {children}
-            </Animated.View>
-        </View>
+                    {children}
+                </Animated.View>
+            </View>
+        </Modal>
     );
 }
 
 const styles = StyleSheet.create({
     container: {
-        position: 'absolute',
-        top: 0,
-        left: 0,
-        zIndex: 2000,
+        flex: 1,
         justifyContent: 'flex-end',
     },
     backdrop: {

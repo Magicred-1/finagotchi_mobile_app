@@ -14,6 +14,7 @@ export const colors = {
 
     danger: '#FF647C',
     warning: '#FFD166',
+    success: '#5DE2A6',
 
     border: '#243651',
 };

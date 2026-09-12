@@ -30,10 +30,14 @@ Android — requested at runtime).
   `<stage>:<streak>:<mood>:<item>:<points>:<happy>` parser, hook interface.
 - `sync.ts` — mirrors state between the app engine and the device
   (`useDeviceSync`): pushes a `stage:`/`mood:`/`item:`/`points:`/`happy:`/
-  `streak:` snapshot on every connect (happiness is RAM-only on the device,
-  so stats must be re-shared each time), writes `stage:` on local evolution
-  and `points:`/`happy:`/`streak:` when the app's balance/happiness/streak
-  change, and applies device notifications back into the local engine.
+  `streak:` snapshot on every connect once both persisted stores have
+  hydrated (happiness is RAM-only on the device, so stats must be re-shared
+  each time), writes `stage:` on local evolution
+  and `points:`/`happy:`/`streak:` (debounced 500 ms) when the app's
+  balance/happiness/streak change, and applies device notifications back
+  into the local engine. Notifications inside a short grace window after
+  connect/snapshot are ignored: they carry the firmware's pre-push state or
+  echoes of our own writes, not device-initiated changes.
 
 ## Interactions
 

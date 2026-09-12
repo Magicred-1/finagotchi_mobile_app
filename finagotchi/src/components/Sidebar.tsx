@@ -31,15 +31,20 @@ import * as Haptics from 'expo-haptics';
 import { useWallet } from '../wallet/useWallet';
 import { usePetStore } from '../features/pet/store';
 import { PressableScale } from './PressableScale';
-import { colors, radius, spacing, springs, typography } from '../theme/tokens';
+import { colors, radius, shadows, spacing, springs, typography } from '../theme/tokens';
 
 export const SIDEBAR_WIDTH = 300;
 const SWIPE_THRESHOLD = 60;
 const OPEN_SWIPE_THRESHOLD = 30;
 const FLICK_VELOCITY = 650;
-const EDGE_SWIPE_WIDTH = 28;
+// Horizontal pull must start within this distance of the left edge.
+// Extends past Android's system back-gesture zone, which claims touches
+// that start at the very screen edge on gesture-nav devices.
+const EDGE_SWIPE_WIDTH = 44;
 const ACTIVATE_DX = 8;
-const FAIL_DY = 24;
+// Generous vertical tolerance: real drawer swipes are slightly diagonal, and
+// a tight fail window kills the gesture before it ever activates.
+const FAIL_DY = 36;
 
 function truncateAddress(address: string | null) {
     if (!address) return '';
@@ -51,125 +56,32 @@ function project(initialVelocity: number, decelerationRate = 0.998) {
     return (initialVelocity / 1000) * decelerationRate / (1 - decelerationRate);
 }
 
-type NavAction =
-    | { type: 'route'; label: string; icon: React.ComponentProps<typeof Ionicons>['name']; href: Href }
-    | { type: 'action'; label: string; icon: React.ComponentProps<typeof Ionicons>['name']; action: 'quests' | 'waitlist' };
-
-const NAV_ITEMS: NavAction[] = [
-    { type: 'route', label: 'My Pet', icon: 'happy-outline', href: '/(tabs)' },
-    { type: 'action', label: 'Quests', icon: 'flag-outline', action: 'quests' },
-    { type: 'action', label: 'Join Waitlist', icon: 'cube-outline', action: 'waitlist' },
-];
-
-type Props = {
-    visible: boolean;
+type OpenGestureOptions = {
+    translateX: SharedValue<number>;
+    opacity: SharedValue<number>;
+    enabled: boolean;
     onOpen: () => void;
-    onClose: () => void;
-    onOpenQuests: () => void;
-    onOpenWaitlist: () => void;
-    translateX?: SharedValue<number>;
-    opacity?: SharedValue<number>;
 };
 
-export function Sidebar({
-    visible,
+/**
+ * Edge-swipe gesture that opens the sidebar. Attach it with GestureDetector
+ * around the real screen content (the pattern from the Expo gestures
+ * tutorial): because the wrapped view IS the content, hit-testing keeps
+ * working and every button underneath stays tappable. Manual activation
+ * fails any touch that is not a horizontal pull starting at the left edge,
+ * so taps, vertical scrolls, and other gestures pass through untouched.
+ */
+export function useSidebarOpenGesture({
+    translateX,
+    opacity,
+    enabled,
     onOpen,
-    onClose,
-    onOpenQuests,
-    onOpenWaitlist,
-    translateX: externalTranslateX,
-    opacity: externalOpacity,
-}: Props) {
-    const { width, height } = useWindowDimensions();
-    const insets = useSafeAreaInsets();
-    const wallet = useWallet();
-    const router = useRouter();
-    const pathname = usePathname();
-    const petName = usePetStore((state) => state.name);
-    const stage = usePetStore((state) => state.stage);
-
-    const [qrVisible, setQrVisible] = useState(false);
-    const walletAddress = wallet.publicKey?.toBase58() ?? null;
-
-    const handleShowQr = useCallback(() => {
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-        setQrVisible(true);
-    }, []);
-
-    const handleHideQr = useCallback(() => {
-        setQrVisible(false);
-    }, []);
-
-    const handleShareAddress = useCallback(async () => {
-        if (!walletAddress) return;
-        try {
-            await Share.share({ message: walletAddress });
-        } catch {
-            // User cancelled or share failed; ignore.
-        }
-    }, [walletAddress]);
-
-    const internalTranslateX = useSharedValue(-SIDEBAR_WIDTH);
-    const internalOpacity = useSharedValue(0);
-
-    const translateX = externalTranslateX ?? internalTranslateX;
-    const opacity = externalOpacity ?? internalOpacity;
-    const contentShift = useSharedValue(-16);
-
+}: OpenGestureOptions) {
     const dragStartX = useSharedValue(0);
     const dragStartY = useSharedValue(0);
 
-    const onCloseRef = useRef(onClose);
-    useEffect(() => {
-        onCloseRef.current = onClose;
-    }, [onClose]);
-
-    const animateOpen = useCallback((velocity = 0) => {
-        if (translateX.value <= 1 && opacity.value >= 0.99) return;
-        const isFlick = Math.abs(velocity) > FLICK_VELOCITY;
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-        translateX.value = withSpring(0, {
-            ...(isFlick ? springs.momentum : springs.default),
-            velocity,
-            reduceMotion: ReduceMotion.System,
-        });
-        opacity.value = withTiming(1, { duration: 250 });
-        contentShift.value = withSpring(0, {
-            ...springs.default,
-            reduceMotion: ReduceMotion.System,
-        });
-    }, [translateX, opacity, contentShift]);
-
-    const animateClose = useCallback((velocity = 0) => {
-        if (translateX.value <= -SIDEBAR_WIDTH + 1 && opacity.value <= 0.01) return;
-        const isFlick = Math.abs(velocity) > FLICK_VELOCITY;
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-        translateX.value = withSpring(-SIDEBAR_WIDTH, {
-            ...(isFlick ? springs.momentum : springs.default),
-            velocity,
-            reduceMotion: ReduceMotion.System,
-        });
-        opacity.value = withTiming(0, { duration: 220 }, (finished) => {
-            if (finished) {
-                runOnJS(onCloseRef.current)();
-            }
-        });
-        contentShift.value = withTiming(-16, { duration: 180 });
-    }, [translateX, opacity, contentShift]);
-
-    useEffect(() => {
-        if (visible) {
-            animateOpen();
-        } else {
-            animateClose();
-        }
-    }, [visible, animateOpen, animateClose]);
-
-    // Drag from the left edge of the screen to open the sidebar.
-    // Uses manual activation so taps and vertical scrolling pass through to
-    // buttons and lists that sit underneath the full-screen overlay.
-    const openPan = Gesture.Pan()
-        .enabled(!visible)
+    return Gesture.Pan()
+        .enabled(enabled)
         .manualActivation(true)
         .shouldCancelWhenOutside(false)
         .onTouchesDown((event, stateManager) => {
@@ -221,11 +133,124 @@ export function Sidebar({
                 opacity.value = withTiming(0, { duration: 200 });
             }
         });
+}
 
-    // Swipe the sidebar left to close.
+type NavAction =
+    | { type: 'route'; label: string; icon: React.ComponentProps<typeof Ionicons>['name']; href: Href }
+    | { type: 'action'; label: string; icon: React.ComponentProps<typeof Ionicons>['name']; action: 'quests' | 'waitlist' };
+
+const NAV_ITEMS: NavAction[] = [
+    { type: 'route', label: 'My Pet', icon: 'happy-outline', href: '/(tabs)' },
+    { type: 'action', label: 'Quests', icon: 'flag-outline', action: 'quests' },
+    { type: 'action', label: 'Join Waitlist', icon: 'cube-outline', action: 'waitlist' },
+];
+
+type Props = {
+    visible: boolean;
+    onClose: () => void;
+    onOpenQuests: () => void;
+    onOpenWaitlist: () => void;
+    translateX?: SharedValue<number>;
+    opacity?: SharedValue<number>;
+};
+
+export function Sidebar({
+    visible,
+    onClose,
+    onOpenQuests,
+    onOpenWaitlist,
+    translateX: externalTranslateX,
+    opacity: externalOpacity,
+}: Props) {
+    const { width, height } = useWindowDimensions();
+    const insets = useSafeAreaInsets();
+    const wallet = useWallet();
+    const router = useRouter();
+    const pathname = usePathname();
+    const petName = usePetStore((state) => state.name);
+    const stage = usePetStore((state) => state.stage);
+
+    const [qrVisible, setQrVisible] = useState(false);
+    const walletAddress = wallet.publicKey?.toBase58() ?? null;
+
+    const handleShowQr = useCallback(() => {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        setQrVisible(true);
+    }, []);
+
+    const handleHideQr = useCallback(() => {
+        setQrVisible(false);
+    }, []);
+
+    const handleShareAddress = useCallback(async () => {
+        if (!walletAddress) return;
+        try {
+            await Share.share({ message: walletAddress });
+        } catch {
+            // User cancelled or share failed; ignore.
+        }
+    }, [walletAddress]);
+
+    const internalTranslateX = useSharedValue(-SIDEBAR_WIDTH);
+    const internalOpacity = useSharedValue(0);
+
+    const translateX = externalTranslateX ?? internalTranslateX;
+    const opacity = externalOpacity ?? internalOpacity;
+    const contentShift = useSharedValue(-16);
+
+    const onCloseRef = useRef(onClose);
+    useEffect(() => {
+        onCloseRef.current = onClose;
+    }, [onClose]);
+
+    const animateOpen = useCallback((velocity = 0) => {
+        if (translateX.value <= 1 && opacity.value >= 0.99) return;
+        const isFlick = Math.abs(velocity) > FLICK_VELOCITY;
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        translateX.value = withSpring(0, {
+            ...(isFlick ? springs.momentum : springs.default),
+            velocity,
+            reduceMotion: ReduceMotion.System,
+        });
+        opacity.value = withTiming(1, { duration: 250 });
+        contentShift.value = withSpring(0, {
+            ...springs.default,
+            reduceMotion: ReduceMotion.System,
+        });
+    }, [translateX, opacity, contentShift]);
+
+    const animateClose = useCallback((velocity = 0) => {
+        if (translateX.value <= -SIDEBAR_WIDTH + 1 && opacity.value <= 0.01) return;
+        const isFlick = Math.abs(velocity) > FLICK_VELOCITY;
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        translateX.value = withSpring(-SIDEBAR_WIDTH, {
+            ...(isFlick ? springs.momentum : springs.default),
+            velocity,
+            reduceMotion: ReduceMotion.System,
+        });
+        opacity.value = withTiming(0, { duration: 220 }, (finished) => {
+            if (finished) {
+                runOnJS(onCloseRef.current)();
+            }
+        });
+        contentShift.value = withTiming(-16, { duration: 180 });
+    }, [translateX, opacity, contentShift]);
+
+    useEffect(() => {
+        if (visible) {
+            animateOpen();
+        } else {
+            animateClose();
+        }
+    }, [visible, animateOpen, animateClose]);
+
+    // Swipe the sidebar left to close. activeOffsetX engages after a few px
+    // of horizontal travel (minDistance made the menu feel stuck for the
+    // first 20px), and the wide fail window keeps slightly diagonal swipes
+    // alive instead of rejecting them.
     const sidebarPan = Gesture.Pan()
-        .minDistance(20)
-        .failOffsetY([-20, 20])
+        .activeOffsetX([-8, 8])
+        .failOffsetY([-45, 45])
         .shouldCancelWhenOutside(false)
         .onUpdate((event) => {
             const x = event.translationX;
@@ -308,21 +333,6 @@ export function Sidebar({
 
     return (
         <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
-            <GestureDetector gesture={openPan}>
-                <View
-                    style={[
-                        styles.dragOverlay,
-                        {
-                            width: EDGE_SWIPE_WIDTH,
-                            height,
-                            opacity: visible ? 0 : 1,
-                        },
-                    ]}
-                    pointerEvents={visible ? 'none' : 'auto'}
-                    collapsable={false}
-                />
-            </GestureDetector>
-
             <View
                 style={[styles.container, { width, height }]}
                 pointerEvents={visible ? 'auto' : 'none'}
@@ -348,13 +358,11 @@ export function Sidebar({
                             {
                                 width: SIDEBAR_WIDTH,
                                 height,
-                                paddingTop: insets.top + 48,
+                                paddingTop: insets.top + spacing.lg,
                             },
                         ]}
                     >
                         <Animated.View style={[{ flex: 1 }, contentStyle]}>
-                            <View style={styles.handle} />
-
                             {/* HEADER */}
                             <View style={styles.headerCard}>
                                 <View style={styles.headerGlow} />
@@ -406,7 +414,7 @@ export function Sidebar({
                                                     size={20}
                                                     color={
                                                         active
-                                                            ? colors.background
+                                                            ? colors.primary
                                                             : colors.text
                                                     }
                                                 />
@@ -420,11 +428,6 @@ export function Sidebar({
                                             >
                                                 {item.label}
                                             </Text>
-                                            {active && (
-                                                <View
-                                                    style={styles.activeAccent}
-                                                />
-                                            )}
                                         </PressableScale>
                                     );
                                 })}
@@ -502,9 +505,14 @@ export function Sidebar({
                                             <Ionicons
                                                 name="log-out-outline"
                                                 size={18}
-                                                color={colors.background}
+                                                color={colors.danger}
                                             />
-                                            <Text style={styles.walletActionText}>
+                                            <Text
+                                                style={[
+                                                    styles.walletActionText,
+                                                    styles.disconnectText,
+                                                ]}
+                                            >
                                                 Disconnect
                                             </Text>
                                         </PressableScale>
@@ -574,6 +582,8 @@ export function Sidebar({
                             </Modal>
 
                         </Animated.View>
+
+                        <View style={styles.grabHandle} pointerEvents="none" />
                     </Animated.View>
                 </GestureDetector>
             </View>
@@ -588,13 +598,6 @@ const styles = StyleSheet.create({
         left: 0,
         zIndex: 1000,
     },
-    dragOverlay: {
-        position: 'absolute',
-        left: 0,
-        top: 0,
-        zIndex: 1001,
-        backgroundColor: 'transparent',
-    },
     backdrop: {
         backgroundColor: 'rgba(0,0,0,0.55)',
     },
@@ -602,9 +605,9 @@ const styles = StyleSheet.create({
         position: 'absolute',
         left: 0,
         top: 0,
-        backgroundColor: 'rgba(14,27,46,0.96)',
+        backgroundColor: 'rgba(14,27,46,0.97)',
         borderRightWidth: 1,
-        borderRightColor: 'rgba(255,255,255,0.08)',
+        borderRightColor: colors.border,
         paddingHorizontal: spacing.lg,
         shadowColor: '#000',
         shadowOffset: { width: 8, height: 0 },
@@ -612,32 +615,33 @@ const styles = StyleSheet.create({
         shadowRadius: 40,
         elevation: 20,
     },
-    handle: {
+    grabHandle: {
         position: 'absolute',
-        top: 16,
-        left: spacing.lg,
-        width: 36,
-        height: 4,
-        borderRadius: 2,
-        backgroundColor: 'rgba(255,255,255,0.15)',
+        right: 6,
+        top: '50%',
+        marginTop: -22,
+        width: 4,
+        height: 44,
+        borderRadius: radius.pill,
+        backgroundColor: 'rgba(255,255,255,0.14)',
     },
     headerCard: {
-        marginBottom: spacing.xl,
+        marginBottom: spacing.lg,
         padding: spacing.md,
-        borderRadius: 22,
+        borderRadius: radius.lg,
         backgroundColor: 'rgba(7,17,31,0.55)',
         borderWidth: 1,
-        borderColor: 'rgba(255,255,255,0.08)',
+        borderColor: colors.border,
         overflow: 'hidden',
     },
     headerGlow: {
         position: 'absolute',
-        top: -30,
-        right: -30,
-        width: 100,
-        height: 100,
-        borderRadius: 50,
-        backgroundColor: 'rgba(114,228,90,0.10)',
+        top: -40,
+        right: -40,
+        width: 110,
+        height: 110,
+        borderRadius: 55,
+        backgroundColor: 'rgba(53,215,255,0.07)',
     },
     headerContent: {
         flexDirection: 'row',
@@ -647,10 +651,10 @@ const styles = StyleSheet.create({
     avatar: {
         width: 48,
         height: 48,
-        borderRadius: 14,
+        borderRadius: radius.md,
         backgroundColor: colors.background,
         borderWidth: 1,
-        borderColor: 'rgba(255,255,255,0.10)',
+        borderColor: colors.border,
     },
     headerText: {
         flex: 1,
@@ -670,18 +674,18 @@ const styles = StyleSheet.create({
     levelBadge: {
         alignSelf: 'flex-start',
         marginTop: spacing.sm,
-        paddingVertical: 4,
+        paddingVertical: spacing.xs,
         paddingHorizontal: 10,
-        borderRadius: 10,
-        backgroundColor: 'rgba(114,228,90,0.10)',
+        borderRadius: radius.pill,
+        backgroundColor: 'rgba(53,215,255,0.10)',
         borderWidth: 1,
-        borderColor: 'rgba(114,228,90,0.20)',
+        borderColor: 'rgba(53,215,255,0.25)',
     },
     levelText: {
         color: colors.primary,
         fontSize: 10,
         fontFamily: 'Poppins_800ExtraBold',
-        letterSpacing: 0.3,
+        letterSpacing: 0.6,
         textTransform: 'uppercase',
     },
     navSection: {
@@ -694,25 +698,25 @@ const styles = StyleSheet.create({
         gap: spacing.md,
         paddingVertical: spacing.md,
         paddingHorizontal: spacing.md,
-        borderRadius: 16,
+        borderRadius: radius.md,
         backgroundColor: 'rgba(7,17,31,0.40)',
         borderWidth: 1,
-        borderColor: 'rgba(255,255,255,0.05)',
+        borderColor: colors.border,
     },
     navItemActive: {
-        backgroundColor: colors.primary,
-        borderColor: colors.primary,
+        backgroundColor: 'rgba(53,215,255,0.10)',
+        borderColor: 'rgba(53,215,255,0.35)',
     },
     navIconWrap: {
         width: 34,
         height: 34,
         alignItems: 'center',
         justifyContent: 'center',
-        borderRadius: 10,
+        borderRadius: radius.sm,
         backgroundColor: 'rgba(255,255,255,0.05)',
     },
     navIconWrapActive: {
-        backgroundColor: 'rgba(7,17,31,0.25)',
+        backgroundColor: 'rgba(53,215,255,0.14)',
     },
     navLabel: {
         flex: 1,
@@ -721,21 +725,11 @@ const styles = StyleSheet.create({
         fontFamily: 'Poppins_600SemiBold',
     },
     navLabelActive: {
-        color: colors.background,
-    },
-    activeAccent: {
-        position: 'absolute',
-        left: 0,
-        top: 12,
-        bottom: 12,
-        width: 3,
-        borderTopRightRadius: 3,
-        borderBottomRightRadius: 3,
-        backgroundColor: colors.background,
+        color: colors.primary,
     },
     divider: {
         height: 1,
-        backgroundColor: 'rgba(255,255,255,0.06)',
+        backgroundColor: colors.border,
         marginBottom: spacing.lg,
     },
     section: {
@@ -754,23 +748,20 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         alignItems: 'center',
         gap: spacing.md,
-        paddingVertical: spacing.sm,
+        paddingVertical: spacing.sm + spacing.xs,
         paddingHorizontal: spacing.md,
-        borderRadius: 16,
+        borderRadius: radius.md,
         backgroundColor: 'rgba(7,17,31,0.40)',
         borderWidth: 1,
-        borderColor: 'rgba(255,255,255,0.05)',
+        borderColor: colors.border,
     },
     connectionIcon: {
         width: 38,
         height: 38,
         alignItems: 'center',
         justifyContent: 'center',
-        borderRadius: 11,
+        borderRadius: radius.sm,
         backgroundColor: 'rgba(255,255,255,0.06)',
-    },
-    connectionIconMuted: {
-        backgroundColor: 'rgba(255,255,255,0.03)',
     },
     connectionBody: {
         flex: 1,
@@ -781,9 +772,6 @@ const styles = StyleSheet.create({
         fontSize: typography.body,
         fontFamily: 'Poppins_600SemiBold',
     },
-    connectionLabelMuted: {
-        color: colors.textMuted,
-    },
     connectionStatus: {
         flexDirection: 'row',
         alignItems: 'center',
@@ -792,7 +780,7 @@ const styles = StyleSheet.create({
     statusDot: {
         width: 7,
         height: 7,
-        borderRadius: 4,
+        borderRadius: radius.pill,
         backgroundColor: colors.primary,
     },
     statusDotOffline: {
@@ -809,7 +797,7 @@ const styles = StyleSheet.create({
     walletActions: {
         flexDirection: 'row',
         gap: spacing.sm,
-        marginTop: spacing.sm,
+        marginTop: spacing.xs,
     },
     walletActionButton: {
         flex: 1,
@@ -817,17 +805,25 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         justifyContent: 'center',
         gap: spacing.sm,
-        paddingVertical: spacing.sm,
-        borderRadius: 12,
+        minHeight: 44,
+        borderRadius: radius.md,
         backgroundColor: colors.primary,
+        ...shadows.glow,
     },
     disconnectButton: {
-        backgroundColor: colors.danger,
+        backgroundColor: 'rgba(255,100,124,0.10)',
+        borderWidth: 1,
+        borderColor: 'rgba(255,100,124,0.35)',
+        shadowOpacity: 0,
+        elevation: 0,
     },
     walletActionText: {
         color: colors.background,
         fontSize: typography.small,
         fontFamily: 'Poppins_700Bold',
+    },
+    disconnectText: {
+        color: colors.danger,
     },
     qrOverlay: {
         flex: 1,
@@ -843,7 +839,7 @@ const styles = StyleSheet.create({
         borderRadius: radius.lg,
         backgroundColor: colors.surface,
         borderWidth: 1,
-        borderColor: 'rgba(255,255,255,0.08)',
+        borderColor: colors.border,
     },
     qrTitle: {
         color: colors.text,

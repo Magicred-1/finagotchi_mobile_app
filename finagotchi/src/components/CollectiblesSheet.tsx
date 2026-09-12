@@ -54,6 +54,7 @@ const ACCESSORIES: AccessoryItem[] = [
     { id: 'bowtie', name: 'Bowtie', unlock: 7, price: 0 },
     { id: 'crown', name: 'Royal Crown', unlock: 14, price: 0 },
     { id: 'halo', name: 'Halo', unlock: 0, price: 800 },
+    { id: 'tshirt', name: 'Coin Tee', unlock: 0, price: 1500 },
     { id: 'diamond', name: 'Diamond', unlock: 0, price: 2500 },
 ];
 

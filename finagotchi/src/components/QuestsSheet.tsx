@@ -1,42 +1,46 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
     ScrollView,
-    Share,
     StyleSheet,
     Text,
     View,
-    useWindowDimensions,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 
+import type { QuestKind } from '../../../shared/quest-engine';
 import { BottomSheet } from './BottomSheet';
 import { Button } from './Button';
 import { PressableScale } from './PressableScale';
 import { useWalletStore } from '../features/wallet/store';
 import { usePetStore } from '../features/pet/store';
-import { useCheckinStore } from '../features/checkin/store';
 import {
-    QUESTS,
-    QUEST_ACCENTS,
-    useQuestStore,
-    type Quest,
-    type QuestCategory,
-} from '../features/quests/store';
+    useClaimQueue,
+    useProfileStore,
+    useQuestsStore,
+    type QuestWithProgress,
+} from '../features/quest-engine';
 import { colors, radius, spacing, typography } from '../theme/tokens';
 
-type FilterCategory = 'All' | QuestCategory;
+type FilterKind = 'All' | QuestKind;
 
-type QuestStatus = 'available' | 'completed' | 'locked' | 'coming-soon';
-
-const FILTERS: FilterCategory[] = [
-    'All',
-    'Wallet',
-    'Bank',
-    'Habits',
-    'Social',
-    'Sponsored',
+const FILTERS: { id: FilterKind; label: string }[] = [
+    { id: 'All', label: 'All' },
+    { id: 'count', label: 'Habits' },
+    { id: 'streak', label: 'Streaks' },
+    { id: 'explore', label: 'Explore' },
 ];
+
+const KIND_META: Record<
+    QuestKind,
+    { label: string; icon: string; accent: string }
+> = {
+    count: { label: 'Habit', icon: 'repeat-outline', accent: colors.cyan },
+    streak: { label: 'Streak', icon: 'flame-outline', accent: colors.primary },
+    explore: { label: 'Explore', icon: 'compass-outline', accent: colors.purple },
+};
+
+type QuestStatus = 'active' | 'claiming' | 'credited' | 'locked';
 
 type Props = {
     visible: boolean;
@@ -49,142 +53,117 @@ export default function QuestsSheet({
     onClose,
     onOpenRevive,
 }: Props) {
-    const { width } = useWindowDimensions();
-    const [filter, setFilter] = useState<FilterCategory>('All');
-    const [claimedId, setClaimedId] = useState<string | null>(null);
+    const [filter, setFilter] = useState<FilterKind>('All');
     const [recentlyTappedId, setRecentlyTappedId] = useState<string | null>(null);
 
     const walletAddress = useWalletStore((state) => state.address);
-    const transactionsToday = useWalletStore(
-        (state) => state.transactionsToday
-    );
     const isWalletConnected = Boolean(walletAddress);
 
-    const addBalance = usePetStore((state) => state.addBalance);
-    const addXp = usePetStore((state) => state.addXp);
-    const boostHappiness = usePetStore((state) => state.boostHappiness);
-    const resetLifeTimer = usePetStore((state) => state.resetLifeTimer);
     const isDead = usePetStore((state) => state.isDead);
     const petName = usePetStore((state) => state.name);
 
-    const hasCheckedInToday = useCheckinStore(
-        (state) => state.hasCheckedInToday
-    );
+    const questsByKey = useQuestsStore((state) => state.questsByKey);
+    const progressByKey = useQuestsStore((state) => state.progressByKey);
+    const credited = useProfileStore((state) => state.credited);
+    const pendingClaims = useClaimQueue((state) => state.pending);
 
-    const isCompletedToday = useQuestStore((state) => state.isCompletedToday);
-    const completeQuest = useQuestStore((state) => state.completeQuest);
-    const getProgress = useQuestStore((state) => state.getProgress);
+    // Opening the sheet refreshes today's list and retries pending claims.
+    useEffect(() => {
+        if (!visible || !walletAddress) return;
+        void useQuestsStore.getState().refreshQuests(walletAddress);
+        void useClaimQueue.getState().flush();
+    }, [visible, walletAddress]);
 
-    const isSmallDevice = width < 360;
+    const quests = useMemo<QuestWithProgress[]>(() => {
+        if (!walletAddress) return [];
+        return useQuestsStore.getState().getQuestsWithProgress(walletAddress);
+        // questsByKey/progressByKey are the underlying data; re-derive on change.
+    }, [walletAddress, questsByKey, progressByKey]);
+
+    const creditedEntries = walletAddress ? credited[walletAddress] ?? [] : [];
 
     const questsWithStatus = useMemo(() => {
-        return QUESTS.map((quest) => {
-            if (isCompletedToday(quest.id)) {
-                return { ...quest, status: 'completed' as QuestStatus };
+        return quests.map((quest) => {
+            let status: QuestStatus = 'active';
+            if (
+                creditedEntries.some(
+                    (e) =>
+                        e.day === quest.day &&
+                        e.programId === quest.programId &&
+                        e.kind === quest.kind
+                )
+            ) {
+                status = 'credited';
+            } else if (!isWalletConnected || isDead) {
+                status = 'locked';
+            } else if (quest.complete) {
+                // Progress met locally — the claim is queued or in flight and
+                // the server remains the payout authority.
+                status = 'claiming';
             }
-
-            if (isDead) {
-                return { ...quest, status: 'locked' as QuestStatus };
-            }
-
-            if (quest.source === 'bank') {
-                return { ...quest, status: 'coming-soon' as QuestStatus };
-            }
-
-            if (quest.source === 'wallet' && !isWalletConnected) {
-                return { ...quest, status: 'locked' as QuestStatus };
-            }
-
-            if (quest.source === 'wallet' && transactionsToday < 1) {
-                return { ...quest, status: 'locked' as QuestStatus };
-            }
-
-            if (quest.source === 'habit' && !hasCheckedInToday()) {
-                return { ...quest, status: 'locked' as QuestStatus };
-            }
-
-            return { ...quest, status: 'available' as QuestStatus };
+            return { ...quest, status };
         });
-    }, [
-        isWalletConnected,
-        transactionsToday,
-        hasCheckedInToday,
-        isCompletedToday,
-        isDead,
-    ]);
+    }, [quests, creditedEntries, isWalletConnected, isDead]);
 
     const filteredQuests = useMemo(() => {
         const list =
             filter === 'All'
                 ? questsWithStatus
-                : questsWithStatus.filter((quest) => quest.category === filter);
+                : questsWithStatus.filter((quest) => quest.kind === filter);
 
         const order: Record<QuestStatus, number> = {
-            available: 0,
-            locked: 1,
-            'coming-soon': 2,
-            completed: 3,
+            active: 0,
+            claiming: 1,
+            locked: 2,
+            credited: 3,
         };
 
-        return list.sort((a, b) => order[a.status] - order[b.status]);
+        return [...list].sort((a, b) => order[a.status] - order[b.status]);
     }, [filter, questsWithStatus]);
 
-    const progress = getProgress();
-    const completedCount = questsWithStatus.filter(
-        (q) => q.status === 'completed'
+    const creditedCount = questsWithStatus.filter(
+        (q) => q.status === 'credited'
     ).length;
-    const availableCount = questsWithStatus.filter(
-        (q) => q.status === 'available'
+    const activeCount = questsWithStatus.filter(
+        (q) => q.status === 'active'
     ).length;
+    const progressPercent =
+        questsWithStatus.length > 0
+            ? (creditedCount / questsWithStatus.length) * 100
+            : 0;
 
-    function handleFilterPress(item: FilterCategory) {
+    function handleFilterPress(item: FilterKind) {
         if (filter === item) return;
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
         setFilter(item);
     }
 
-    function claimReward(quest: Quest) {
-        completeQuest(quest.id);
-        addBalance(quest.reward);
-        addXp(quest.rewardXp);
-        boostHappiness(10);
-        resetLifeTimer();
-        setClaimedId(quest.id);
-        setTimeout(() => setClaimedId((id) => (id === quest.id ? null : id)), 1600);
-    }
-
-    async function handleQuestPress(quest: Quest & { status: QuestStatus }) {
-        if (quest.status !== 'available') {
-            setRecentlyTappedId(quest.id);
-            setTimeout(() => setRecentlyTappedId((id) => (id === quest.id ? null : id)), 800);
-            return;
-        }
-
-        if (quest.source === 'social') {
-            try {
-                const result = await Share.share({
-                    message: `${petName ?? 'My Finagotchi'} and I are building a daily savings streak on Solana. Come raise yours with Finagotchi.`,
-                    url: 'https://www.finagotchi.app',
-                    title: 'Share your Finagotchi',
+    function handleQuestPress(quest: QuestWithProgress & { status: QuestStatus }) {
+        if (quest.status === 'claiming') {
+            // Idempotent re-enqueue (deduped queue-side) + immediate flush —
+            // the tap retries a claim stuck on a dead network or a declined
+            // signature.
+            if (walletAddress) {
+                useClaimQueue.getState().enqueue({
+                    wallet: walletAddress,
+                    day: quest.day,
+                    questId: quest.id,
+                    programId: quest.programId,
+                    kind: quest.kind,
                 });
-                if (result.action === Share.sharedAction) {
-                    Haptics.notificationAsync(
-                        Haptics.NotificationFeedbackType.Success
-                    );
-                    claimReward(quest);
-                }
-            } catch {
-                // User cancelled or share failed; do not reward.
+                void useClaimQueue.getState().flush();
             }
             return;
         }
 
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-        claimReward(quest);
+        if (quest.status === 'active' || quest.status === 'locked') {
+            setRecentlyTappedId(quest.id);
+            setTimeout(
+                () => setRecentlyTappedId((id) => (id === quest.id ? null : id)),
+                800
+            );
+        }
     }
-
-    const progressPercent =
-        progress.total > 0 ? (progress.completed / progress.total) * 100 : 0;
 
     return (
         <BottomSheet visible={visible} onClose={onClose} title="Quests">
@@ -197,15 +176,15 @@ export default function QuestsSheet({
                     <View style={styles.heroCopy}>
                         <Text style={styles.heroEyebrow}>Daily quests</Text>
                         <Text style={styles.heroTitle}>
-                            Earn rewards by caring for {petName ?? 'Finny'}.
+                            Earn verified rewards with {petName ?? 'Finny'}.
                         </Text>
                     </View>
 
                     <View style={styles.progressWrap}>
                         <View style={styles.progressHeader}>
-                            <Text style={styles.progressLabel}>Progress</Text>
+                            <Text style={styles.progressLabel}>Claimed</Text>
                             <Text style={styles.progressValue}>
-                                {completedCount}/{progress.total}
+                                {creditedCount}/{questsWithStatus.length}
                             </Text>
                         </View>
                         <View style={styles.progressTrack}>
@@ -247,6 +226,25 @@ export default function QuestsSheet({
                     </View>
                 ) : null}
 
+                {!isWalletConnected ? (
+                    <View style={styles.deathBanner}>
+                        <Ionicons
+                            name="wallet-outline"
+                            size={20}
+                            color={colors.cyan}
+                        />
+                        <View style={styles.deathText}>
+                            <Text style={styles.deathTitle}>
+                                Connect a wallet
+                            </Text>
+                            <Text style={styles.deathBody}>
+                                Quests are generated from your on-chain activity
+                                and verified on the server.
+                            </Text>
+                        </View>
+                    </View>
+                ) : null}
+
                 {/* FILTERS */}
                 <ScrollView
                     horizontal
@@ -254,12 +252,12 @@ export default function QuestsSheet({
                     contentContainerStyle={styles.filters}
                 >
                     {FILTERS.map((item) => {
-                        const active = filter === item;
+                        const active = filter === item.id;
 
                         return (
                             <PressableScale
-                                key={item}
-                                onPress={() => handleFilterPress(item)}
+                                key={item.id}
+                                onPress={() => handleFilterPress(item.id)}
                                 style={[
                                     styles.filter,
                                     active && styles.filterActive,
@@ -271,7 +269,7 @@ export default function QuestsSheet({
                                         active && styles.filterTextActive,
                                     ]}
                                 >
-                                    {item}
+                                    {item.label}
                                 </Text>
                             </PressableScale>
                         );
@@ -281,33 +279,51 @@ export default function QuestsSheet({
                 {/* QUEST LIST */}
                 <View style={styles.sectionHeader}>
                     <Text style={styles.sectionTitle}>Available</Text>
-                    <Text style={styles.sectionCount}>{availableCount}</Text>
+                    <Text style={styles.sectionCount}>{activeCount}</Text>
                 </View>
 
                 <View style={styles.questList}>
+                    {filteredQuests.length === 0 ? (
+                        <View style={styles.emptyState}>
+                            <Ionicons
+                                name="sparkles-outline"
+                                size={22}
+                                color={colors.textMuted}
+                            />
+                            <Text style={styles.emptyText}>
+                                {isWalletConnected
+                                    ? 'No quests in this category today. New quests arrive at midnight UTC.'
+                                    : 'Connect a wallet to see your quests.'}
+                            </Text>
+                        </View>
+                    ) : null}
+
                     {filteredQuests.map((quest) => {
-                        const isCompleted = quest.status === 'completed';
+                        const isCredited = quest.status === 'credited';
                         const isLocked = quest.status === 'locked';
-                        const isComingSoon = quest.status === 'coming-soon';
-                        const isAvailable = quest.status === 'available';
-                        const accent = QUEST_ACCENTS[quest.category];
-                        const isSponsored = quest.source === 'sponsored';
-                        const justClaimed = claimedId === quest.id;
-                        const tappedLocked = recentlyTappedId === quest.id && isLocked;
+                        const isClaiming = quest.status === 'claiming';
+                        const meta = KIND_META[quest.kind];
+                        const accent = meta.accent;
+                        const isSponsored = Boolean(quest.sponsor);
+                        const tappedInactive =
+                            recentlyTappedId === quest.id &&
+                            (isLocked || quest.status === 'active');
+                        const questPercent =
+                            quest.goal > 0
+                                ? Math.min(100, (quest.current / quest.goal) * 100)
+                                : 0;
 
                         return (
                             <PressableScale
                                 key={quest.id}
                                 onPress={() => handleQuestPress(quest)}
-                                disabled={isCompleted || isComingSoon}
-                                activeOpacity={isCompleted ? 0.68 : 0.92}
+                                disabled={isCredited}
+                                activeOpacity={isCredited ? 0.68 : 0.92}
                                 style={[
                                     styles.questCard,
                                     isSponsored && styles.questCardSponsored,
-                                    isCompleted && styles.questCompleted,
+                                    isCredited && styles.questCompleted,
                                     isLocked && styles.questLocked,
-                                    isComingSoon && styles.questLocked,
-                                    justClaimed && styles.questClaimed,
                                 ]}
                             >
                                 <View
@@ -321,7 +337,7 @@ export default function QuestsSheet({
                                 >
                                     <Ionicons
                                         name={
-                                            quest.icon as keyof typeof Ionicons.glyphMap
+                                            meta.icon as keyof typeof Ionicons.glyphMap
                                         }
                                         size={22}
                                         color={accent}
@@ -337,7 +353,7 @@ export default function QuestsSheet({
                                                     { color: accent },
                                                 ]}
                                             >
-                                                {quest.category.toUpperCase()}
+                                                {meta.label.toUpperCase()}
                                             </Text>
                                             {isSponsored ? (
                                                 <View style={styles.sponsoredBadge}>
@@ -347,7 +363,7 @@ export default function QuestsSheet({
                                                 </View>
                                             ) : null}
                                         </View>
-                                        {isCompleted ? (
+                                        {isCredited ? (
                                             <Ionicons
                                                 name="checkmark-circle"
                                                 size={18}
@@ -356,12 +372,6 @@ export default function QuestsSheet({
                                         ) : isLocked ? (
                                             <Ionicons
                                                 name="lock-closed"
-                                                size={16}
-                                                color={colors.textMuted}
-                                            />
-                                        ) : isComingSoon ? (
-                                            <Ionicons
-                                                name="time-outline"
                                                 size={16}
                                                 color={colors.textMuted}
                                             />
@@ -379,47 +389,61 @@ export default function QuestsSheet({
                                         style={styles.questDescription}
                                         numberOfLines={2}
                                     >
-                                        {isLocked && quest.source === 'wallet' && !isWalletConnected
-                                            ? 'Connect a wallet to unlock this reward.'
-                                            : isLocked && quest.source === 'wallet'
-                                            ? 'Make one wallet transaction today to unlock.'
-                                            : isLocked && quest.source === 'habit'
-                                            ? 'Check in today to unlock this reward.'
-                                            : isComingSoon
-                                            ? 'Bank linking is coming soon.'
-                                            : quest.description}
+                                        {quest.description}
                                     </Text>
+
+                                    {!isCredited && !isLocked ? (
+                                        <View style={styles.questProgressRow}>
+                                            <View style={styles.questProgressTrack}>
+                                                <View
+                                                    style={[
+                                                        styles.questProgressFill,
+                                                        {
+                                                            width: `${questPercent}%`,
+                                                            backgroundColor: accent,
+                                                        },
+                                                    ]}
+                                                />
+                                            </View>
+                                            <Text style={styles.questProgressText}>
+                                                {Math.min(quest.current, quest.goal)}/
+                                                {quest.goal}
+                                            </Text>
+                                        </View>
+                                    ) : null}
 
                                     <View style={styles.questBottom}>
                                         <View style={styles.rewardPills}>
                                             <View style={styles.pointPill}>
                                                 <Text style={styles.pointText}>
-                                                    +{quest.reward} pts
+                                                    +{quest.xp} pts
                                                 </Text>
                                             </View>
                                             <View style={styles.xpPill}>
                                                 <Text style={styles.xpText}>
-                                                    +{quest.rewardXp} XP
+                                                    +{quest.xp} XP
                                                 </Text>
                                             </View>
                                         </View>
 
-                                        {isAvailable && !isCompleted && (
+                                        {isClaiming ? (
                                             <Text style={styles.claimHint}>
-                                                {justClaimed
-                                                    ? 'Claimed!'
-                                                    : quest.source === 'social'
-                                                    ? 'Tap to share'
-                                                    : 'Tap to claim'}
+                                                {pendingClaims.some(
+                                                    (c) => c.questId === quest.id
+                                                )
+                                                    ? 'Verifying…'
+                                                    : 'Tap to verify'}
                                             </Text>
-                                        )}
+                                        ) : null}
                                     </View>
                                 </View>
 
-                                {tappedLocked ? (
+                                {tappedInactive ? (
                                     <View style={styles.lockedHintOverlay}>
                                         <Text style={styles.lockedHintText}>
-                                            Complete the requirement first
+                                            {isLocked
+                                                ? 'Complete the requirement first'
+                                                : 'Do it on-chain to complete this quest'}
                                         </Text>
                                     </View>
                                 ) : null}
@@ -431,16 +455,17 @@ export default function QuestsSheet({
                 {/* FOOTER */}
                 <View style={styles.footer}>
                     <Ionicons
-                        name="sparkles-outline"
+                        name="shield-checkmark-outline"
                         size={20}
                         color={colors.primary}
                     />
                     <Text style={styles.footerTitle}>
-                        Daily quests reset at midnight.
+                        Daily quests reset at midnight UTC.
                     </Text>
                     <Text style={styles.footerText}>
-                        Wallet and bank quests complete automatically once your
-                        accounts are connected.
+                        Rewards are verified against your on-chain activity and
+                        credited by the server — complete a quest and it claims
+                        automatically.
                     </Text>
                 </View>
             </ScrollView>
@@ -580,6 +605,22 @@ const styles = StyleSheet.create({
     questList: {
         gap: spacing.sm,
     },
+    emptyState: {
+        alignItems: 'center',
+        padding: spacing.lg,
+        gap: spacing.sm,
+        borderRadius: radius.lg,
+        backgroundColor: colors.surface,
+        borderWidth: 1,
+        borderColor: colors.border,
+    },
+    emptyText: {
+        color: colors.textMuted,
+        fontSize: typography.small,
+        lineHeight: 18,
+        textAlign: 'center',
+        fontFamily: 'Poppins_400Regular',
+    },
     questCard: {
         minHeight: 108,
         padding: spacing.md,
@@ -603,9 +644,6 @@ const styles = StyleSheet.create({
         opacity: 0.65,
         backgroundColor: 'rgba(255,255,255,0.02)',
         borderColor: 'rgba(255,255,255,0.05)',
-    },
-    questClaimed: {
-        borderColor: colors.primary,
     },
     questIcon: {
         width: 48,
@@ -659,6 +697,27 @@ const styles = StyleSheet.create({
         fontSize: typography.small,
         lineHeight: 18,
         fontFamily: 'Poppins_400Regular',
+    },
+    questProgressRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: spacing.sm,
+    },
+    questProgressTrack: {
+        flex: 1,
+        height: 5,
+        borderRadius: 3,
+        backgroundColor: 'rgba(255,255,255,0.08)',
+        overflow: 'hidden',
+    },
+    questProgressFill: {
+        height: '100%',
+        borderRadius: 3,
+    },
+    questProgressText: {
+        color: colors.textMuted,
+        fontSize: typography.small,
+        fontFamily: 'Poppins_700Bold',
     },
     questBottom: {
         flexDirection: 'row',

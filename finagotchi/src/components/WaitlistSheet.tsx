@@ -1,6 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
-    Image,
     ScrollView,
     StyleSheet,
     Text,
@@ -10,12 +9,10 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import Animated, {
-    Easing,
     ReduceMotion,
     useAnimatedStyle,
     useSharedValue,
     withDelay,
-    withRepeat,
     withSpring,
     withTiming,
 } from 'react-native-reanimated';
@@ -23,9 +20,10 @@ import * as Haptics from 'expo-haptics';
 
 import { BottomSheet } from './BottomSheet';
 import { Button } from './Button';
+import { HardwarePreview } from './HardwarePreview';
 import { PressableScale } from './PressableScale';
 import { useWaitlistStore } from '../features/waitlist/store';
-import { colors, radius, shadows, spacing, springs, typography } from '../theme/tokens';
+import { colors, radius, spacing, springs, typography } from '../theme/tokens';
 
 type Props = {
     visible: boolean;
@@ -63,52 +61,28 @@ const BULLETS = [
 const STAGGER_DELAY = 55;
 
 /**
- * Static fallback device placeholder shown when the live Spline scene cannot
- * be rendered inside the WebView.
+ * Hardware placeholder showing the device with a live pet on screen.
  */
-function StaticHardwarePlaceholder() {
+function HardwarePlaceholder() {
     const { width } = useWindowDimensions();
-    const float = useSharedValue(0);
-
-    useEffect(() => {
-        float.value = withRepeat(
-            withTiming(-10, {
-                duration: 2600,
-                easing: Easing.inOut(Easing.cubic),
-            }),
-            -1,
-            true
-        );
-    }, [float]);
-
-    const animatedStyle = useAnimatedStyle(() => ({
-        transform: [{ translateY: float.value }],
-    }));
-
-    const size = Math.min(width * 0.5, 200);
+    const size = Math.min(width * 0.58, 280);
 
     return (
         <View style={styles.placeholderStage}>
-            <Animated.View style={[styles.hardwareImageWrap, animatedStyle]}>
-                <Image
-                    source={require('../../assets/hardware-companion.png')}
-                    style={[
-                        styles.hardwareImage,
-                        { width: size, height: size },
-                    ]}
-                    resizeMode="contain"
-                />
-            </Animated.View>
-            <View style={[styles.deviceShadow, { width: size * 0.6 }]} />
+            {/* Ambient glow behind the device */}
+            <View
+                style={[
+                    styles.deviceGlow,
+                    {
+                        width: size * 0.85,
+                        height: size * 0.85,
+                        bottom: size * 0.05,
+                    },
+                ]}
+            />
+            <HardwarePreview size={size} stage="egg" mood="calm" />
         </View>
     );
-}
-
-/**
- * Hardware placeholder showing the companion robot image.
- */
-function HardwarePlaceholder() {
-    return <StaticHardwarePlaceholder />;
 }
 
 export default function WaitlistSheet({ visible, onClose }: Props) {
@@ -460,24 +434,13 @@ const styles = StyleSheet.create({
     placeholderStage: {
         alignItems: 'center',
         justifyContent: 'flex-end',
-        height: 220,
+        height: 240,
         marginBottom: spacing.md,
     },
-    hardwareImageWrap: {
-        alignItems: 'center',
-        justifyContent: 'center',
-    },
-    hardwareImage: {
-        resizeMode: 'contain',
-    },
-    deviceShadow: {
+    deviceGlow: {
         position: 'absolute',
-        bottom: 6,
-        height: 16,
-        borderRadius: 8,
-        backgroundColor: 'rgba(0,0,0,0.45)',
-        transform: [{ scaleY: 0.35 }],
-        zIndex: -1,
+        borderRadius: 999,
+        backgroundColor: 'rgba(53,215,255,0.08)',
     },
     eyebrow: {
         color: colors.primary,

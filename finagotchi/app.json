@@ -53,7 +53,15 @@
             }
           ]
         }
-      ]
+      ],
+      "permissions": [
+        "android.permission.BLUETOOTH",
+        "android.permission.BLUETOOTH_ADMIN",
+        "android.permission.BLUETOOTH_CONNECT"
+      ],
+      "runtimeVersion": {
+        "policy": "appVersion"
+      }
     },
     "web": {
       "favicon": "./assets/icon.png"
@@ -87,9 +95,16 @@
     ],
     "extra": {
       "router": {},
+      "questServerUrl": "https://api.finagotchi.app",
       "eas": {
         "projectId": "ec4eace7-d754-4d78-85f0-472c2987219e"
       }
+    },
+    "updates": {
+      "url": "https://u.expo.dev/ec4eace7-d754-4d78-85f0-472c2987219e"
+    },
+    "runtimeVersion": {
+      "policy": "appVersion"
     }
   }
 }

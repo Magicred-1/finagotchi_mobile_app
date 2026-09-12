@@ -1,13 +1,13 @@
 import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
-import { usePetStore } from '../features/pet/store';
+import { usePetStore, xpForNextLevel } from '../features/pet/store';
 import { colors, radius, spacing, typography } from '../theme/tokens';
 
 export function XPBar() {
     const xp = usePetStore((state) => state.xp);
     const level = usePetStore((state) => state.level);
 
-    const xpNeeded = level * 100;
+    const xpNeeded = xpForNextLevel(level);
     const percent = Math.min(100, Math.max(0, (xp / xpNeeded) * 100));
 
     return (
