@@ -87,6 +87,7 @@ function ProgressRing({ plan }: { plan: DcaPlan }) {
 
     return (
         <View style={styles.ringWrap}>
+            <View style={styles.ringDisc} pointerEvents="none" />
             <Svg width={RING_SIZE} height={RING_SIZE}>
                 <Circle
                     cx={RING_SIZE / 2}
@@ -110,7 +111,6 @@ function ProgressRing({ plan }: { plan: DcaPlan }) {
                     origin={`${RING_SIZE / 2}, ${RING_SIZE / 2}`}
                 />
             </Svg>
-            <View style={styles.ringDisc} pointerEvents="none" />
             <View style={styles.ringCenter} pointerEvents="none">
                 <Text style={styles.ringPercent}>
                     {`${Math.round(progress * 100)}%`}
