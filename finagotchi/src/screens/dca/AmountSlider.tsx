@@ -2,14 +2,16 @@ import React, { useEffect, useRef } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
+    ReduceMotion,
     runOnJS,
     useAnimatedStyle,
     useSharedValue,
+    withSpring,
     withTiming,
 } from 'react-native-reanimated';
 import * as Haptics from 'expo-haptics';
 
-import { colors, radius } from '../../theme/tokens';
+import { colors, radius, shadows, springs } from '../../theme/tokens';
 
 const TOUCH_HEIGHT = 44;
 const TRACK_HEIGHT = 8;
@@ -33,6 +35,8 @@ export function AmountSlider({ min, max, step, value, onChange }: Props) {
     const progress = useSharedValue((value - min) / (max - min));
     const trackWidth = useSharedValue(0);
     const lastSnapped = useSharedValue(value);
+    // 1 while the finger is on the knob: drives the knob's grow/shrink.
+    const active = useSharedValue(0);
 
     const onChangeRef = useRef(onChange);
     onChangeRef.current = onChange;
@@ -41,6 +45,7 @@ export function AmountSlider({ min, max, step, value, onChange }: Props) {
         lastSnapped.value = value;
         progress.value = withTiming((value - min) / (max - min), {
             duration: 120,
+            reduceMotion: ReduceMotion.System,
         });
     }, [value, min, max, progress, lastSnapped]);
 
@@ -52,6 +57,10 @@ export function AmountSlider({ min, max, step, value, onChange }: Props) {
         .failOffsetY([-16, 16])
         .onBegin((event) => {
             'worklet';
+            active.value = withSpring(1, {
+                ...springs.snappy,
+                reduceMotion: ReduceMotion.System,
+            });
             // Usable track is inset by half a knob on each side.
             const usable = trackWidth.value - KNOB_SIZE;
             if (usable <= 0) return;
@@ -82,6 +91,13 @@ export function AmountSlider({ min, max, step, value, onChange }: Props) {
                 runOnJS(onChangeRef.current)(snapped);
                 runOnJS(Haptics.selectionAsync)();
             }
+        })
+        .onFinalize(() => {
+            'worklet';
+            active.value = withSpring(0, {
+                ...springs.snappy,
+                reduceMotion: ReduceMotion.System,
+            });
         });
 
     const fillStyle = useAnimatedStyle(() => ({
@@ -93,6 +109,8 @@ export function AmountSlider({ min, max, step, value, onChange }: Props) {
             {
                 translateX: progress.value * (trackWidth.value - KNOB_SIZE),
             },
+            // Direct-manipulation cue: the knob grows under the finger.
+            { scale: 1 + active.value * 0.2 },
         ],
     }));
 
@@ -144,5 +162,6 @@ const styles = StyleSheet.create({
         backgroundColor: colors.primary,
         borderWidth: 3,
         borderColor: colors.text,
+        ...shadows.small,
     },
 });

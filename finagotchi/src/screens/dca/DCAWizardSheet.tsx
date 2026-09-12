@@ -49,7 +49,7 @@ import { TokenLogo } from './TokenLogo';
 import { cadenceAdverb, formatUsdc, humanDuration } from './format';
 import { formatChange, formatPrice, useTokenPrices } from './prices';
 
-const STEP_TITLES = ['Pick a stock', 'Amount & cadence', 'Review', 'Confirm'] as const;
+const STEP_TITLES = ['Pick a stock', 'Amount & cadence', 'Review'] as const;
 
 const BUDGET_OPTIONS = [20, 50, 100, 250];
 
@@ -180,7 +180,10 @@ function StepDot({ active }: { active: boolean }) {
     const width = useSharedValue(active ? 18 : 8);
 
     useEffect(() => {
-        width.value = withSpring(active ? 18 : 8, springs.snappy);
+        width.value = withSpring(active ? 18 : 8, {
+            ...springs.snappy,
+            reduceMotion: ReduceMotion.System,
+        });
     }, [active, width]);
 
     const style = useAnimatedStyle(() => ({
@@ -189,6 +192,35 @@ function StepDot({ active }: { active: boolean }) {
     }));
 
     return <Animated.View style={[styles.dot, style]} />;
+}
+
+/**
+ * The "what you're signing up for" sentence, shared by the Review and
+ * Confirm steps so the two never drift apart.
+ */
+function ReviewSummary({
+    ticker,
+    amountPerTick,
+    cadenceWord,
+    budget,
+}: {
+    ticker: string;
+    amountPerTick: number;
+    cadenceWord: string;
+    budget: number;
+}) {
+    return (
+        <Text style={styles.reviewText}>
+            Auto-buys up to{' '}
+            <Text style={styles.reviewValue}>
+                {formatUsdc(amountPerTick)} USDC
+            </Text>{' '}
+            of <Text style={styles.reviewValue}>{ticker}</Text> {cadenceWord}{' '}
+            until{' '}
+            <Text style={styles.reviewValue}>{formatUsdc(budget)} USDC</Text>{' '}
+            runs out. Output to your wallet. Pause anytime.
+        </Text>
+    );
 }
 
 type Props = {
@@ -269,7 +301,7 @@ export function DCAWizardSheet({
         [contentAnim]
     );
 
-    const canContinue = step === 1 ? !belowRoundMinimum : step === 2;
+    const canContinue = step === 1 ? !belowRoundMinimum : true;
 
     const handleConfirm = useCallback(async () => {
         if (!wallet.connected || !wallet.publicKey || !ticker) return;
@@ -413,7 +445,8 @@ export function DCAWizardSheet({
                                             transform: [{ translateY: 8 }],
                                         })
                                             .delay(index * 40)
-                                            .duration(220)}
+                                            .duration(220)
+                                            .reduceMotion(ReduceMotion.System)}
                                     >
                                         <PressableScale
                                             onPress={() => {
@@ -571,10 +604,17 @@ export function DCAWizardSheet({
                                 onChange={setPercent}
                             />
                             {belowRoundMinimum && (
-                                <Text style={styles.errorText}>
-                                    Each buy needs at least 10 USDC. Raise the
-                                    percentage or the budget.
-                                </Text>
+                                <View style={styles.errorRow}>
+                                    <Ionicons
+                                        name="alert-circle-outline"
+                                        size={14}
+                                        color={colors.danger}
+                                    />
+                                    <Text style={styles.errorText}>
+                                        Each buy needs at least 10 USDC. Raise
+                                        the percentage or the budget.
+                                    </Text>
+                                </View>
                             )}
 
                             <Text style={styles.sectionLabel}>Cadence</Text>
@@ -586,9 +626,16 @@ export function DCAWizardSheet({
                                 {CADENCE_CAPTIONS[cadenceId]}
                             </Text>
 
-                            <Text style={styles.mathLine}>
-                                {`${formatUsdc(amountPerTick)} USDC of ${ticker ?? 'stock'} every ${CADENCE_NOUNS[cadenceId]}, ${buys} buys over ${humanDuration(buys * intervalSec)}.`}
-                            </Text>
+                            <View style={styles.mathCard}>
+                                <Ionicons
+                                    name="repeat-outline"
+                                    size={14}
+                                    color={colors.primary}
+                                />
+                                <Text style={styles.mathLine}>
+                                    {`${formatUsdc(amountPerTick)} USDC of ${ticker ?? 'stock'} every ${CADENCE_NOUNS[cadenceId]}, ${buys} buys over ${humanDuration(buys * intervalSec)}.`}
+                                </Text>
+                            </View>
                         </View>
                     )}
 
@@ -610,22 +657,12 @@ export function DCAWizardSheet({
                                     </View>
                                 </View>
                                 <View style={styles.receiptDivider} />
-                                <Text style={styles.reviewText}>
-                                    Auto-buys up to{' '}
-                                    <Text style={styles.reviewValue}>
-                                        {formatUsdc(amountPerTick)} USDC
-                                    </Text>{' '}
-                                    of{' '}
-                                    <Text style={styles.reviewValue}>
-                                        {selectedToken.ticker}
-                                    </Text>{' '}
-                                    {cadenceWord} until{' '}
-                                    <Text style={styles.reviewValue}>
-                                        {formatUsdc(budget)} USDC
-                                    </Text>{' '}
-                                    runs out. Output to your wallet. Pause
-                                    anytime.
-                                </Text>
+                                <ReviewSummary
+                                    ticker={selectedToken.ticker}
+                                    amountPerTick={amountPerTick}
+                                    cadenceWord={cadenceWord}
+                                    budget={budget}
+                                />
                                 {recreate && (
                                     <Text style={styles.recreateText}>
                                         Recreating a plan: confirming first
@@ -681,56 +718,35 @@ export function DCAWizardSheet({
                                     cycle.
                                 </Text>
                             </View>
-                        </View>
-                    )}
-
-                    {step === 3 &&
-                        (wallet.connected ? (
-                            <View style={styles.section}>
-                                <View style={styles.receiptCard}>
-                                    <Text style={styles.reviewText}>
-                                        Auto-buys up to{' '}
-                                        <Text style={styles.reviewValue}>
-                                            {formatUsdc(amountPerTick)} USDC
-                                        </Text>{' '}
-                                        of{' '}
-                                        <Text style={styles.reviewValue}>
-                                            {ticker}
-                                        </Text>{' '}
-                                        {cadenceWord} until{' '}
-                                        <Text style={styles.reviewValue}>
-                                            {formatUsdc(budget)} USDC
-                                        </Text>{' '}
-                                        runs out. Output to your wallet. Pause
-                                        anytime.
+                            {wallet.connected ? (
+                                <>
+                                    <Text style={styles.approvalsText}>
+                                        {recreate
+                                            ? "You'll approve a login message (once per ~24h), a cancel signature, and a deposit signature."
+                                            : "You'll approve a login message (once per ~24h) and 1 deposit signature."}
                                     </Text>
-                                </View>
-                                <Text style={styles.approvalsText}>
-                                    {recreate
-                                        ? "You'll approve a login message (once per ~24h), a cancel signature, and a deposit signature."
-                                        : "You'll approve a login message (once per ~24h) and 1 deposit signature."}
-                                </Text>
-                                {error !== null && (
-                                    <Text style={styles.errorText}>
-                                        {error}
-                                    </Text>
-                                )}
-                                {submitting && (
-                                    <View style={styles.submittingRow}>
-                                        <ActivityIndicator
-                                            size="small"
-                                            color={colors.primary}
-                                        />
-                                        <Text style={styles.submittingText}>
-                                            {recreate
-                                                ? 'Approve the login message, then the cancel and deposit signatures…'
-                                                : 'Approve the login message, then 1 deposit signature…'}
+                                    {error !== null && (
+                                        <Text style={styles.errorText}>
+                                            {error}
                                         </Text>
-                                    </View>
-                                )}
-                            </View>
-                        ) : (
-                            <View style={styles.section}>
+                                    )}
+                                    {submitting && (
+                                        <View style={styles.submittingRow}>
+                                            <ActivityIndicator
+                                                size="small"
+                                                color={colors.primary}
+                                            />
+                                            <Text
+                                                style={styles.submittingText}
+                                            >
+                                                {recreate
+                                                    ? 'Approve the login message, then the cancel and deposit signatures…'
+                                                    : 'Approve the login message, then 1 deposit signature…'}
+                                            </Text>
+                                        </View>
+                                    )}
+                                </>
+                            ) : (
                                 <View style={styles.receiptCard}>
                                     <Ionicons
                                         name="wallet-outline"
@@ -741,13 +757,14 @@ export function DCAWizardSheet({
                                         Connect wallet in onboarding first
                                     </Text>
                                 </View>
-                            </View>
-                        ))}
+                            )}
+                        </View>
+                    )}
                 </Animated.View>
             </ScrollView>
 
             <View style={styles.footer}>
-                {step === 0 ? null : step < 3 ? (
+                {step === 0 ? null : step < 2 ? (
                     <Button
                         title="Review plan"
                         disabled={!canContinue}
@@ -882,6 +899,8 @@ const styles = StyleSheet.create({
         color: colors.text,
         fontSize: typography.title,
         fontFamily: 'Poppins_700Bold',
+        letterSpacing: tracking.title * typography.title,
+        fontVariant: ['tabular-nums'],
         textAlign: 'center',
         marginTop: spacing.xs,
     },
@@ -974,10 +993,23 @@ const styles = StyleSheet.create({
         fontSize: 11,
         fontFamily: 'Poppins_400Regular',
     },
+    mathCard: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: spacing.sm,
+        backgroundColor: 'rgba(53,215,255,0.08)',
+        borderRadius: radius.md,
+        borderWidth: 1,
+        borderColor: 'rgba(53,215,255,0.25)',
+        paddingVertical: spacing.sm,
+        paddingHorizontal: spacing.md,
+    },
     mathLine: {
-        color: colors.textMuted,
+        flex: 1,
+        color: colors.text,
         fontSize: typography.small,
         fontFamily: 'Poppins_500Medium',
+        fontVariant: ['tabular-nums'],
     },
     receiptCard: {
         backgroundColor: colors.background,
@@ -1038,7 +1070,13 @@ const styles = StyleSheet.create({
         fontFamily: 'Poppins_400Regular',
         lineHeight: 20,
     },
+    errorRow: {
+        flexDirection: 'row',
+        alignItems: 'flex-start',
+        gap: spacing.xs,
+    },
     errorText: {
+        flex: 1,
         color: colors.danger,
         fontSize: typography.small,
         fontFamily: 'Poppins_500Medium',
