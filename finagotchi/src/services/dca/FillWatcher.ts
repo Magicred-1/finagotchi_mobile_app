@@ -146,6 +146,8 @@ export interface FillWatcherDeps {
 
 export interface FillWatcher {
     poll: () => Promise<void>;
+    /** Polls a single plan immediately, ignoring its backoff. */
+    refresh: (planId: string) => Promise<void>;
     /** Earliest time (ms) the plan may be polled again; null when not backing off. */
     nextRetryAt: (planId: string) => number | null;
 }
@@ -197,6 +199,11 @@ export function createFillWatcher(deps: FillWatcherDeps = {}): FillWatcher {
         }
 
         const terminal = TERMINAL_PLAN_STATUS[order.state] ?? null;
+        // Keep the raw Jupiter state on the plan: orders are only
+        // cancellable in `active`/`withdrawing`, and the UI gates Pause on
+        // this (a fresh order sits in `depositing` while the deposit
+        // confirms, and cancel fails there by design).
+        usePlanStore.getState().updatePlan(plan.id, { orderState: order.state });
         const decimals = tokenByMint(plan.outputMint)?.decimals ?? 8;
         const spentTotal = order.inputAmountUsed;
         const holdingsTotal = order.outputAmountTotal / 10 ** decimals;
@@ -275,6 +282,16 @@ export function createFillWatcher(deps: FillWatcherDeps = {}): FillWatcher {
 
         nextRetryAt(planId) {
             return retryAtByPlan.get(planId) ?? null;
+        },
+
+        async refresh(planId) {
+            retryAtByPlan.delete(planId);
+            const plan = usePlanStore
+                .getState()
+                .plans.find((p) => p.id === planId);
+            if (plan && plan.status === 'active' && plan.dcaAccountPubkey) {
+                await pollPlan(plan);
+            }
         },
     };
 }
