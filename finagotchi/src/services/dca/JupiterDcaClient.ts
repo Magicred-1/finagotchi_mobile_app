@@ -291,9 +291,14 @@ async function rpcCall<T>(method: string, params: unknown[]): Promise<T | null> 
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }),
         });
+        if (!res.ok) {
+            console.warn(`dca: mainnet RPC ${method} returned HTTP ${res.status}`);
+            return null;
+        }
         const data = (await readBody(res)) as { result?: T } | null;
         return data?.result ?? null;
-    } catch {
+    } catch (err) {
+        console.warn(`dca: mainnet RPC ${method} unreachable`, err);
         return null;
     }
 }
@@ -304,7 +309,7 @@ async function rpcCall<T>(method: string, params: unknown[]): Promise<T | null> 
  * Jupiter spends ~30s trying to land it and the blockhash expires.
  * Preflight failures (RPC down) skip the check rather than block the flow.
  */
-async function preflightFunding(
+export async function preflightFunding(
     walletPubkey: string,
     totalBudget: number
 ): Promise<void> {
@@ -536,7 +541,22 @@ export async function cancelPlanOrder({
     });
     const cancelData = cancel.data as { transaction?: string; requestId?: string };
     if (cancel.status !== 200 || !cancelData.transaction || !cancelData.requestId) {
-        throw new Error(`dca: cancel failed: ${errorMessage(cancel.status, cancel.data)}`);
+        const raw = errorMessage(cancel.status, cancel.data);
+        // Jupiter only allows cancelling in `active`/`withdrawing` — a fresh
+        // order is `depositing` while the deposit confirms, and `executing`
+        // while a round fills. Say so instead of surfacing the state machine.
+        const stateMatch = /Cannot cancel DCA order in '(\w+)' state/.exec(raw);
+        if (stateMatch) {
+            const state = stateMatch[1];
+            throw new Error(
+                state === 'depositing'
+                    ? 'Your plan is still activating — the deposit is confirming on-chain. Try again in a few seconds.'
+                    : state === 'executing'
+                      ? 'A buy is executing right now — try again in a few seconds.'
+                      : `This plan can't be paused while it's ${state}.`
+            );
+        }
+        throw new Error(`dca: cancel failed: ${raw}`);
     }
 
     const signedTransaction = await signTransaction(cancelData.transaction);

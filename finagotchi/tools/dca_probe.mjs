@@ -42,9 +42,14 @@ const SOL_MINT = 'So11111111111111111111111111111111111111112';
 const MAINNET_RPC =
   env.EXPO_PUBLIC_JUPITER_RPC ?? 'https://api.mainnet-beta.solana.com';
 
-const wallet = Keypair.generate();
+const wallet = env.BS58_PRIVATE_KEY
+  ? Keypair.fromSecretKey(bs58.decode(env.BS58_PRIVATE_KEY))
+  : Keypair.generate();
 const owner = wallet.publicKey.toBase58();
-console.log('probe wallet (unfunded):', owner);
+console.log(
+  env.BS58_PRIVATE_KEY ? 'using funded wallet:' : 'probe wallet (unfunded):',
+  owner
+);
 
 async function post(path, body, token) {
   const res = await fetch(BASE + path, {
@@ -262,4 +267,68 @@ if (mode === 'order') {
     '[order] crafted keys:',
     tx.message.staticAccountKeys.map((k) => k.toBase58().slice(0, 8)).join(' ')
   );
+}
+
+if (mode === 'canonical') {
+  const c = await craft(token);
+  const tx = VersionedTransaction.deserialize(
+    new Uint8Array(Buffer.from(c.transaction, 'base64'))
+  );
+  const { TransactionMessage, Transaction } = await import('@solana/web3.js');
+  const decompiled = TransactionMessage.decompile(tx.message);
+  const canonical = new Transaction({
+    feePayer: tx.message.staticAccountKeys[0],
+    recentBlockhash: tx.message.recentBlockhash,
+  }).add(...decompiled.instructions);
+  canonical.sign(wallet);
+  const res = await submitOrder(
+    token,
+    c.requestId,
+    canonical
+      .serialize({ requireAllSignatures: false, verifySignatures: false })
+      .toString('base64')
+  );
+  console.log('[canonical] submit ->', res.status, JSON.stringify(res.data));
+}
+
+if (mode === 'selfbuilt') {
+  const c = await craft(token);
+  console.log('[selfbuilt] craft receiver:', c.receiverAddress, 'ita:', c.inputTokenAccount);
+  const {
+    Transaction,
+    TransactionInstruction,
+    PublicKey: PK,
+  } = await import('@solana/web3.js');
+  const owner2 = wallet.publicKey;
+  // SPL Token Transfer (ix 3) built by hand — no spl-token dependency.
+  const TOKEN_PROGRAM = new PK('TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA');
+  const ATA_PROGRAM = new PK('ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL');
+  const usdcMint = new PK(USDC);
+  const [fromAta] = PK.findProgramAddressSync(
+    [owner2.toBuffer(), TOKEN_PROGRAM.toBuffer(), usdcMint.toBuffer()],
+    ATA_PROGRAM
+  );
+  const toAta = new PK(c.inputTokenAccount ?? c.receiverAddress);
+  const data = Buffer.alloc(9);
+  data[0] = 3;
+  data.writeBigUInt64LE(20_000_000n, 1);
+  const transferIx = {
+    programId: TOKEN_PROGRAM,
+    keys: [
+      { pubkey: fromAta, isSigner: false, isWritable: true },
+      { pubkey: toAta, isSigner: false, isWritable: true },
+      { pubkey: owner2, isSigner: true, isWritable: false },
+    ],
+    data,
+  };
+  const bh = (await rpc('getLatestBlockhash', [{ commitment: 'finalized' }])).result
+    .value.blockhash;
+  const tx2 = new Transaction({ feePayer: owner2, recentBlockhash: bh }).add(transferIx);
+  tx2.sign(wallet);
+  const res = await submitOrder(
+    token,
+    c.requestId,
+    tx2.serialize().toString('base64')
+  );
+  console.log('[selfbuilt] submit ->', res.status, JSON.stringify(res.data));
 }
