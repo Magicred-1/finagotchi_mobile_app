@@ -4,6 +4,7 @@ import type { Web3MobileWallet } from '@solana-mobile/mobile-wallet-adapter-prot
 import type { Wallet as DynamicWallet } from '@dynamic-labs/legacy-client';
 
 import { dynamicClient } from '../../wallet/dynamicClient';
+import { normalizeSignatureBytes } from './signatureBytes';
 import type { AuthSigner } from './client';
 
 // Same identity conventions as src/wallet/useWallet.ts.
@@ -81,10 +82,7 @@ export function createDynamicAuthSigner(): AuthSigner {
 
         const signer = dynamicClient.solana.getSigner({ wallet: solWallet });
         const { signature } = await signer.signMessage(message);
-        if (signature.length !== 64) {
-            throw new Error('Dynamic did not return an ed25519 signature');
-        }
-        return signature;
+        return normalizeSignatureBytes(signature, 'Dynamic');
     };
 }
 
