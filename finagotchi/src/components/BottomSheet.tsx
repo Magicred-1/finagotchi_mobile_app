@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
+    BackHandler,
     Keyboard,
-    Modal,
     Platform,
     Pressable,
     StyleSheet,
@@ -25,6 +25,7 @@ import Animated, {
 } from 'react-native-reanimated';
 
 import { colors, radius, spacing, springs, typography } from '../theme/tokens';
+import { useSheetPortal } from './SheetPortal';
 
 type Props = {
     visible: boolean;
@@ -61,9 +62,12 @@ export function BottomSheet({ visible, onClose, title, children }: Props) {
     const opacity = useSharedValue(0);
     const keyboardOffset = useSharedValue(0);
 
-    // The sheet renders inside a Modal so it escapes the parent's layout and
-    // clipping (RN has no portals). The Modal stays mounted through the close
-    // animation and unmounts only when it finishes.
+    // The sheet renders through a portal at the app root so it escapes the
+    // parent's layout and clipping (RN has no portals). Deliberately NOT an
+    // RN Modal: a Modal is a separate native window that draws above
+    // Dynamic's embedded-webview overlay, burying Dynamic's signature UI
+    // under our sheets. The host stays mounted through the close animation
+    // and the node unmounts only when it finishes.
     const [modalVisible, setModalVisible] = useState(visible);
 
     // Keep the latest onClose in a ref so `close` stays referentially stable.
@@ -183,20 +187,24 @@ export function BottomSheet({ visible, onClose, title, children }: Props) {
         pointerEvents: opacity.value > 0 ? 'auto' : 'none',
     }));
 
+    // Hardware back replaces Modal's onRequestClose.
+    useEffect(() => {
+        if (!modalVisible) return;
+        const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+            close();
+            return true;
+        });
+        return () => sub.remove();
+    }, [modalVisible, close]);
+
     const sheetStyle = useAnimatedStyle(() => ({
         transform: [
             { translateY: translateY.value + keyboardOffset.value },
         ],
     }));
 
-    return (
-        <Modal
-            visible={modalVisible}
-            transparent
-            animationType="none"
-            statusBarTranslucent
-            onRequestClose={() => close()}
-        >
+    useSheetPortal(
+        modalVisible ? (
             <View style={styles.container}>
                 <Animated.View
                     style={[
@@ -236,13 +244,15 @@ export function BottomSheet({ visible, onClose, title, children }: Props) {
                     {children}
                 </Animated.View>
             </View>
-        </Modal>
+        ) : null
     );
+
+    return null;
 }
 
 const styles = StyleSheet.create({
     container: {
-        flex: 1,
+        ...StyleSheet.absoluteFillObject,
         justifyContent: 'flex-end',
     },
     backdrop: {
