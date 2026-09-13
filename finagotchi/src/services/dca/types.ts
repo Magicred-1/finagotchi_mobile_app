@@ -31,6 +31,13 @@ export interface DcaPlan {
     status: DcaPlanStatus;
     /** Jupiter Trigger DCA order id (UUID); null until the create call lands. */
     dcaAccountPubkey: string | null;
+    /**
+     * Raw Jupiter order state from the latest poll
+     * (depositing|active|executing|withdrawing|completed|cancelled|deposit_failed).
+     * Jupiter only allows cancelling in `active`/`withdrawing`, so the UI
+     * gates Pause on this instead of the optimistic local status.
+     */
+    orderState?: string | null;
     /** Consecutive missed polls/executions driving the overdue state. */
     missedCount: number;
     createdAt: string;

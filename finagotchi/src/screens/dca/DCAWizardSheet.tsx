@@ -361,6 +361,7 @@ export function DCAWizardSheet({
                 nextExecutionAt: Math.floor(Date.now() / 1000) + intervalSec,
                 status: 'active',
                 dcaAccountPubkey: orderId,
+                orderState: 'depositing',
                 missedCount: 0,
                 createdAt: new Date().toISOString(),
             });
