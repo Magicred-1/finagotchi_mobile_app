@@ -19,6 +19,13 @@
       },
       "channel": "preview"
     },
+    "devnet": {
+      "distribution": "internal",
+      "android": {
+        "buildType": "apk"
+      },
+      "channel": "devnet"
+    },
     "beta": {
       "distribution": "store",
       "autoIncrement": true,
