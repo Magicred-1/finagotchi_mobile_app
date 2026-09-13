@@ -12,6 +12,7 @@ import { useOnboardingStore } from '../src/features/onboarding/store';
 import { useWalletStore } from '../src/features/wallet/store';
 import { usePetStore } from '../src/features/pet/store';
 import { useWallet } from '../src/wallet/useWallet';
+import { SheetPortalHost } from '../src/components/SheetPortal';
 import { useFillWatcher } from '../src/services/dca';
 import { useQuestEngine } from '../src/features/quest-engine/useQuestEngine';
 
@@ -118,10 +119,28 @@ function AppContent() {
           headerShown: false,
         }}
       />
-      <Stack.Screen name="dca/[id]" options={{ headerShown: false }} />
+      <Stack.Screen
+        name="dca/[id]"
+        options={{
+          headerShown: false,
+          // Rendered as a bottom sheet over the home screen; BottomSheet
+          // drives the motion, so the stack itself stays transparent/still.
+          presentation: 'transparentModal',
+          animation: 'none',
+          contentStyle: { backgroundColor: 'transparent' },
+        }}
+      />
       <Stack.Screen name="hardware/binding" options={{ headerShown: false }} />
     </Stack>
   );
 
-  return content;
+  return (
+    <>
+      {content}
+      {/* Sheets render here (in-tree, above screens) instead of RN Modals so
+          Dynamic's native overlay — signature prompts, key export — always
+          draws above them. */}
+      <SheetPortalHost />
+    </>
+  );
 }

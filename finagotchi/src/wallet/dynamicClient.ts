@@ -9,6 +9,16 @@ export const dynamicClient = createClient({
     appName: 'Finagotchi',
 })
     .extend(
-        ReactNativeExtension({ appOrigin: 'https://www.finagotchi.app' })
+        ReactNativeExtension({
+            appOrigin: 'https://www.finagotchi.app',
+            // Host Dynamic's UI (signature prompts, key export, step-up auth)
+            // in a native overlay window outside the RN view tree. Without
+            // it, Dynamic renders in an in-tree WebView that sits UNDERNEATH
+            // the app's RN Modals (our sheets) when they request a signature.
+            // Keep <dynamicClient.reactNative.WebView /> mounted: it becomes
+            // a no-op on this path, and is the required fallback on binaries
+            // where the EmbeddedWebView native module isn't linked yet.
+            embeddedWebView: true,
+        })
     )
     .extend(SolanaExtension());
