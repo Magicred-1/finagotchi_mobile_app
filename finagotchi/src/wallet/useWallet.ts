@@ -17,14 +17,20 @@ import type { Web3MobileWallet } from '@solana-mobile/mobile-wallet-adapter-prot
 import type { Base64EncodedAddress } from '@solana-mobile/mobile-wallet-adapter-protocol';
 import type { Wallet as DynamicWallet } from '@dynamic-labs/legacy-client';
 import { useReactiveClient } from '@dynamic-labs/legacy-react-hooks';
+import nacl from 'tweetnacl';
 import bs58 from 'bs58';
 
 import { dynamicClient } from './dynamicClient';
 import { useWalletStore, type WalletConnectionType } from '../features/wallet/store';
 import { observeOutgoingTx } from '../features/quest-engine/observe';
+import { normalizeSignatureBytes } from '../features/quest-engine/signatureBytes';
 
 const APP_URL = 'https://www.finagotchi.app';
-const CLUSTER = 'mainnet-beta';
+const RAW_CLUSTER = process.env.EXPO_PUBLIC_SOLANA_CLUSTER ?? 'mainnet-beta';
+// MWA chain ids are 'solana:mainnet' | 'solana:devnet' | 'solana:testnet' —
+// 'solana:mainnet-beta' is invalid and makes wallets unable to simulate or
+// sign correctly. Normalize the web3.js-style cluster name.
+const CLUSTER = RAW_CLUSTER === 'mainnet-beta' ? 'mainnet' : RAW_CLUSTER;
 const SOLANA_RPC =
     process.env.EXPO_PUBLIC_SOLANA_RPC ??
     'https://api.mainnet-beta.solana.com';
@@ -57,8 +63,11 @@ export type Wallet = {
         creatureName: string
     ) => Promise<{ signature: string; mintAddress: string }>;
     payReviveFee: () => Promise<string>;
-    /** Signs and sends a transaction through the active connection (Dynamic or MWA). */
-    signAndSendTransaction: (transaction: Transaction) => Promise<string>;
+    /** Signs and sends a transaction through the active connection (Dynamic or MWA). `chain` forces a chain-scoped MWA session for transactions on a different cluster (e.g. mainnet DCA while the app runs devnet). */
+    signAndSendTransaction: (
+        transaction: Transaction,
+        chain?: `solana:${string}`
+    ) => Promise<string>;
     /** Signs an arbitrary UTF-8 message; returns a bs58 ed25519 signature. */
     signMessage: (message: string) => Promise<string>;
     /** Signs (without sending) a base64 VersionedTransaction; returns base64. */
@@ -175,7 +184,12 @@ export function toHumanReadableWalletError(error: unknown): Error {
     }
     if (/invalid deposit transaction|accounts modified/.test(normalized)) {
         return friendly(
-            'The deposit was rejected by Jupiter — please try again.'
+            "This wallet can't sign Jupiter DCA deposits — it alters the transaction before signing. Try Phantom, or connect with email/passkey instead."
+        );
+    }
+    if (/not properly formed|cannot be signed|can't be signed|rewrote the deposit/.test(normalized)) {
+        return friendly(
+            "This wallet can't sign Jupiter DCA deposits — it rewrites transactions before signing. Try Phantom, or connect with email/passkey instead."
         );
     }
 
@@ -229,8 +243,30 @@ const MWA_IDENTITY = {
  * when the token is stale or rejected (wallets return
  * "-1/authorization request failed" in that case). A fresh token from the
  * fallback is persisted so subsequent calls take the cheap path again.
+ *
+ * A `chain` override forces a fresh authorize on that chain WITHOUT
+ * persisting the token (the app's session stays on CLUSTER). Wallets scope
+ * signing behaviour to the session chain: given a mainnet transaction inside
+ * a devnet session, the Seeker wallet rewrites it — same wallet signs the
+ * same deposit as-is when the session chain is mainnet.
  */
-async function mwaAuthorize(wallet: Web3MobileWallet): Promise<void> {
+/** Chain-scoped token for mainnet signing sessions (kept out of the store so the app's CLUSTER session token is untouched). */
+let mainnetAuthToken: string | null = null;
+
+async function mwaAuthorize(
+    wallet: Web3MobileWallet,
+    chain?: `solana:${string}`
+): Promise<void> {
+    if (chain) {
+        // NOTE: always do a full authorize for DCA signings instead of
+        // reauthorizing the cached session. Evidence from the field: the
+        // wallet signed the crafted deposit cleanly right after a FRESH
+        // mainnet authorize, but injects a phantom fee account into the tx
+        // on later signings that reused the cached session.
+        const result = await wallet.authorize({ chain, identity: MWA_IDENTITY });
+        mainnetAuthToken = result.auth_token;
+        return;
+    }
     const authToken = useWalletStore.getState().session.authToken;
     if (authToken) {
         try {
@@ -254,6 +290,26 @@ function deserializeVersionedTx(base64Tx: string): VersionedTransaction {
     return VersionedTransaction.deserialize(
         new Uint8Array(Buffer.from(base64Tx, 'base64'))
     );
+}
+
+type Web3jsMwa = typeof import('@solana-mobile/mobile-wallet-adapter-protocol-web3js');
+
+/**
+ * Metro's dynamic import() interop for this package's CJS react-native entry
+ * is inconsistent — the namespace sometimes lands on `default`. Resolve both
+ * so a stale or reshuffled bundle fails with a useful message.
+ */
+async function loadMwaTransact(): Promise<Web3jsMwa['transact']> {
+    const mod = (await import(
+        '@solana-mobile/mobile-wallet-adapter-protocol-web3js'
+    )) as Web3jsMwa & { default?: Web3jsMwa };
+    const transact = mod.transact ?? mod.default?.transact;
+    if (!transact) {
+        throw new Error(
+            'Wallet module failed to load — restart Metro with a cleared cache.'
+        );
+    }
+    return transact;
 }
 
 /**
@@ -307,7 +363,7 @@ function applySignatureToCraftedTx(
     return Buffer.from(transaction.serialize()).toString('base64');
 }
 
-/** LUTs are mainnet accounts for Jupiter-crafted deposits. */
+/** LUTs for Jupiter-crafted deposits are mainnet accounts. */
 const MAINNET_RPC =
     process.env.EXPO_PUBLIC_JUPITER_RPC ?? 'https://api.mainnet-beta.solana.com';
 
@@ -344,11 +400,12 @@ async function fetchLookupTableAddresses(
 }
 
 /**
- * Converts a crafted v0 message to a legacy Message that preserves the
- * CRAFTED account order exactly (static keys, then lookup-writable, then
+ * Converts a crafted v0 message to a legacy Message preserving the CRAFTED
+ * account order exactly (static keys, then lookup-writable, then
  * lookup-readonly). Never route this through Transaction.compileMessage():
- * web3.js canonical key order differs from Jupiter's, and Jupiter rejects
- * reordered accounts with "Transaction accounts modified".
+ * web3.js canonical key order differs from Jupiter's. This exact byte shape
+ * is what the jup.ag frontend's successful deposits look like on-chain, and
+ * it passes Jupiter's validation (probe-verified against the live API).
  */
 async function toLegacyMessagePreservingOrder(
     transaction: VersionedTransaction
@@ -391,8 +448,9 @@ async function toLegacyMessagePreservingOrder(
 const EMPTY_SIGNATURE = bs58.encode(new Uint8Array(64));
 
 /**
- * Legacy wire format (shortvec sig count + 64-byte slots + message) with the
- * wallet's signature in its slot; every other byte is the crafted message.
+ * Legacy wire format (shortvec sig count + 64-byte slots + message bytes)
+ * with the wallet's signature in its slot; every other byte is the crafted
+ * message. Built by hand because Transaction.serialize() can recompile.
  */
 function serializeLegacyWithSignature(
     message: Message,
@@ -416,6 +474,94 @@ function serializeLegacyWithSignature(
     return Buffer.from(wire).toString('base64');
 }
 
+interface AddedAccountInfo {
+    key: string;
+    signer: boolean;
+    writable: boolean;
+    /** Programs whose instructions reference this account. */
+    usedBy: string[];
+}
+
+interface WalletTxDiff {
+    added: string[];
+    addedDetails: AddedAccountInfo[];
+    removed: string[];
+    craftedPrograms: string[];
+    walletPrograms: string[];
+}
+
+/**
+ * Compares a wallet's returned transaction against the crafted deposit:
+ * accounts the wallet added or removed, and the program ids of both. Order
+ * differences are ignored on purpose — Jupiter accepts any account order
+ * (probe-verified); only set changes break validation.
+ */
+function diffWalletTx(
+    crafted: VersionedTransaction,
+    signed: Transaction | VersionedTransaction
+): WalletTxDiff {
+    const craftedKeys = crafted.message.staticAccountKeys.map((k) =>
+        k.toBase58()
+    );
+    const rawMessage =
+        'version' in signed ? signed.message : signed.compileMessage();
+    const message: {
+        accountKeys: PublicKey[];
+        compiledInstructions: {
+            programIdIndex: number;
+            accountKeyIndexes: number[];
+        }[];
+    } =
+        'version' in signed
+            ? {
+                  accountKeys: signed.message.staticAccountKeys,
+                  compiledInstructions: signed.message.compiledInstructions,
+              }
+            : signed.compileMessage();
+    const signedKeys = message.accountKeys.map((k) => k.toBase58());
+    const craftedSet = new Set(craftedKeys);
+    const signedSet = new Set(signedKeys);
+    const programIds = (m: {
+        accountKeys: PublicKey[];
+        compiledInstructions: { programIdIndex: number }[];
+    }) =>
+        m.compiledInstructions.map(
+            (ci) => m.accountKeys[ci.programIdIndex]?.toBase58() ?? '?'
+        );
+    const added = signedKeys.filter((k) => !craftedSet.has(k));
+    const numSigners = rawMessage.header.numRequiredSignatures;
+    const addedDetails: AddedAccountInfo[] = added.map((key) => {
+        const index = signedKeys.indexOf(key);
+        const usedBy = [
+            ...new Set(
+                message.compiledInstructions
+                    .filter((ci) => ci.accountKeyIndexes.includes(index))
+                    .map(
+                        (ci) =>
+                            message.accountKeys[ci.programIdIndex]?.toBase58() ??
+                            '?'
+                    )
+            ),
+        ];
+        return {
+            key,
+            signer: index >= 0 && index < numSigners,
+            writable: index >= 0 ? rawMessage.isAccountWritable(index) : false,
+            usedBy,
+        };
+    });
+    return {
+        added,
+        addedDetails,
+        removed: craftedKeys.filter((k) => !signedSet.has(k)),
+        craftedPrograms: programIds({
+            accountKeys: crafted.message.staticAccountKeys,
+            compiledInstructions: crafted.message.compiledInstructions,
+        }),
+        walletPrograms: programIds(message),
+    };
+}
+
 /**
  * Signs an arbitrary UTF-8 message with the active wallet (Dynamic or MWA),
  * returning a bs58 ed25519 signature. Module-level (no hooks) so non-React
@@ -434,13 +580,11 @@ export const signMessageWithWallet = withHumanReadableErrors(
             wallet: findDynamicSolanaWallet(),
         });
         const { signature } = await signer.signMessage(payload);
-        return bs58.encode(signature);
+        return bs58.encode(normalizeSignatureBytes(signature, 'Dynamic'));
     }
 
     if (session.connectionType === 'mwa') {
-        const { transact } = await import(
-            '@solana-mobile/mobile-wallet-adapter-protocol-web3js'
-        );
+        const transact = await loadMwaTransact();
         return transact(async (wallet: Web3MobileWallet) => {
             await mwaAuthorize(wallet);
             // MWA wants the base64 account address form; the store holds base58.
@@ -498,12 +642,13 @@ export const signTransactionWithWallet = withHumanReadableErrors(
             throw new Error('Wallet not connected');
         }
         const walletKey = new PublicKey(address);
-        // MWA wallets convert v0 deposits to legacy before signing, and their
-        // conversion recompiles account keys canonically — Jupiter's crafted
-        // order is NOT canonical, so the wallet's own bytes are rejected.
-        // Build the legacy form ourselves, preserving the crafted order
-        // exactly; an already-legacy payload is signed as-is.
+        // Present the deposit as a legacy transaction in the CRAFTED account
+        // order — the exact byte shape jup.ag's own frontend lands on-chain
+        // (probe-verified to pass Jupiter's validation). An already-legacy
+        // payload gives the wallet nothing to convert, so even wallets that
+        // rewrite v0 transactions (Seeker) sign it as-is.
         const legacyMessage = await toLegacyMessagePreservingOrder(transaction);
+        const legacyBytes = legacyMessage.serialize();
         const legacyTx = Transaction.populate(
             legacyMessage,
             Array.from(
@@ -511,11 +656,13 @@ export const signTransactionWithWallet = withHumanReadableErrors(
                 () => EMPTY_SIGNATURE
             )
         );
-        const { transact } = await import(
-            '@solana-mobile/mobile-wallet-adapter-protocol-web3js'
-        );
+        const transact = await loadMwaTransact();
         return transact(async (wallet: Web3MobileWallet) => {
-            await mwaAuthorize(wallet);
+            // Jupiter deposits are mainnet transactions; authorize a mainnet
+            // session for this signing or the wallet "fixes" the cluster
+            // mismatch by rewriting the transaction.
+            await mwaAuthorize(wallet, 'solana:mainnet');
+
             const [signed] = await wallet.signTransactions({
                 transactions: [
                     legacyTx as unknown as Parameters<
@@ -526,18 +673,54 @@ export const signTransactionWithWallet = withHumanReadableErrors(
             if (!signed) {
                 throw new Error('MWA did not return a signed transaction');
             }
-            const signature = extractWalletSignature(
-                signed as Transaction | VersionedTransaction,
-                walletKey
-            );
+            const signedTx = signed as Transaction | VersionedTransaction;
+            const signature = extractWalletSignature(signedTx, walletKey);
             if (!signature) {
                 throw new Error('MWA did not return a signed transaction');
             }
-            return serializeLegacyWithSignature(
-                legacyMessage,
-                walletKey,
-                signature
-            );
+
+            // Signed as-is: the signature verifies against our exact legacy
+            // message — return the probe-verified byte shape.
+            if (
+                nacl.sign.detached.verify(
+                    legacyBytes,
+                    signature,
+                    walletKey.toBytes()
+                )
+            ) {
+                return serializeLegacyWithSignature(
+                    legacyMessage,
+                    walletKey,
+                    signature
+                );
+            }
+
+            // The wallet rewrote even the legacy payload. If it changed the
+            // account SET, Jupiter will reject it — fail instantly with the
+            // diff on screen instead of after a 33s landing attempt. If only
+            // the order changed, forward the wallet's transaction: Jupiter
+            // accepts any account order (probe-verified).
+            const diff = diffWalletTx(transaction, signedTx);
+            console.warn('dca: wallet rewrote the deposit tx', JSON.stringify(diff));
+            if (diff.added.length > 0 || diff.removed.length > 0) {
+                const detail = diff.addedDetails
+                    .map(
+                        (a) =>
+                            `${a.key} (${[a.signer ? 'signer' : null, a.writable ? 'writable' : 'readonly', a.usedBy.length ? `used by ${a.usedBy.join(',')}` : 'unused by any instruction'].filter(Boolean).join(', ')})`
+                    )
+                    .join(' ');
+                throw new Error(
+                    `Wallet altered the deposit accounts (+${diff.added.length}/-${diff.removed.length}). ${detail || [...diff.added, ...diff.removed].join(', ')}`
+                );
+            }
+            const bytes =
+                'version' in signedTx
+                    ? signedTx.serialize()
+                    : signedTx.serialize({
+                          requireAllSignatures: false,
+                          verifySignatures: false,
+                      });
+            return Buffer.from(bytes).toString('base64');
         });
     }
 
@@ -653,9 +836,7 @@ export function useWallet(): Wallet {
 
     const connectWithMwa = useCallback(
         withHumanReadableErrors(async () => {
-            const { transact } = await import(
-                '@solana-mobile/mobile-wallet-adapter-protocol-web3js'
-            );
+            const transact = await loadMwaTransact();
 
             await transact(async (wallet: Web3MobileWallet) => {
                 const authorizationResult = await wallet.authorize({
@@ -755,13 +936,17 @@ export function useWallet(): Wallet {
     );
 
     const signAndSendWithMwa = useCallback(
-        async (transaction: Transaction): Promise<string> => {
-            const { transact } = await import(
-                '@solana-mobile/mobile-wallet-adapter-protocol-web3js'
-            );
+        async (
+            transaction: Transaction,
+            chain?: `solana:${string}`
+        ): Promise<string> => {
+            const transact = await loadMwaTransact();
 
             return transact(async (wallet: Web3MobileWallet) => {
-                await mwaAuthorize(wallet);
+                // Mainnet transactions (e.g. on-chain DCA) need a mainnet
+                // session: in a devnet session the wallet simulates the tx
+                // against devnet, fails, and refuses to sign.
+                await mwaAuthorize(wallet, chain);
 
                 const signatures = await wallet.signAndSendTransactions({
                     transactions: [transaction],
@@ -780,7 +965,10 @@ export function useWallet(): Wallet {
 
     const signAndSendTransaction = useCallback(
         withHumanReadableErrors(
-            async (transaction: Transaction): Promise<string> => {
+            async (
+                transaction: Transaction,
+                chain?: `solana:${string}`
+            ): Promise<string> => {
                 if (!publicKey) {
                     throw new Error('Wallet not connected');
                 }
@@ -789,7 +977,7 @@ export function useWallet(): Wallet {
                 if (connectionType === 'dynamic') {
                     signature = await signAndSendWithDynamic(transaction);
                 } else if (connectionType === 'mwa') {
-                    signature = await signAndSendWithMwa(transaction);
+                    signature = await signAndSendWithMwa(transaction, chain);
                 } else {
                     throw new Error('No active wallet connection');
                 }
@@ -879,9 +1067,7 @@ export function useWallet(): Wallet {
     const disconnect = useCallback(async () => {
         if (connectionType === 'mwa' && authToken) {
             try {
-                const { transact } = await import(
-                    '@solana-mobile/mobile-wallet-adapter-protocol-web3js'
-                );
+                const transact = await loadMwaTransact();
 
                 await transact(async (wallet) => {
                     await wallet.deauthorize({ auth_token: authToken });
