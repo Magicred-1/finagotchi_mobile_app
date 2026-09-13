@@ -14,12 +14,13 @@
     "clean": "rm -rf node_modules .expo ios android pnpm-lock.yaml && pnpm install"
   },
   "dependencies": {
-    "@dynamic-labs/legacy-client": "^5.4.0",
-    "@dynamic-labs/legacy-react-hooks": "^5.4.0",
-    "@dynamic-labs/legacy-react-native-extension": "^5.4.0",
-    "@dynamic-labs/legacy-solana-extension": "^5.4.0",
+    "@dynamic-labs/legacy-client": "^5.8.0",
+    "@dynamic-labs/legacy-react-hooks": "^5.8.0",
+    "@dynamic-labs/legacy-react-native-extension": "^5.8.0",
+    "@dynamic-labs/legacy-solana-extension": "^5.8.0",
     "@expo-google-fonts/poppins": "^0.4.1",
     "@expo/vector-icons": "^15.1.1",
+    "@jup-ag/dca-sdk": "^3.0.1",
     "@react-native-anywhere/polyfill-base64": "0.0.1-alpha.0",
     "@react-native-async-storage/async-storage": "2.2.0",
     "@react-native-community/netinfo": "11.4.1",
