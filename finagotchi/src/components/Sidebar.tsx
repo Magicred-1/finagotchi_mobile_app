@@ -30,6 +30,7 @@ import * as Haptics from 'expo-haptics';
 
 import { useWallet } from '../wallet/useWallet';
 import { usePetStore } from '../features/pet/store';
+import { ExportKeySheet } from './ExportKeySheet';
 import { PressableScale } from './PressableScale';
 import { colors, radius, shadows, spacing, springs, typography } from '../theme/tokens';
 
@@ -171,6 +172,7 @@ export function Sidebar({
     const stage = usePetStore((state) => state.stage);
 
     const [qrVisible, setQrVisible] = useState(false);
+    const [exportVisible, setExportVisible] = useState(false);
     const walletAddress = wallet.publicKey?.toBase58() ?? null;
 
     const handleShowQr = useCallback(() => {
@@ -518,6 +520,27 @@ export function Sidebar({
                                         </PressableScale>
                                     </View>
                                 ) : null}
+
+                                {wallet.connected && wallet.canExportPrivateKey ? (
+                                    <PressableScale
+                                        onPress={() => {
+                                            Haptics.impactAsync(
+                                                Haptics.ImpactFeedbackStyle.Light
+                                            );
+                                            setExportVisible(true);
+                                        }}
+                                        style={styles.exportButton}
+                                    >
+                                        <Ionicons
+                                            name="key-outline"
+                                            size={16}
+                                            color={colors.textMuted}
+                                        />
+                                        <Text style={styles.exportText}>
+                                            Export private key
+                                        </Text>
+                                    </PressableScale>
+                                ) : null}
                             </View>
 
                             <Modal
@@ -580,6 +603,12 @@ export function Sidebar({
                                     </View>
                                 </View>
                             </Modal>
+
+                            <ExportKeySheet
+                                visible={exportVisible}
+                                onClose={() => setExportVisible(false)}
+                                onReveal={wallet.exportPrivateKey}
+                            />
 
                         </Animated.View>
 
@@ -824,6 +853,23 @@ const styles = StyleSheet.create({
     },
     disconnectText: {
         color: colors.danger,
+    },
+    exportButton: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: spacing.sm,
+        minHeight: 40,
+        marginTop: spacing.xs,
+        borderRadius: radius.md,
+        borderWidth: 1,
+        borderColor: colors.border,
+        backgroundColor: 'rgba(7,17,31,0.40)',
+    },
+    exportText: {
+        color: colors.textMuted,
+        fontSize: typography.small,
+        fontFamily: 'Poppins_600SemiBold',
     },
     qrOverlay: {
         flex: 1,

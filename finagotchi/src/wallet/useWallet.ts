@@ -72,6 +72,10 @@ export type Wallet = {
     signMessage: (message: string) => Promise<string>;
     /** Signs (without sending) a base64 VersionedTransaction; returns base64. */
     signTransaction: (base64Tx: string) => Promise<string>;
+    /** True only for Dynamic embedded wallets — the only connection whose key the app can export. MWA wallets hold their own keys. */
+    canExportPrivateKey: boolean;
+    /** Dynamic only: opens Dynamic's secure key-export modal. */
+    exportPrivateKey: () => Promise<void>;
     disconnect: () => Promise<void>;
 };
 
@@ -181,6 +185,11 @@ export function toHumanReadableWalletError(error: unknown): Error {
         return friendly(
             "Your wallet's signature didn't make it onto the transaction — please try again."
         );
+    }
+    // Dynamic rejects key export with WalletApiError: Forbidden when the
+    // dashboard's "Private Key Exports" toggle is off.
+    if (/forbidden|export (private )?keys? (is )?(disabled|not allowed)/.test(normalized)) {
+        return friendly("Key export isn't available for this wallet right now.");
     }
     if (/invalid deposit transaction|accounts modified/.test(normalized)) {
         return friendly(
@@ -728,6 +737,52 @@ export const signTransactionWithWallet = withHumanReadableErrors(
     }
 );
 
+/**
+ * Opens Dynamic's secure key-export modal for the embedded wallet
+ * (`revealEmbeddedWalletKey`). The SDK's modal handles authentication and
+ * shows the key only inside Dynamic's isolated view — the app never sees
+ * it. MWA/external wallets hold their own keys and are not exportable here.
+ *
+ * Requires "Private Key Exports" enabled in the Dynamic dashboard
+ * (Embedded Wallets → Security), otherwise the API rejects with
+ * WalletApiError: Forbidden.
+ */
+/** v3 export ceremonies are guarded by the `wallet:export` token scope. The legacy client doesn't re-export TokenScope, so lift the scope type off the step-up method instead. */
+type StepUpScope = Parameters<
+    typeof dynamicClient.stepUpAuth.isStepUpRequired
+>[0]['scope'];
+const WALLET_EXPORT_SCOPE = 'wallet:export' as StepUpScope;
+
+export const exportPrivateKeyWithWallet = withHumanReadableErrors(
+    async (): Promise<void> => {
+    const { session } = useWalletStore.getState();
+    if (session.connectionType !== 'dynamic') {
+        throw new Error(
+            'Private key export is only available for embedded wallets'
+        );
+    }
+    // Ensure the embedded Solana wallet exists before opening the export UI.
+    findDynamicSolanaWallet();
+
+    // A plain session token lacks the wallet:export scope and gets a
+    // WalletApiError: Forbidden from the export API — elevate the session
+    // with Dynamic's step-up prompt first when the SDK says it's required.
+    if (
+        await dynamicClient.stepUpAuth.isStepUpRequired({
+            scope: WALLET_EXPORT_SCOPE,
+        })
+    ) {
+        await dynamicClient.stepUpAuth.promptStepUpAuth({
+            requestedScopes: [WALLET_EXPORT_SCOPE],
+        });
+    }
+
+    await dynamicClient.ui.wallets.revealEmbeddedWalletKey({
+        type: 'private-key',
+    });
+    }
+);
+
 export function useWallet(): Wallet {
     const address = useWalletStore((state) => state.address);
     const connectStore = useWalletStore((state) => state.connect);
@@ -763,6 +818,7 @@ export function useWallet(): Wallet {
 
     const connected = !!publicKey;
     const isSeeker = useMemo(() => getIsSeeker(), []);
+    const canExportPrivateKey = connectionType === 'dynamic';
 
     const [solBalance, setSolBalance] = useState<number | null>(null);
     const [solBalanceLoaded, setSolBalanceLoaded] = useState(false);
@@ -1108,6 +1164,8 @@ export function useWallet(): Wallet {
             signAndSendTransaction,
             signMessage: signMessageWithWallet,
             signTransaction: signTransactionWithWallet,
+            canExportPrivateKey,
+            exportPrivateKey: exportPrivateKeyWithWallet,
             disconnect,
         }),
         [
@@ -1127,6 +1185,7 @@ export function useWallet(): Wallet {
             mintCreatureNft,
             payReviveFee,
             signAndSendTransaction,
+            canExportPrivateKey,
             disconnect,
         ]
     );
