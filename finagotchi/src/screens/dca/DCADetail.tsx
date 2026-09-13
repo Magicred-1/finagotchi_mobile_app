@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Alert, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator } from 'react-native';
 import { router } from 'expo-router';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import Svg, { Circle } from 'react-native-svg';
 import * as Haptics from 'expo-haptics';
@@ -16,13 +16,13 @@ import Animated, {
 
 import {
     cancelPlanOrder,
+    getDefaultFillWatcher,
     isOverdue,
     usePlanStore,
     type DcaPlan,
 } from '../../services/dca';
 import { useWallet } from '../../wallet/useWallet';
 import { Button } from '../../components/Button';
-import { PressableScale } from '../../components/PressableScale';
 import {
     colors,
     radius,
@@ -134,6 +134,31 @@ function NextExecutionTicker({ plan }: { plan: DcaPlan }) {
         return null;
     }
 
+    // While the order is depositing or a round is executing, the transition
+    // pill below explains the state — a countdown would contradict it. A
+    // `depositing` with observed fills is a stale snapshot: ignore it.
+    if (
+        (plan.orderState === 'depositing' && plan.buys === 0) ||
+        plan.orderState === 'executing'
+    ) {
+        return null;
+    }
+
+    // Jupiter schedules round 1 immediately after the deposit, so
+    // nextExecutionAt is already past while the keeper takes minutes (up to
+    // its retry window) to fill. "Due now" at 0% reads broken — say what is
+    // actually happening instead.
+    if (plan.buys === 0) {
+        return (
+            <View style={styles.nextWrap}>
+                <Text style={styles.nextText}>
+                    First buy executes right after the deposit confirms
+                </Text>
+                <View style={styles.overdueSlot} />
+            </View>
+        );
+    }
+
     const overdue = isOverdue(plan);
     const due = plan.nextExecutionAt <= nowSec;
 
@@ -141,7 +166,7 @@ function NextExecutionTicker({ plan }: { plan: DcaPlan }) {
         <View style={styles.nextWrap}>
             <Text style={styles.nextText}>
                 {due
-                    ? 'Next buy due now'
+                    ? 'Next buy due — the keeper executes it shortly'
                     : `Next buy in ${timeUntilLong(plan.nextExecutionAt, nowSec)}`}
             </Text>
             <View style={styles.overdueSlot}>
@@ -161,7 +186,6 @@ type Props = {
 };
 
 export function DCADetail({ planId }: Props) {
-    const insets = useSafeAreaInsets();
     const wallet = useWallet();
     const plan = usePlanStore((state) =>
         state.plans.find((p) => p.id === planId)
@@ -170,6 +194,13 @@ export function DCADetail({ planId }: Props) {
     const [busy, setBusy] = useState(false);
     const [editOpen, setEditOpen] = useState(false);
     const quotes = useTokenPrices();
+
+    // Poll this plan as soon as the detail opens: the 15-minute background
+    // interval (and miss backoff) can otherwise leave a stale `orderState`
+    // — e.g. "Activating" long after the deposit landed.
+    useEffect(() => {
+        void getDefaultFillWatcher().refresh(planId);
+    }, [planId]);
 
     const planFills = fills
         .filter((fill) => fill.planId === planId)
@@ -245,65 +276,60 @@ export function DCADetail({ planId }: Props) {
 
     if (!plan) {
         return (
-            <View
-                style={[
-                    styles.safe,
-                    { paddingTop: insets.top, paddingBottom: insets.bottom },
-                ]}
-            >
-                <View style={styles.missing}>
-                    <Text style={styles.missingText}>Plan not found</Text>
-                    <Button title="Go back" onPress={() => router.back()} />
-                </View>
+            <View style={styles.missing}>
+                <Text style={styles.missingText}>Plan not found</Text>
+                <Button title="Go back" onPress={() => router.back()} />
             </View>
         );
     }
 
     const quote = quotes[plan.outputMint];
+    // Jupiter only allows cancelling in `active`/`withdrawing` — a fresh
+    // order sits in `depositing` while the deposit confirms, and a round in
+    // flight is `executing`. Show that instead of buttons that would fail.
+    // Exception: once we've observed a fill, the deposit provably landed —
+    // a lingering `depositing` is a stale snapshot, not reality.
+    const transitionCopy =
+        plan.orderState === 'depositing' && plan.buys === 0
+            ? 'Activating — the deposit is confirming on-chain. Pause unlocks in a moment.'
+            : plan.orderState === 'executing'
+              ? 'A buy is executing right now. Pause unlocks right after.'
+              : null;
 
     return (
-        <View
-            style={[
-                styles.safe,
-                { paddingTop: insets.top, paddingBottom: insets.bottom },
-            ]}
-        >
-            <View style={styles.header}>
-                <PressableScale
-                    onPress={() => router.back()}
-                    hitSlop={8}
-                    style={styles.headerButton}
-                    accessibilityRole="button"
-                    accessibilityLabel="Back"
-                >
-                    <Ionicons name="chevron-back" size={20} color={colors.text} />
-                </PressableScale>
-                <View style={styles.headerTitleRow}>
-                    <TokenLogo ticker={plan.ticker} size={24} />
-                    <View>
-                        <Text style={styles.headerTitle}>
-                            {`${plan.ticker} · ${cadenceAdverb(plan.intervalSec)}`}
-                        </Text>
-                        {quote ? (
-                            <Text style={styles.headerQuote}>
-                                {formatPrice(quote.price)}
-                                <Text
-                                    style={
-                                        quote.change24h >= 0
-                                            ? styles.headerQuoteUp
-                                            : styles.headerQuoteDown
-                                    }
-                                >
-                                    {`  ${formatChange(quote.change24h)}`}
-                                </Text>
+        <View>
+            {/**
+             * Sheet header: the drag handle and backdrop handle dismissal
+             * (same path the sheet entered), so there is no back button —
+             * just the plan identity.
+             */}
+            <View style={styles.sheetHeader}>
+                <TokenLogo ticker={plan.ticker} size={24} />
+                <View>
+                    <Text style={styles.headerTitle}>
+                        {`${plan.ticker} · ${cadenceAdverb(plan.intervalSec)}`}
+                    </Text>
+                    {quote ? (
+                        <Text style={styles.headerQuote}>
+                            {formatPrice(quote.price)}
+                            <Text
+                                style={
+                                    quote.change24h >= 0
+                                        ? styles.headerQuoteUp
+                                        : styles.headerQuoteDown
+                                }
+                            >
+                                {`  ${formatChange(quote.change24h)}`}
                             </Text>
-                        ) : null}
-                    </View>
+                        </Text>
+                    ) : null}
                 </View>
-                <View style={styles.headerButton} />
             </View>
 
-            <ScrollView contentContainerStyle={styles.body}>
+            <ScrollView
+                contentContainerStyle={styles.body}
+                showsVerticalScrollIndicator={false}
+            >
                 <View style={styles.bodyInner}>
                     <Animated.View entering={entering(0)}>
                         <ProgressRing plan={plan} />
@@ -315,7 +341,18 @@ export function DCADetail({ planId }: Props) {
 
                     <Animated.View entering={entering(2)}>
                         {plan.status === 'active' ? (
-                            <View style={styles.actions}>
+                            transitionCopy ? (
+                                <View style={styles.activatingPill}>
+                                    <ActivityIndicator
+                                        size="small"
+                                        color={colors.primary}
+                                    />
+                                    <Text style={styles.activatingText}>
+                                        {transitionCopy}
+                                    </Text>
+                                </View>
+                            ) : (
+                                <View style={styles.actions}>
                                 <Button
                                     title="Edit plan"
                                     variant="secondary"
@@ -346,7 +383,8 @@ export function DCADetail({ planId }: Props) {
                                     Pausing stops buys and returns unspent
                                     USDC to your wallet.
                                 </Text>
-                            </View>
+                                </View>
+                            )
                         ) : (
                             <Text style={styles.statusCopy}>
                                 {STATUS_COPY[plan.status]}
@@ -408,27 +446,11 @@ export function DCADetail({ planId }: Props) {
 }
 
 const styles = StyleSheet.create({
-    safe: {
-        flex: 1,
-        backgroundColor: colors.background,
-    },
-    header: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        paddingHorizontal: spacing.md,
-        paddingVertical: spacing.sm,
-    },
-    headerButton: {
-        width: 32,
-        height: 32,
-        alignItems: 'center',
-        justifyContent: 'center',
-    },
-    headerTitleRow: {
+    sheetHeader: {
         flexDirection: 'row',
         alignItems: 'center',
         gap: spacing.sm,
+        marginBottom: spacing.sm,
     },
     headerTitle: {
         color: colors.text,
@@ -449,7 +471,7 @@ const styles = StyleSheet.create({
         color: colors.danger,
     },
     body: {
-        paddingHorizontal: spacing.md,
+        // Horizontal padding comes from the BottomSheet container.
         paddingBottom: spacing.lg,
     },
     bodyInner: {
@@ -531,6 +553,23 @@ const styles = StyleSheet.create({
         fontSize: 11,
         fontFamily: 'Poppins_400Regular',
         textAlign: 'center',
+    },
+    activatingPill: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: spacing.sm,
+        backgroundColor: colors.surface,
+        borderRadius: radius.md,
+        borderWidth: 1,
+        borderColor: colors.border,
+        paddingVertical: spacing.md,
+        paddingHorizontal: spacing.md,
+    },
+    activatingText: {
+        flex: 1,
+        color: colors.textMuted,
+        fontSize: typography.small,
+        fontFamily: 'Poppins_500Medium',
     },
     statusCopy: {
         color: colors.textMuted,

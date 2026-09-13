@@ -266,6 +266,35 @@ describe('miss accounting', () => {
         expect(getPlan().status).toBe('active');
     });
 
+    it('refresh() polls a plan immediately, ignoring backoff', async () => {
+        seedPlan();
+        let nowMs = NOW_MS;
+        const fetchAccount = vi.fn(
+            async (): Promise<PlanOrderSnapshot | null> => null
+        );
+        const watcher = createFillWatcher({
+            fetchAccount,
+            feed: vi.fn(),
+            emit: createDcaEmitter(),
+            now: () => nowMs,
+        });
+
+        // Two misses push the plan into the 30-minute backoff.
+        await watcher.poll();
+        nowMs += 6 * 60 * 1000;
+        await watcher.poll();
+        expect(getPlan().missedCount).toBe(2);
+        expect(watcher.nextRetryAt('plan-1')).toBeGreaterThan(nowMs);
+
+        // refresh() ignores the backoff window entirely.
+        const callsBefore = fetchAccount.mock.calls.length;
+        fetchAccount.mockResolvedValue(orderSnapshot({ roundsFilled: 0 }));
+        await watcher.refresh('plan-1');
+        expect(fetchAccount.mock.calls.length).toBe(callsBefore + 1);
+        expect(getPlan().missedCount).toBe(0);
+        expect(watcher.nextRetryAt('plan-1')).toBeNull();
+    });
+
     it('a stale round with no new fill counts as a miss; a fresh poll clears it', async () => {
         seedPlan();
         let nowMs = (1_780_000_000 + 604_800 + 1) * 1000; // 1s past the deadline
