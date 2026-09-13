@@ -10,6 +10,7 @@ import Animated, {
 
 import SplashStep from './SplashStep';
 import ConnectWalletStep from './ConnectWalletStep';
+import AuthConsentStep from './AuthConsentStep';
 import NameCreatureStep from './NameCreatureStep';
 import MintStep from './MintStep';
 import HatchStep from './HatchStep';
@@ -18,11 +19,14 @@ import ReminderStep from './ReminderStep';
 import { useWallet } from '../../wallet/useWallet';
 import { MIN_MINT_BALANCE_LAMPORTS } from '../../wallet/useWallet';
 import { useWalletStore } from '../../features/wallet/store';
+import { useOnboardingStore } from './store';
 import { usePetStore } from '../../features/pet/store';
+import { login } from '../quest-engine';
 
 type Step =
     | 'splash'
     | 'connect'
+    | 'auth'
     | 'name'
     | 'mint'
     | 'hatch'
@@ -36,6 +40,7 @@ type Props = {
 const STEP_ORDER: Step[] = [
     'splash',
     'connect',
+    'auth',
     'name',
     'mint',
     'hatch',
@@ -62,6 +67,12 @@ export default function OnboardingFlow({
 
     const wallet = useWallet();
     const walletAddress = useWalletStore((state) => state.address);
+    const serverAuthConsentAt = useOnboardingStore(
+        (state) => state.serverAuthConsentAt
+    );
+    const grantServerAuthConsent = useOnboardingStore(
+        (state) => state.grantServerAuthConsent
+    );
     const mintCreature = usePetStore((state) => state.mintCreature);
 
     const opacity = useSharedValue(1);
@@ -136,16 +147,18 @@ export default function OnboardingFlow({
         wallet.solBalance !== null &&
         wallet.solBalance < MIN_MINT_BALANCE_LAMPORTS;
 
-    // Auto-advance from connect once the wallet authorizes.
+    // Auto-advance from connect once the wallet authorizes. First-time users
+    // pass through the server sign-in consent step; returning users (consent
+    // already granted) skip straight to naming.
     useEffect(() => {
         if (wallet.connected && step === 'connect') {
-            setStep('name');
+            setStep(serverAuthConsentAt ? 'name' : 'auth');
         }
-    }, [wallet.connected, step]);
+    }, [wallet.connected, step, serverAuthConsentAt]);
 
     // Guard against landing on a step we cannot complete.
     useEffect(() => {
-        if ((step === 'name' || step === 'mint') && !walletAddress) {
+        if ((step === 'auth' || step === 'name' || step === 'mint') && !walletAddress) {
             setStep('connect');
             return;
         }
@@ -186,6 +199,21 @@ export default function OnboardingFlow({
 
     const handleMwa = async () => {
         await wallet.connectWithMwa();
+    };
+
+    const handleAuthConsent = async () => {
+        if (!walletAddress) {
+            throw new Error('Wallet not connected');
+        }
+        // Grant first: the quest client refuses to trigger a wallet
+        // signature without consent on record.
+        grantServerAuthConsent();
+        await login(walletAddress);
+        setStep('name');
+    };
+
+    const handleAuthSkip = () => {
+        setStep('name');
     };
 
     const handleNameSubmit = (name: string) => {
@@ -234,6 +262,14 @@ export default function OnboardingFlow({
                         onConnectMwa={handleMwa}
                     />
                 );
+            case 'auth':
+                return walletAddress ? (
+                    <AuthConsentStep
+                        walletAddress={walletAddress}
+                        onConsent={handleAuthConsent}
+                        onSkip={handleAuthSkip}
+                    />
+                ) : null;
             case 'name':
                 return <NameCreatureStep onSubmit={handleNameSubmit} />;
             case 'mint':

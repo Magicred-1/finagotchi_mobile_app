@@ -3,10 +3,17 @@ import * as SecureStore from 'expo-secure-store';
 import bs58 from 'bs58';
 
 import { utf8Bytes, type ActivityProfile } from '../../../../shared/quest-engine';
+import { useOnboardingStore } from '../onboarding/store';
 
-/** SecureStore key holding the optional bearer token (extra deployment gate). */
+/** SecureStore key holding the optional static API key (extra deployment gate). */
 const API_KEY_SECURE_STORE_KEY = 'quest_api_key';
+/** SecureStore key holding the per-user API key issued by /auth/login. */
+const USER_API_KEY_SECURE_STORE_KEY = 'quest_user_api_key';
+/** SecureStore key holding the wallet session issued by /auth/login. */
+const AUTH_SESSION_SECURE_STORE_KEY = 'finagotchi_auth_session';
 const REQUEST_TIMEOUT_MS = 10_000;
+/** Re-login when the stored token has less than this much life left. */
+const TOKEN_EXPIRY_SKEW_MS = 60_000;
 /** Dev default only — production builds must set an HTTPS questServerUrl extra. */
 const DEFAULT_BASE_URL = 'http://localhost:3000';
 
@@ -14,6 +21,19 @@ export interface AuthChallenge {
     message: string;
     nonce: string;
     expiresAt: number;
+}
+
+/** Wallet session issued by POST /auth/login and cached in SecureStore. */
+export interface AuthSession {
+    wallet: string;
+    token: string;
+    /** Epoch ms. */
+    expiresAt: number;
+    /**
+     * Per-user API key issued at sign-in; presented on future
+     * /auth/challenge and /auth/login calls. Rotated on every login.
+     */
+    apiKey?: string;
 }
 
 export interface BackfillResponse {
@@ -42,7 +62,10 @@ export type WalletAuthFailureReason =
     | 'unknown_nonce'
     | 'expired'
     | 'wallet_mismatch'
-    | 'bad_signature';
+    | 'bad_signature'
+    | 'token_malformed'
+    | 'token_bad_signature'
+    | 'token_expired';
 
 export type QuestClientErrorCode = 'network' | 'timeout' | 'http' | 'auth' | 'signer';
 
@@ -90,10 +113,11 @@ export function getQuestServerBaseUrl(): string {
 }
 
 /**
- * Bearer token resolution order: SecureStore (set at provisioning time),
- * then the `questApiKey` app-config extra, then EXPO_PUBLIC_QUEST_API_KEY.
- * This is now only an OPTIONAL extra gate — the real auth is the
- * wallet-signed challenge below. The token is never logged.
+ * Static bearer token resolution order: SecureStore (set at provisioning
+ * time), then the `questApiKey` app-config extra, then
+ * EXPO_PUBLIC_QUEST_API_KEY. This is only an OPTIONAL extra gate on the
+ * token-issuing endpoints (/auth/challenge, /auth/login) — data calls ride
+ * the per-wallet session JWT. The token is never logged.
  */
 async function getApiKey(): Promise<string | undefined> {
     try {
@@ -115,25 +139,72 @@ export async function setApiKey(token: string | null): Promise<void> {
     }
 }
 
+/**
+ * Per-user API key issued by /auth/login, stored WITH its wallet: presenting
+ * wallet A's key for wallet B's challenge is a server-side wallet_mismatch,
+ * so the key is only ever read for the wallet it was issued to.
+ */
+async function getUserApiKey(wallet: string): Promise<string | undefined> {
+    try {
+        const raw = await SecureStore.getItemAsync(USER_API_KEY_SECURE_STORE_KEY);
+        if (!raw) return undefined;
+        const parsed = JSON.parse(raw) as { wallet?: unknown; key?: unknown };
+        if (parsed.wallet === wallet && typeof parsed.key === 'string') {
+            return parsed.key;
+        }
+    } catch {
+        // SecureStore unavailable (e.g. web) — no per-user key.
+    }
+    return undefined;
+}
+
+async function setUserApiKey(wallet: string, key: string): Promise<void> {
+    try {
+        await SecureStore.setItemAsync(
+            USER_API_KEY_SECURE_STORE_KEY,
+            JSON.stringify({ wallet, key }),
+        );
+    } catch {
+        // Best effort — next login rotates a fresh key anyway.
+    }
+}
+
+async function clearUserApiKey(): Promise<void> {
+    try {
+        await SecureStore.deleteItemAsync(USER_API_KEY_SECURE_STORE_KEY);
+    } catch {
+        // Best effort.
+    }
+}
+
 const WALLET_AUTH_REASONS: readonly string[] = [
     'malformed',
     'unknown_nonce',
     'expired',
     'wallet_mismatch',
     'bad_signature',
+    'token_malformed',
+    'token_bad_signature',
+    'token_expired',
 ];
 
 async function post<TResponse>(
     path: string,
     body: Record<string, unknown>,
-    extraHeaders?: Record<string, string>,
+    options?: { bearer?: string; apiKeyForWallet?: string },
 ): Promise<TResponse> {
-    const token = await getApiKey();
     const headers: Record<string, string> = {
         'Content-Type': 'application/json',
-        ...extraHeaders,
     };
-    if (token) headers.Authorization = `Bearer ${token}`;
+    if (options?.bearer) {
+        headers.Authorization = `Bearer ${options.bearer}`;
+    } else if (options?.apiKeyForWallet) {
+        // Token-issuing endpoints: prefer the wallet's own issued key, fall
+        // back to the provisioned/config static key (first-ever login).
+        const token =
+            (await getUserApiKey(options.apiKeyForWallet)) ?? (await getApiKey());
+        if (token) headers.Authorization = `Bearer ${token}`;
+    }
 
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
@@ -170,8 +241,6 @@ async function post<TResponse>(
         } catch {
             // Non-JSON error body — status alone is enough.
         }
-        // A 401 carrying a wallet-auth reason came from the x-wallet-auth
-        // gate; a bare 401 is the optional MOBILE_API_KEY bearer gate.
         if (res.status === 401 && authReason !== undefined) {
             throw new QuestClientError(
                 'auth',
@@ -186,12 +255,12 @@ async function post<TResponse>(
     return (await res.json()) as TResponse;
 }
 
-/** Public (modulo the optional bearer gate): fetch a fresh single-use challenge. */
+/** Public (modulo the optional static gate): fetch a fresh single-use challenge. */
 export function getChallenge(wallet: string): Promise<AuthChallenge> {
-    return post<AuthChallenge>('/auth/challenge', { wallet });
+    return post<AuthChallenge>('/auth/challenge', { wallet }, { apiKeyForWallet: wallet });
 }
 
-async function signChallenge(challenge: AuthChallenge, wallet: string): Promise<string> {
+async function signChallengeMessage(challenge: AuthChallenge, wallet: string): Promise<string> {
     if (!authSigner) {
         throw new QuestClientError(
             'signer',
@@ -210,32 +279,138 @@ async function signChallenge(challenge: AuthChallenge, wallet: string): Promise<
             `wallet signing failed: ${err instanceof Error ? err.message : String(err)}`,
         );
     }
-    return `${wallet}:${challenge.nonce}:${bs58.encode(signature)}`;
+    return bs58.encode(signature);
 }
 
-/** Nonces are single-use with a 5 min TTL — one fresh challenge per call. */
+async function readStoredSession(): Promise<AuthSession | null> {
+    try {
+        const raw = await SecureStore.getItemAsync(AUTH_SESSION_SECURE_STORE_KEY);
+        if (!raw) return null;
+        const parsed = JSON.parse(raw) as Partial<AuthSession>;
+        if (
+            typeof parsed.wallet !== 'string' ||
+            typeof parsed.token !== 'string' ||
+            typeof parsed.expiresAt !== 'number'
+        ) {
+            return null;
+        }
+        return { wallet: parsed.wallet, token: parsed.token, expiresAt: parsed.expiresAt };
+    } catch {
+        return null;
+    }
+}
+
+async function storeSession(session: AuthSession): Promise<void> {
+    try {
+        await SecureStore.setItemAsync(
+            AUTH_SESSION_SECURE_STORE_KEY,
+            JSON.stringify(session),
+        );
+    } catch {
+        // SecureStore unavailable (e.g. web) — session stays in-memory only
+        // for this run via the in-flight/cached paths; next login re-signs.
+    }
+}
+
+/** Drop the cached session (disconnect, revoked consent, dead token). */
+export async function clearAuthSession(): Promise<void> {
+    try {
+        await SecureStore.deleteItemAsync(AUTH_SESSION_SECURE_STORE_KEY);
+    } catch {
+        // Best effort — a stale entry just fails auth and gets overwritten.
+    }
+}
+
+/** Serialize concurrent logins so a burst of sync calls signs ONE challenge. */
+let loginInFlight: Promise<string> | null = null;
+
+/** One challenge → sign → token exchange round. */
+async function loginOnce(wallet: string): Promise<string> {
+    const challenge = await getChallenge(wallet);
+    const signature = await signChallengeMessage(challenge, wallet);
+    const session = await post<AuthSession>(
+        '/auth/login',
+        { wallet, nonce: challenge.nonce, signature },
+        { apiKeyForWallet: wallet },
+    );
+    await storeSession(session);
+    // The login response carries the per-user API key for future
+    // challenge/login calls — stored bound to this wallet.
+    if (session.apiKey) {
+        await setUserApiKey(wallet, session.apiKey);
+    }
+    return session.token;
+}
+
+/**
+ * Sign-in with wallet: fetch a challenge, sign it with the connected wallet,
+ * exchange it for a session JWT, and cache it. Requires the user's consent
+ * (granted on the onboarding auth step) — without it this throws a 'signer'
+ * error so sync callers treat it as "maybe later", never as definitive.
+ */
+export function login(wallet: string): Promise<string> {
+    if (!useOnboardingStore.getState().serverAuthConsentAt) {
+        return Promise.reject(
+            new QuestClientError(
+                'signer',
+                'Server sync not enabled — the user has not consented to wallet sign-in',
+            ),
+        );
+    }
+    loginInFlight ??= (async () => {
+        try {
+            return await loginOnce(wallet);
+        } catch (err) {
+            // A stored per-user key that was rotated away (e.g. another
+            // device logged in) 401s the challenge — drop it and retry once
+            // on the provisioned static key / open gate.
+            if (err instanceof QuestClientError && err.status === 401) {
+                await clearUserApiKey();
+                return loginOnce(wallet);
+            }
+            throw err;
+        }
+    })().finally(() => {
+        loginInFlight = null;
+    });
+    return loginInFlight;
+}
+
+/**
+ * Return a valid session token for the wallet: the cached JWT when it still
+ * has life left, otherwise a fresh wallet-signed login.
+ */
+export async function ensureAuthToken(wallet: string): Promise<string> {
+    const stored = await readStoredSession();
+    if (
+        stored &&
+        stored.wallet === wallet &&
+        stored.expiresAt - TOKEN_EXPIRY_SKEW_MS > Date.now()
+    ) {
+        return stored.token;
+    }
+    return login(wallet);
+}
+
+/**
+ * Authed data call: rides the wallet session JWT. On any 401 the cached
+ * token is dropped and ONE retry runs with a fresh login — covers server
+ * secret rotation and clock skew without signing storms.
+ */
 async function authedPost<TResponse>(
     path: string,
     body: Record<string, unknown>,
     wallet: string,
 ): Promise<TResponse> {
     const attempt = async (): Promise<TResponse> => {
-        const challenge = await getChallenge(wallet);
-        const header = await signChallenge(challenge, wallet);
-        return post<TResponse>(path, body, { 'x-wallet-auth': header });
+        const token = await ensureAuthToken(wallet);
+        return post<TResponse>(path, body, { bearer: token });
     };
     try {
         return await attempt();
     } catch (err) {
-        // 'expired'/'unknown_nonce' mean the nonce died in flight (the server
-        // consumes it on first presentation) — retry ONCE with a fresh
-        // challenge. bad_signature/wallet_mismatch are signer/config bugs and
-        // propagate.
-        if (
-            err instanceof QuestClientError &&
-            err.code === 'auth' &&
-            (err.authReason === 'expired' || err.authReason === 'unknown_nonce')
-        ) {
+        if (err instanceof QuestClientError && err.status === 401) {
+            await clearAuthSession();
             return attempt();
         }
         throw err;
