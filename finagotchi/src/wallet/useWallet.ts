@@ -998,14 +998,31 @@ export function useWallet(): Wallet {
             const signer = dynamicClient.solana.getSigner({
                 wallet: solWallet,
             });
+            // Sign with Dynamic, but SEND through our own RPC: Dynamic's
+            // signAndSendTransaction routes through the RPC configured in its
+            // dashboard (a 403 there blocked every send), while the app's
+            // Helius endpoint is under our control.
             // The Solana extension bundles its own @solana/web3.js copy, so
             // the Transaction types are structurally identical but not
             // nominally assignable. Runtime interop is fine.
-            const { signature } = await signer.signAndSendTransaction(
+            const signed = await signer.signTransaction(
                 transaction as unknown as Parameters<
-                    typeof signer.signAndSendTransaction
+                    typeof signer.signTransaction
                 >[0]
             );
+            const connection = new Connection(SOLANA_RPC, 'confirmed');
+            const signature = await connection.sendRawTransaction(
+                signed.serialize()
+            );
+            const { recentBlockhash, lastValidBlockHeight } = transaction;
+            if (recentBlockhash && lastValidBlockHeight) {
+                await connection.confirmTransaction(
+                    { signature, blockhash: recentBlockhash, lastValidBlockHeight },
+                    'confirmed'
+                );
+            } else {
+                await connection.confirmTransaction(signature, 'confirmed');
+            }
             return signature;
         },
         []
