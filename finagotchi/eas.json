@@ -21,6 +21,7 @@
     },
     "mainnet": {
       "distribution": "internal",
+      "environment": "production",
       "android": {
         "buildType": "apk"
       },
