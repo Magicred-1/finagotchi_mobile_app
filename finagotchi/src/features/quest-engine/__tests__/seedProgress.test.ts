@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { ActivityProfile, ProgramStats, Quest } from '../../../../../shared/quest-engine';
-import { seedProgressFromProfile, utcDay } from '../seedProgress';
+import { mergeProgress, seedProgressFromProfile, utcDay } from '../seedProgress';
 
 const DAY = '2026-09-14';
 const DAY_START_MS = Date.parse(`${DAY}T00:00:00.000Z`);
@@ -95,5 +95,30 @@ describe('seedProgressFromProfile', () => {
     it('seeds nothing for empty profiles or untracked programs', () => {
         const quest = makeQuest('explore', 1);
         expect(seedProgressFromProfile([quest], profileWith(), DAY)).toEqual({});
+    });
+});
+
+describe('mergeProgress', () => {
+    it('takes the max count and unions active days, never regressing', () => {
+        const merged = mergeProgress(
+            { count: 5, activeDays: { '2026-09-14': true, '2026-09-12': true } },
+            { count: 3, activeDays: { '2026-09-13': true } },
+        );
+        expect(merged).toEqual({
+            count: 5,
+            activeDays: {
+                '2026-09-14': true,
+                '2026-09-13': true,
+                '2026-09-12': true,
+            },
+        });
+    });
+
+    it('keeps the higher count when the server is ahead', () => {
+        const merged = mergeProgress(
+            { count: 1, activeDays: {} },
+            { count: 6, activeDays: { '2026-09-10': true } },
+        );
+        expect(merged.count).toBe(6);
     });
 });

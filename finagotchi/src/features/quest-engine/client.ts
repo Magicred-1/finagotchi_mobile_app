@@ -41,6 +41,21 @@ export interface BackfillResponse {
     signaturesScanned: number;
     eventsIngested: number;
     profile: ActivityProfile;
+    /**
+     * Today's quests with exact server-side progress (tx_events-counted).
+     * Optional: older server builds don't send it — fall back to local
+     * profile seeding.
+     */
+    quests?: ServerQuestProgress[];
+}
+
+/** Server-computed quest progress payload (Quest + progress fields). */
+export interface ServerQuestProgress {
+    id: string;
+    current: number;
+    complete: boolean;
+    /** Distinct UTC day strings with events in the window. */
+    days: string[];
 }
 
 export interface VerifyClaimRequest {
