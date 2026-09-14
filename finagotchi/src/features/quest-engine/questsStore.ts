@@ -12,12 +12,10 @@ import {
 import { backfill } from './client';
 import { useClaimQueue } from './claimQueue';
 import { useProfileStore } from './profileStore';
+import { seedProgressFromProfile, utcDay, type QuestProgress } from './seedProgress';
 
-/** Local evidence for one quest: qualifying tx count + distinct UTC days seen. */
-export interface QuestProgress {
-    count: number;
-    activeDays: Record<string, true>;
-}
+export { utcDay } from './seedProgress';
+export type { QuestProgress } from './seedProgress';
 
 export interface QuestWithProgress extends Quest {
     current: number;
@@ -46,10 +44,6 @@ type QuestsState = {
     /** Today's quests with live progress attached; instant from cache. */
     getQuestsWithProgress: (wallet: string, now?: number) => QuestWithProgress[];
 };
-
-export function utcDay(nowMs: number): string {
-    return new Date(nowMs).toISOString().slice(0, 10);
-}
 
 function cacheKey(wallet: string, day: string): string {
     return `${wallet}:${day}`;
@@ -104,6 +98,48 @@ export const useQuestsStore = create<QuestsState>()(
                         profileStore.getHistory(wallet, day),
                     );
                     set({ questsByKey: { ...get().questsByKey, [key]: quests } });
+
+                    // Seed the 7-day window from the profile, then auto-enqueue
+                    // claims for quests the seed already completes. Live
+                    // progress (recordTx) always wins over the seed.
+                    const existing = get().progressByKey[key] ?? {};
+                    const merged = {
+                        ...seedProgressFromProfile(quests, profile, day),
+                        ...existing,
+                    };
+                    set({ progressByKey: { ...get().progressByKey, [key]: merged } });
+
+                    const creditedToday = profileStore.credited[wallet] ?? [];
+                    const failedClaims = useClaimQueue.getState().failed;
+                    for (const quest of quests) {
+                        const p = merged[quest.id];
+                        if (!p || !isComplete(quest, p)) continue;
+                        // Same-day credits and definitive rejections stay quiet.
+                        if (
+                            creditedToday.some(
+                                (e) =>
+                                    e.day === day &&
+                                    e.programId === quest.programId &&
+                                    e.kind === quest.kind,
+                            )
+                        ) {
+                            continue;
+                        }
+                        if (
+                            failedClaims.some(
+                                (f) => f.wallet === wallet && f.questId === quest.id,
+                            )
+                        ) {
+                            continue;
+                        }
+                        useClaimQueue.getState().enqueue({
+                            wallet,
+                            day,
+                            questId: quest.id,
+                            programId: quest.programId,
+                            kind: quest.kind,
+                        });
+                    }
                     return quests;
                 } finally {
                     set({ refreshInFlight: false });
