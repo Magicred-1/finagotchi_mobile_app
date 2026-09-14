@@ -19,12 +19,12 @@
       },
       "channel": "preview"
     },
-    "devnet": {
+    "mainnet": {
       "distribution": "internal",
       "android": {
         "buildType": "apk"
       },
-      "channel": "devnet"
+      "channel": "mainnet"
     },
     "beta": {
       "distribution": "store",
