@@ -7,6 +7,9 @@ how the Expo app binds to the standalone verification server.
 
 ```
 Solana ──Helius webhook──▶ server POST /ingest ──▶ tx_events + user_profile (Postgres)
+         (watches USER WALLETS only — never program IDs; the server appends
+          each wallet on first authenticated call and drops events from
+          unregistered feePayers)
                                                         ▲
 app: POST /backfill {wallet} ──▶ server scans signatures, folds events, returns
                                  ActivityProfile snapshot (~1 KB JSON)
@@ -81,9 +84,11 @@ Environment variables:
 | `DATABASE_URL` | production | Postgres connection string. Unset = in-memory dev DB. |
 | `SOLANA_RPC_URL` | no | RPC for backfill. Defaults to public mainnet-beta. |
 | `HELIUS_WEBHOOK_SECRET` | production | `Authorization` header must match on `POST /ingest`. |
+| `HELIUS_API_KEY` | production | Helius Management API key — the server appends user wallets to the webhook with it. |
+| `HELIUS_WEBHOOK_ID` | production | Webhook to append wallets to. Both this and the key are required for registration. |
 | `MOBILE_API_KEY` | no | Optional extra bearer gate on the mobile-facing endpoints. Wallet-signed auth is the real one. |
 | `PORT` | no | Listen port (default 8080). |
-| `WATCHED_PROGRAMS` | no | Comma-separated program allowlist; defaults to the engine's explore candidates. |
+| `WATCHED_PROGRAMS` | no | Comma-separated program allowlist; defaults to the engine's explore candidates (Jupiter, Raydium, Orca, Marinade, Jupiter DCA). Server-side filter only — the webhook must NOT watch program IDs. |
 | `BACKFILL_MAX_SIGNATURES` | no | Hard cap on signatures scanned per backfill (default 1000). |
 
 When the secret/key variables are unset those gates are open — acceptable for
