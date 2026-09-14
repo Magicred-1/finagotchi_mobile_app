@@ -103,17 +103,17 @@ export function generateDailyQuests(
 
   if (habits.length === 0) {
     return COHORT_DEFAULT_QUESTS.filter(
-      (c) => !historySet.has(`explore:${c.programId}`),
+      (c) => !historySet.has(`${c.kind}:${c.programId}`),
     ).map((c, i) => ({
-      id: questId(day, 'explore', c.programId, i),
+      id: questId(day, c.kind, c.programId, i),
       day,
-      kind: 'explore',
+      kind: c.kind,
       programId: c.programId,
-      goal: 1,
+      goal: c.goal,
       windowDays: QUEST_WINDOW_DAYS,
-      xp: EXPLORE_XP,
-      title: `Try ${c.name}`,
-      description: `Make your first transaction on ${c.name}.`,
+      xp: c.xp,
+      title: c.title,
+      description: c.description,
       sponsor: c.sponsor,
     }));
   }
@@ -186,5 +186,70 @@ export function generateDailyQuests(
   return quests;
 }
 
-/** Fixed cold-start list (Jupiter, Raydium, Orca) shown to wallets with no habits yet. */
-const COHORT_DEFAULT_QUESTS: readonly ExploreCandidate[] = EXPLORE_CANDIDATES.slice(0, 3);
+/**
+ * Fixed starter pack for fresh wallets (no habits yet). Fixed order matters —
+ * quest ids are position-based. No RNG draws are consumed (protocol), so the
+ * list is identical on app and server. Designed to teach the whole mechanic
+ * in the first session: a first swap, the app's core DCA funnel, one volume
+ * quest and one first streak, all with goals a brand-new wallet can hit.
+ */
+interface CohortQuest extends ExploreCandidate {
+  kind: QuestKind;
+  goal: number;
+  xp: number;
+  title: string;
+  description: string;
+}
+
+const COHORT_DEFAULT_QUESTS: readonly CohortQuest[] = [
+  {
+    programId: 'JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4',
+    name: 'Jupiter',
+    sponsor: 'Jupiter',
+    kind: 'explore',
+    goal: 1,
+    xp: EXPLORE_XP,
+    title: 'First Splash',
+    description: 'Make your first swap on Jupiter — every creature starts somewhere.',
+  },
+  {
+    programId: 'DCA265Vj8a9CEuX1eb1LWRnDT7uK6q1xMipnNyatn23M',
+    name: 'Jupiter DCA',
+    sponsor: 'Jupiter',
+    kind: 'explore',
+    goal: 1,
+    xp: EXPLORE_XP,
+    title: 'Plant a Seed',
+    description: 'Create your first Jupiter DCA plan and let it grow on autopilot.',
+  },
+  {
+    programId: '675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8',
+    name: 'Raydium',
+    sponsor: 'Raydium',
+    kind: 'explore',
+    goal: 1,
+    xp: EXPLORE_XP,
+    title: 'New Waters',
+    description: "Try a transaction on Raydium to widen your creature's world.",
+  },
+  {
+    programId: 'JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4',
+    name: 'Jupiter',
+    sponsor: 'Jupiter',
+    kind: 'count',
+    goal: 2,
+    xp: xpForGoal(2),
+    title: 'Back for Seconds',
+    description: `Make 2 transactions on Jupiter within ${QUEST_WINDOW_DAYS} days.`,
+  },
+  {
+    programId: 'JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4',
+    name: 'Jupiter',
+    sponsor: 'Jupiter',
+    kind: 'streak',
+    goal: 2,
+    xp: xpForGoal(2),
+    title: 'Creature Routine',
+    description: `Be active on Jupiter on at least 2 distinct days within ${QUEST_WINDOW_DAYS} days — consistency feeds the beast.`,
+  },
+];

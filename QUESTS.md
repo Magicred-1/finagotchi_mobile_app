@@ -51,7 +51,8 @@ list wire format is specified in `shared/quest-engine/quest-schema.json`.
 - Seed = SHA256(`${wallet}|${day}`), PRNG = mulberry32, and the RNG draw order
   (habit stretch draws → explore roll → candidate index) is fixed and part of
   the protocol. Cold start (no habits) consumes no draws and returns the fixed
-  cohort-default explorer quests.
+  starter pack: three one-tx explore quests (Jupiter, Jupiter DCA, Raydium),
+  a goal-2 volume quest and a goal-2-day streak on Jupiter.
 - Quest id = first 16 hex chars of SHA256(`${day}:${kind}:${programId}:${index}`).
 - `questHistory` passed to generation must contain only quests credited on
   PRIOR days (`{programId, kind}`). The server rebuilds it from `quest_credits`;
