@@ -11,8 +11,11 @@ Solana ──Helius webhook──▶ server POST /ingest ──▶ tx_events + u
           each wallet on first authenticated call and drops events from
           unregistered feePayers)
                                                         ▲
-app: POST /backfill {wallet} ──▶ server scans signatures, folds events, returns
-                                 ActivityProfile snapshot (~1 KB JSON)
+app: POST /backfill {wallet} ──▶ server scans signatures (incrementally — stops
+                                 at the first already-ingested page), folds events,
+                                 returns the ActivityProfile snapshot (~1 KB JSON)
+                                 plus TODAY'S QUESTS with exact tx_events-counted
+                                 progress (current/complete/days per quest)
         │
         ▼
 app: profileStore (AsyncStorage) ── onNewTx folds each confirmed tx locally, O(1), no network
@@ -134,7 +137,12 @@ auth.
 - **Sync triggers:** `startQuestSync(getWallet)` runs one pass at app open and
   again only on NetInfo offline→online transitions. There are no polling loops;
   a clearly marked TODO seam in `sync.ts` is where a daily scheduled task
-  (expo-background-task / WorkManager) should be registered later.
+  (expo-background-task / WorkManager) should be registered later. Each pass
+  re-backfills when the last server sync is older than 6 h
+  (`BACKFILL_STALE_MS`), so webhook-ingested activity from outside the app
+  reaches the profile; repeat backfills are cheap (incremental server-side).
+  Progress is merged from three sources without regressing: profile seed
+  (lower bound), server-exact backfill progress, and live `recordTx`.
 
 ## Claim queue behavior
 

@@ -9,13 +9,26 @@ import {
     type Quest,
     type TxEvent,
 } from '../../../../shared/quest-engine';
-import { backfill } from './client';
+import { backfill, type ServerQuestProgress } from './client';
 import { useClaimQueue } from './claimQueue';
 import { useProfileStore } from './profileStore';
-import { seedProgressFromProfile, utcDay, type QuestProgress } from './seedProgress';
+import {
+    mergeProgress,
+    seedProgressFromProfile,
+    utcDay,
+    type QuestProgress,
+} from './seedProgress';
 
 export { utcDay } from './seedProgress';
 export type { QuestProgress } from './seedProgress';
+
+/**
+ * Re-backfill when the last server sync is older than this — webhook-ingested
+ * activity (txs sent outside the app, other devices) otherwise never reaches
+ * the local profile. Cheap after the first scan: the server paginates
+ * incrementally and stops at the first already-ingested page.
+ */
+const BACKFILL_STALE_MS = 6 * 3_600_000;
 
 export interface QuestWithProgress extends Quest {
     current: number;
@@ -27,12 +40,16 @@ type QuestsState = {
     questsByKey: Record<string, Quest[]>;
     /** Progress per day key, then per quest id. */
     progressByKey: Record<string, Record<string, QuestProgress>>;
+    /** Last successful server backfill per wallet (ms) — drives the stale gate. */
+    lastBackfillAt: Record<string, number>;
     refreshInFlight: boolean;
 
     /**
-     * Resolve today's quest list for a wallet. Cached per (wallet, day) so the
-     * list cannot drift mid-day; cold start backfills from the server when
-     * online, otherwise falls back to the engine's cohort-default quests.
+     * Resolve today's quest list for a wallet. Backfills from the server on
+     * cold start and whenever the last sync is stale, regenerates the list
+     * from the freshest profile, and merges progress from all three sources
+     * (profile seed, server-exact, live recordTx) without ever regressing.
+     * Quests the merged progress completes are auto-enqueued for verification.
      */
     refreshQuests: (wallet: string, now?: number) => Promise<Quest[]>;
     /**
@@ -62,31 +79,42 @@ export const useQuestsStore = create<QuestsState>()(
         (set, get) => ({
             questsByKey: {},
             progressByKey: {},
+            lastBackfillAt: {},
             refreshInFlight: false,
 
             refreshQuests: async (wallet, now = Date.now()) => {
                 const day = utcDay(now);
                 const key = cacheKey(wallet, day);
-                const cached = get().questsByKey[key];
-                if (cached) return cached;
-                if (get().refreshInFlight) return [];
+                if (get().refreshInFlight) return get().questsByKey[key] ?? [];
                 set({ refreshInFlight: true });
                 try {
                     const profileStore = useProfileStore.getState();
                     let profile = profileStore.getProfile(wallet);
+                    let serverQuests: ServerQuestProgress[] | undefined;
 
-                    // Cold start: an empty profile produces only cohort-default
-                    // explorer quests, so seed real history first when we can.
-                    if (Object.keys(profile.programs).length === 0) {
+                    // Cold start (empty profile) and stale syncs both pull the
+                    // server's event-folded profile + exact quest progress.
+                    const lastBackfill = get().lastBackfillAt[wallet] ?? 0;
+                    if (
+                        Object.keys(profile.programs).length === 0 ||
+                        now - lastBackfill > BACKFILL_STALE_MS
+                    ) {
                         const net = await NetInfo.fetch();
                         if (net.isConnected) {
                             try {
                                 const res = await backfill(wallet);
                                 profileStore.hydrateFromBackfill(res.profile);
                                 profile = res.profile;
+                                serverQuests = res.quests;
+                                set({
+                                    lastBackfillAt: {
+                                        ...get().lastBackfillAt,
+                                        [wallet]: now,
+                                    },
+                                });
                             } catch {
                                 // Server unreachable mid-call: deterministic
-                                // defaults from the empty profile still render.
+                                // generation from the local profile still renders.
                             }
                         }
                     }
@@ -99,16 +127,29 @@ export const useQuestsStore = create<QuestsState>()(
                     );
                     set({ questsByKey: { ...get().questsByKey, [key]: quests } });
 
-                    // Seed the 7-day window from the profile, then auto-enqueue
-                    // claims for quests the seed already completes. Live
-                    // progress (recordTx) always wins over the seed.
+                    // Merge progress from three sources, never regressing:
+                    // profile seed (lower bound) -> server-exact -> live recordTx.
+                    const merged: Record<string, QuestProgress> =
+                        seedProgressFromProfile(quests, profile, day);
+                    for (const sq of serverQuests ?? []) {
+                        const fromServer: QuestProgress = {
+                            count: sq.current,
+                            activeDays: Object.fromEntries(
+                                sq.days.map((d) => [d, true as const])
+                            ),
+                        };
+                        merged[sq.id] = merged[sq.id]
+                            ? mergeProgress(merged[sq.id], fromServer)
+                            : fromServer;
+                    }
                     const existing = get().progressByKey[key] ?? {};
-                    const merged = {
-                        ...seedProgressFromProfile(quests, profile, day),
-                        ...existing,
-                    };
+                    for (const [id, p] of Object.entries(existing)) {
+                        merged[id] = merged[id] ? mergeProgress(merged[id], p) : p;
+                    }
                     set({ progressByKey: { ...get().progressByKey, [key]: merged } });
 
+                    // Auto-enqueue claims for quests the merged progress
+                    // completes — the server remains the payout authority.
                     const creditedToday = profileStore.credited[wallet] ?? [];
                     const failedClaims = useClaimQueue.getState().failed;
                     for (const quest of quests) {
@@ -215,6 +256,7 @@ export const useQuestsStore = create<QuestsState>()(
             partialize: (state) => ({
                 questsByKey: state.questsByKey,
                 progressByKey: state.progressByKey,
+                lastBackfillAt: state.lastBackfillAt,
             }),
         },
     ),

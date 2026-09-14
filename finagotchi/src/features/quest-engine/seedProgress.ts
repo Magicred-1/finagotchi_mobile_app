@@ -18,6 +18,19 @@ export function utcDay(nowMs: number): string {
 }
 
 /**
+ * Merge two progress records for the same quest, never regressing: max
+ * count, union of active days. Used to fold server-exact progress into
+ * locally-seeded/live progress without losing a just-sent tx the server
+ * hasn't ingested yet.
+ */
+export function mergeProgress(a: QuestProgress, b: QuestProgress): QuestProgress {
+    return {
+        count: Math.max(a.count, b.count),
+        activeDays: { ...a.activeDays, ...b.activeDays },
+    };
+}
+
+/**
  * Seed a fresh day's progress from the activity profile. Quest windows span
  * 7 days, so history that predates the app's first sync already counts
  * server-side — without seeding, a returning user starts every quest at 0
