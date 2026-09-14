@@ -22,7 +22,11 @@ app + server: generateDailyQuests(wallet, profile, day, questHistory)
         — same pure function, same seed, identical quest list on both sides
         │
         ▼
-app: questsStore renders instantly from cache, offline; recordTx advances progress
+app: questsStore renders instantly from cache, offline; recordTx advances progress.
+        On list generation the 7-day window is SEEDED from the profile's
+        active-days bitmap (exact for streaks, a safe lower bound for volume
+        quests) and quests already satisfied auto-enqueue their claim — a
+        returning user's history counts without redoing anything.
         │
         ▼
 app: claimQueue (offline-first, persisted) ──▶ server POST /verify
