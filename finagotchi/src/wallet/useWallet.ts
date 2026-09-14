@@ -186,9 +186,18 @@ export function toHumanReadableWalletError(error: unknown): Error {
             "Your wallet's signature didn't make it onto the transaction — please try again."
         );
     }
+    // A JSON-RPC 403 from the wallet's RPC endpoint (e.g. a Helius key whose
+    // origin allowlist doesn't cover Dynamic's webview origin). Checked BEFORE
+    // the export branch: "access forbidden" is not a key-export failure.
+    if (/access forbidden|"code":\s*403|\b403\b/.test(normalized)) {
+        return friendly(
+            'The wallet RPC refused the request (403) — the RPC API key likely has an origin restriction. Remove it or allow the wallet origin, then try again.'
+        );
+    }
     // Dynamic rejects key export with WalletApiError: Forbidden when the
-    // dashboard's "Private Key Exports" toggle is off.
-    if (/forbidden|export (private )?keys? (is )?(disabled|not allowed)/.test(normalized)) {
+    // dashboard's "Private Key Exports" toggle is off. Only reachable from
+    // the export flow — a bare "forbidden" elsewhere is NOT this (see 403 above).
+    if (/export (private )?keys? (is )?(disabled|not allowed)|revealembeddedwalletkey|wallet:export/.test(normalized)) {
         return friendly("Key export isn't available for this wallet right now.");
     }
     if (/invalid deposit transaction|accounts modified/.test(normalized)) {
@@ -755,31 +764,42 @@ const WALLET_EXPORT_SCOPE = 'wallet:export' as StepUpScope;
 
 export const exportPrivateKeyWithWallet = withHumanReadableErrors(
     async (): Promise<void> => {
-    const { session } = useWalletStore.getState();
-    if (session.connectionType !== 'dynamic') {
-        throw new Error(
-            'Private key export is only available for embedded wallets'
-        );
-    }
-    // Ensure the embedded Solana wallet exists before opening the export UI.
-    findDynamicSolanaWallet();
+    try {
+        const { session } = useWalletStore.getState();
+        if (session.connectionType !== 'dynamic') {
+            throw new Error(
+                'Private key export is only available for embedded wallets'
+            );
+        }
+        // Ensure the embedded Solana wallet exists before opening the export UI.
+        findDynamicSolanaWallet();
 
-    // A plain session token lacks the wallet:export scope and gets a
-    // WalletApiError: Forbidden from the export API — elevate the session
-    // with Dynamic's step-up prompt first when the SDK says it's required.
-    if (
-        await dynamicClient.stepUpAuth.isStepUpRequired({
-            scope: WALLET_EXPORT_SCOPE,
-        })
-    ) {
-        await dynamicClient.stepUpAuth.promptStepUpAuth({
-            requestedScopes: [WALLET_EXPORT_SCOPE],
+        // A plain session token lacks the wallet:export scope and gets a
+        // WalletApiError: Forbidden from the export API — elevate the session
+        // with Dynamic's step-up prompt first when the SDK says it's required.
+        if (
+            await dynamicClient.stepUpAuth.isStepUpRequired({
+                scope: WALLET_EXPORT_SCOPE,
+            })
+        ) {
+            await dynamicClient.stepUpAuth.promptStepUpAuth({
+                requestedScopes: [WALLET_EXPORT_SCOPE],
+            });
+        }
+
+        await dynamicClient.ui.wallets.revealEmbeddedWalletKey({
+            type: 'private-key',
         });
+    } catch (error) {
+        // Only this flow knows a "Forbidden" is about key export (dashboard's
+        // "Private Key Exports" toggle off) — the global mapper can't tell it
+        // apart from an RPC 403, so map it here.
+        const message = error instanceof Error ? error.message : String(error);
+        if (/forbidden|disabled|not allowed/i.test(message)) {
+            throw new Error("Key export isn't available for this wallet right now.");
+        }
+        throw error;
     }
-
-    await dynamicClient.ui.wallets.revealEmbeddedWalletKey({
-        type: 'private-key',
-    });
     }
 );
 
