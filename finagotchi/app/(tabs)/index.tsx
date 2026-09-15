@@ -27,6 +27,7 @@ import { LevelUpAnimation } from '../../src/components/LevelUpAnimation';
 import { Sidebar, SIDEBAR_WIDTH, useSidebarOpenGesture } from '../../src/components/Sidebar';
 import EvolutionCeremony from '../../src/components/EvolutionCeremony';
 import CollectiblesSheet from '../../src/components/CollectiblesSheet';
+import PrizeWheel from '../../src/components/PrizeWheel';
 import QuestsSheet from '../../src/components/QuestsSheet';
 import WaitlistSheet from '../../src/components/WaitlistSheet';
 import FoodSheet, { type FoodItem } from '../../src/components/FoodSheet';
@@ -38,6 +39,7 @@ import { DCAHome } from '../../src/screens/dca/DCAHome';
 import { useDcaSyncEngine } from '../../src/services/ble/SyncEngine';
 import { dcaEvents, useDcaUiStore } from '../../src/services/dca';
 import { useCheckinStore } from '../../src/features/checkin/store';
+import { localDayKey, useWheelStore } from '../../src/features/wheel/store';
 import {
   BACKGROUND_COLORS,
   REVIVE_INVITES_REQUIRED,
@@ -188,6 +190,7 @@ export default function HomeScreen() {
   const [bleVisible, setBleVisible] = useState(false);
   const [reviveVisible, setReviveVisible] = useState(false);
   const [communityResurrectVisible, setCommunityResurrectVisible] = useState(false);
+  const [wheelVisible, setWheelVisible] = useState(false);
   const [reaction, setReaction] = useState<PetReaction | undefined>(undefined);
   const [reactionKey, setReactionKey] = useState(0);
   const [actionMood, setActionMood] = useState<PetMood | undefined>(undefined);
@@ -216,6 +219,7 @@ export default function HomeScreen() {
   const longestStreak = useCheckinStore((state) => state.longestStreak);
   const totalCheckins = useCheckinStore((state) => state.totalCheckins);
   const resetStreak = useCheckinStore((state) => state.resetStreak);
+  const lastSpinDay = useWheelStore((state) => state.lastSpinDay);
 
   const stage = usePetStore((state) => state.stage);
   const petName = usePetStore((state) => state.name);
@@ -262,6 +266,7 @@ export default function HomeScreen() {
     foodVisible ||
     reviveVisible ||
     communityResurrectVisible ||
+    wheelVisible ||
     celebratingStage !== null ||
     isDead;
 
@@ -278,6 +283,8 @@ export default function HomeScreen() {
   const scale = Math.min(Math.max(width / 375, 0.9), 1.1);
 
   const isDoneToday = hasCheckedInToday;
+  // A spin is earned by checking in; it stays claimable until spun.
+  const spinAvailable = isDoneToday && lastSpinDay !== localDayKey();
 
   const mood = useMemo(
     () => getMood(currentHour, isDoneToday, streak, happiness),
@@ -409,6 +416,10 @@ export default function HomeScreen() {
         setCommunityResurrectVisible(false);
         return true;
       }
+      if (wheelVisible) {
+        setWheelVisible(false);
+        return true;
+      }
       if (celebratingStage !== null) {
         setCelebratingStage(null);
         setLastCelebratedStage(stage);
@@ -442,7 +453,7 @@ export default function HomeScreen() {
 
     const subscription = BackHandler.addEventListener('hardwareBackPress', onBackPress);
     return () => subscription.remove();
-  }, [sidebarVisible, bleVisible, collectiblesVisible, questsVisible, waitlistVisible, foodVisible, communityResurrectVisible, celebratingStage, stage]);
+  }, [sidebarVisible, bleVisible, collectiblesVisible, questsVisible, waitlistVisible, foodVisible, communityResurrectVisible, wheelVisible, celebratingStage, stage]);
 
   const REACTION_EMOJIS: Record<PetReaction, string> = {
     jump: '❤️',
@@ -489,7 +500,11 @@ export default function HomeScreen() {
     }
 
     if (!isDoneToday) {
-      checkIn(true);
+      const result = checkIn(true);
+      if (result.success) {
+        // Let the feeding reaction play, then offer the earned wheel spin.
+        setTimeout(() => setWheelVisible(true), 1300);
+      }
     }
 
     if (cost > 0) {
@@ -808,6 +823,19 @@ export default function HomeScreen() {
               <Text style={styles.streakPillText}>{streak}</Text>
             </View>
 
+            {spinAvailable && !isDead && (
+              <PressableScale
+                onPress={() => {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  setWheelVisible(true);
+                }}
+                style={styles.spinPill}
+              >
+                <Ionicons name="gift" size={12} color={colors.warning} />
+                <Text style={styles.spinPillText}>Spin</Text>
+              </PressableScale>
+            )}
+
             <View style={styles.petCenter}>
               {celebratingStage === null && (
                 <PetCanvas
@@ -1017,6 +1045,11 @@ export default function HomeScreen() {
       <CollectiblesSheet
         visible={collectiblesVisible}
         onClose={() => setCollectiblesVisible(false)}
+      />
+
+      <PrizeWheel
+        visible={wheelVisible}
+        onClose={() => setWheelVisible(false)}
       />
 
       <QuestsSheet
@@ -1326,6 +1359,25 @@ const styles = StyleSheet.create({
     zIndex: 5,
   },
   streakPillText: {
+    color: colors.text,
+    fontSize: 10,
+    fontFamily: 'Poppins_800ExtraBold',
+  },
+  spinPill: {
+    position: 'absolute',
+    top: 10,
+    right: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingVertical: 5,
+    paddingHorizontal: 10,
+    borderRadius: radius.pill,
+    backgroundColor: 'rgba(7,17,31,0.55)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,209,102,0.45)',
+  },
+  spinPillText: {
     color: colors.text,
     fontSize: 10,
     fontFamily: 'Poppins_800ExtraBold',
