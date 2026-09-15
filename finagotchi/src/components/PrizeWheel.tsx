@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { StyleSheet, Text, View, useWindowDimensions } from 'react-native';
-import Svg, { Path } from 'react-native-svg';
+import Svg, { Circle, Path } from 'react-native-svg';
 import Animated, {
     Easing,
     runOnJS,
@@ -235,7 +235,9 @@ export default function PrizeWheel({ visible, onClose }: Props) {
                         )}
 
                         <View style={[styles.wheelWrap, { width: wheelSize, height: wheelSize }]}>
-                            <View style={styles.pointer} />
+                            <View style={styles.pointerWrap} pointerEvents="none">
+                                <View style={styles.pointer} />
+                            </View>
 
                             <Animated.View style={[styles.wheel, wheelStyle]}>
                                 <Svg
@@ -251,10 +253,18 @@ export default function PrizeWheel({ visible, onClose }: Props) {
                                                 d={segmentPath(index, segments.length)}
                                                 fill={fill}
                                                 stroke={stroke}
-                                                strokeWidth={1.5}
+                                                strokeWidth={2}
                                             />
                                         );
                                     })}
+                                    <Circle
+                                        cx={SVG_CENTER}
+                                        cy={SVG_CENTER}
+                                        r={WHEEL_RADIUS - 4}
+                                        stroke={colors.border}
+                                        strokeWidth={6}
+                                        fill="none"
+                                    />
                                 </Svg>
 
                                 <View style={StyleSheet.absoluteFill} pointerEvents="none">
@@ -371,10 +381,15 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         justifyContent: 'center',
     },
-    pointer: {
+    pointerWrap: {
         position: 'absolute',
         top: -4,
-        alignSelf: 'center',
+        left: 0,
+        right: 0,
+        alignItems: 'center',
+        zIndex: 10,
+    },
+    pointer: {
         width: 0,
         height: 0,
         borderLeftWidth: 9,
@@ -383,16 +398,19 @@ const styles = StyleSheet.create({
         borderLeftColor: 'transparent',
         borderRightColor: 'transparent',
         borderBottomColor: colors.warning,
-        zIndex: 10,
     },
     wheel: {
         width: '100%',
         height: '100%',
     },
     labelArm: {
+        // Full-width arm so rotation happens around the wheel's hub, not
+        // around a content-sized strip pinned to the left edge.
         position: 'absolute',
         top: 0,
         bottom: 0,
+        left: 0,
+        right: 0,
         alignItems: 'center',
     },
     labelCounter: {
