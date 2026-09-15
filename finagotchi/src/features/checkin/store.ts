@@ -33,7 +33,7 @@ type CheckinState = {
     useStreakFreeze: () => boolean;
 };
 
-const MILESTONES = [3, 7, 14, 30, 60, 90];
+export const MILESTONES = [3, 7, 14, 30, 60, 90];
 
 function dateKey(offsetDays = 0) {
     const date = new Date();

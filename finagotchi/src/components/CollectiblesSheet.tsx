@@ -12,9 +12,13 @@ import { AccessoryPreview } from './PetAccessory';
 import { BottomSheet } from './BottomSheet';
 import { PressableScale } from './PressableScale';
 import {
+    COSMETIC_ACCESSORIES,
+    COSMETIC_BACKGROUNDS,
+    type CosmeticAccessory,
+    type CosmeticBackground,
+} from '../features/pet/cosmetics';
+import {
     BACKGROUND_COLORS,
-    type PetAccessory,
-    type PetBackground,
     usePetStore,
 } from '../features/pet/store';
 import { useCheckinStore } from '../features/checkin/store';
@@ -24,39 +28,6 @@ type Props = {
     visible: boolean;
     onClose: () => void;
 };
-
-type BackgroundItem = {
-    id: PetBackground;
-    name: string;
-    unlock: number; // streak required for free items
-    price: number;  // premium price; 0 means free/unlocked by streak
-};
-
-type AccessoryItem = {
-    id: PetAccessory;
-    name: string;
-    unlock: number;
-    price: number;
-};
-
-const BACKGROUNDS: BackgroundItem[] = [
-    { id: 'default', name: 'Meadow', unlock: 0, price: 0 },
-    { id: 'aurora', name: 'Aurora', unlock: 3, price: 0 },
-    { id: 'sunset', name: 'Sunset', unlock: 7, price: 0 },
-    { id: 'midnight', name: 'Midnight', unlock: 14, price: 0 },
-    { id: 'galaxy', name: 'Galaxy', unlock: 0, price: 1200 },
-    { id: 'gold', name: 'Golden', unlock: 0, price: 3000 },
-];
-
-const ACCESSORIES: AccessoryItem[] = [
-    { id: 'none', name: 'None', unlock: 0, price: 0 },
-    { id: 'glasses', name: 'Shades', unlock: 3, price: 0 },
-    { id: 'bowtie', name: 'Bowtie', unlock: 7, price: 0 },
-    { id: 'crown', name: 'Royal Crown', unlock: 14, price: 0 },
-    { id: 'halo', name: 'Halo', unlock: 0, price: 800 },
-    { id: 'tshirt', name: 'Coin Tee', unlock: 0, price: 1500 },
-    { id: 'diamond', name: 'Diamond', unlock: 0, price: 2500 },
-];
 
 function formatNumber(num: number): string {
     return Math.round(num)
@@ -74,16 +45,18 @@ export default function CollectiblesSheet({ visible, onClose }: Props) {
     const setCosmetic = usePetStore((state) => state.setCosmetic);
     const ownBackground = usePetStore((state) => state.ownBackground);
     const ownAccessory = usePetStore((state) => state.ownAccessory);
+    const purchaseBackground = usePetStore((state) => state.purchaseBackground);
+    const purchaseAccessory = usePetStore((state) => state.purchaseAccessory);
 
     // Streak unlocks free collectibles automatically.
     useEffect(() => {
         if (!visible) return;
-        BACKGROUNDS.forEach((item) => {
+        COSMETIC_BACKGROUNDS.forEach((item) => {
             if (item.price === 0 && streak >= item.unlock) {
                 ownBackground(item.id);
             }
         });
-        ACCESSORIES.forEach((item) => {
+        COSMETIC_ACCESSORIES.forEach((item) => {
             if (item.price === 0 && streak >= item.unlock) {
                 ownAccessory(item.id);
             }
@@ -95,14 +68,36 @@ export default function CollectiblesSheet({ visible, onClose }: Props) {
         onClose();
     };
 
-    const selectBackground = (item: BackgroundItem) => {
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-        setCosmetic({ background: item.id });
+    const handleBackground = (item: CosmeticBackground) => {
+        if (ownedBackgrounds.includes(item.id)) {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            setCosmetic({ background: item.id });
+            return;
+        }
+
+        if (item.price > 0 && purchaseBackground(item.id, item.price)) {
+            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+            setCosmetic({ background: item.id });
+            return;
+        }
+
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
     };
 
-    const selectAccessory = (item: AccessoryItem) => {
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-        setCosmetic({ accessory: item.id });
+    const handleAccessory = (item: CosmeticAccessory) => {
+        if (ownedAccessories.includes(item.id)) {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            setCosmetic({ accessory: item.id });
+            return;
+        }
+
+        if (item.price > 0 && purchaseAccessory(item.id, item.price)) {
+            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+            setCosmetic({ accessory: item.id });
+            return;
+        }
+
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
     };
 
     return (
@@ -132,24 +127,25 @@ export default function CollectiblesSheet({ visible, onClose }: Props) {
                 contentContainerStyle={styles.container}
             >
                 <Text style={styles.intro}>
-                    All styles are unlocked for testing. Tap any item to equip it.
+                    Free styles unlock with your streak, rare ones drop from the
+                    daily check-in wheel — or buy them with points.
                 </Text>
 
                 <Text style={styles.sectionTitle}>Backgrounds</Text>
                 <View style={styles.grid}>
-                    {BACKGROUNDS.map((item) => {
-                        const isOwned = true;
-                        const streakUnlocked = true;
+                    {COSMETIC_BACKGROUNDS.map((item) => {
+                        const isOwned = ownedBackgrounds.includes(item.id);
+                        const streakUnlocked = streak >= item.unlock;
                         const isActive = background === item.id;
-                        const isPremium = false;
-                        const canAfford = true;
-                        const isDisabled = false;
+                        const isPremium = item.price > 0;
+                        const canAfford = balance >= item.price;
+                        const isDisabled = !isOwned && (isPremium ? !canAfford : !streakUnlocked);
                         const [top, bottom] = BACKGROUND_COLORS[item.id];
 
                         return (
                             <PressableScale
                                 key={item.id}
-                                onPress={() => selectBackground(item)}
+                                onPress={() => handleBackground(item)}
                                 disabled={isDisabled}
                                 style={[
                                     styles.tile,
@@ -222,18 +218,18 @@ export default function CollectiblesSheet({ visible, onClose }: Props) {
 
                 <Text style={styles.sectionTitle}>Accessories</Text>
                 <View style={styles.grid}>
-                    {ACCESSORIES.map((item) => {
-                        const isOwned = true;
-                        const streakUnlocked = true;
+                    {COSMETIC_ACCESSORIES.map((item) => {
+                        const isOwned = ownedAccessories.includes(item.id);
+                        const streakUnlocked = streak >= item.unlock;
                         const isActive = accessory === item.id;
-                        const isPremium = false;
-                        const canAfford = true;
-                        const isDisabled = false;
+                        const isPremium = item.price > 0;
+                        const canAfford = balance >= item.price;
+                        const isDisabled = !isOwned && (isPremium ? !canAfford : !streakUnlocked);
 
                         return (
                             <PressableScale
                                 key={item.id}
-                                onPress={() => selectAccessory(item)}
+                                onPress={() => handleAccessory(item)}
                                 disabled={isDisabled}
                                 style={[
                                     styles.tile,
