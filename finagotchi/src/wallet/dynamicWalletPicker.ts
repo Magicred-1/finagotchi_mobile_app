@@ -12,17 +12,9 @@ export type { WalletOption };
 
 const ALLOWED_WALLETS = new Set(['phantom', 'solflare', 'metamask', 'backpack']);
 
-function isInstalled(walletOption: WalletOption): boolean {
-    return walletOption.connectionOptions.some(
-        (option) => option.type === 'withWalletProvider'
-    );
-}
-
 export async function getWalletOptions(): Promise<WalletOption[]> {
     const options = await getWalletOptionsCatalogue({ includeMobileOptions: true }, newDynamicClient);
-    return options.filter(
-        (wallet) => ALLOWED_WALLETS.has(wallet.key) && isInstalled(wallet)
-    );
+    return options.filter((wallet) => ALLOWED_WALLETS.has(wallet.key));
 }
 
 export async function connectDynamicWallet(

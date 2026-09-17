@@ -1,7 +1,6 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect } from 'react';
 import {
     ActivityIndicator,
-    FlatList,
     Image,
     Modal,
     Pressable,
@@ -48,24 +47,6 @@ export function WalletPickerSheet({
         }
     }, [visible, opacity, translateY]);
 
-    const renderItem = ({ item }: { item: WalletOption }) => (
-        <Pressable
-            style={styles.row}
-            onPress={() => onSelect(item)}
-            disabled={loading}
-        >
-            {item.iconUrl ? (
-                <Image source={{ uri: item.iconUrl }} style={styles.icon} />
-            ) : (
-                <View style={styles.iconPlaceholder}>
-                    <Ionicons name="wallet-outline" size={20} color={colors.text} />
-                </View>
-            )}
-            <Text style={styles.name}>{item.name}</Text>
-            {loading && <ActivityIndicator size="small" color={colors.text} />}
-        </Pressable>
-    );
-
     return (
         <Modal visible={visible} transparent animationType="none" onRequestClose={onClose}>
             <Animated.View style={[styles.overlay, { opacity }]}>
@@ -77,15 +58,40 @@ export function WalletPickerSheet({
                             <Ionicons name="close" size={24} color={colors.text} />
                         </Pressable>
                     </View>
-                    <FlatList
-                        data={options}
-                        keyExtractor={(item) => item.key}
-                        renderItem={renderItem}
-                        contentContainerStyle={styles.list}
-                        ListEmptyComponent={
-                            <Text style={styles.empty}>No wallet options available.</Text>
-                        }
-                    />
+
+                    <View style={styles.row}>
+                        {options.map((item) => (
+                            <Pressable
+                                key={item.key}
+                                style={styles.walletButton}
+                                onPress={() => onSelect(item)}
+                                disabled={loading}
+                            >
+                                {item.iconUrl ? (
+                                    <Image
+                                        source={{ uri: item.iconUrl }}
+                                        style={styles.icon}
+                                        resizeMode="contain"
+                                    />
+                                ) : (
+                                    <View style={styles.iconPlaceholder}>
+                                        <Ionicons
+                                            name="wallet-outline"
+                                            size={24}
+                                            color={colors.text}
+                                        />
+                                    </View>
+                                )}
+                                {loading ? (
+                                    <ActivityIndicator size="small" color={colors.text} />
+                                ) : null}
+                            </Pressable>
+                        ))}
+                    </View>
+
+                    {options.length === 0 ? (
+                        <Text style={styles.empty}>No wallet options available.</Text>
+                    ) : null}
                 </Animated.View>
             </Animated.View>
         </Modal>
@@ -106,7 +112,7 @@ const styles = StyleSheet.create({
         borderTopLeftRadius: radius.lg,
         borderTopRightRadius: radius.lg,
         padding: spacing.lg,
-        maxHeight: '70%',
+        paddingBottom: spacing.xl,
     },
     header: {
         flexDirection: 'row',
@@ -119,39 +125,34 @@ const styles = StyleSheet.create({
         fontSize: typography.heading,
         fontFamily: 'Poppins_800ExtraBold',
     },
-    list: {
-        gap: spacing.sm,
-    },
     row: {
         flexDirection: 'row',
-        alignItems: 'center',
+        justifyContent: 'center',
         gap: spacing.md,
-        padding: spacing.md,
+    },
+    walletButton: {
+        width: 64,
+        height: 64,
         borderRadius: radius.md,
         backgroundColor: colors.surface,
-    },
-    icon: {
-        width: 32,
-        height: 32,
-        borderRadius: radius.sm,
-    },
-    iconPlaceholder: {
-        width: 32,
-        height: 32,
-        borderRadius: radius.sm,
-        backgroundColor: colors.surfaceLight,
         alignItems: 'center',
         justifyContent: 'center',
+        padding: spacing.sm,
     },
-    name: {
-        flex: 1,
-        color: colors.text,
-        fontSize: typography.body,
-        fontFamily: 'Poppins_600SemiBold',
+    icon: {
+        width: 40,
+        height: 40,
+    },
+    iconPlaceholder: {
+        width: 40,
+        height: 40,
+        alignItems: 'center',
+        justifyContent: 'center',
     },
     empty: {
         color: colors.textMuted,
         textAlign: 'center',
         fontFamily: 'Poppins_400Regular',
+        marginTop: spacing.md,
     },
 });
