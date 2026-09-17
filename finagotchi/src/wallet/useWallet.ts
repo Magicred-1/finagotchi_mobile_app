@@ -5,7 +5,6 @@ import { Platform } from 'react-native';
 import { Buffer } from 'buffer';
 import {
     PublicKey,
-    Keypair,
     Transaction,
     Message,
     AddressLookupTableAccount,
@@ -19,6 +18,7 @@ import type { Wallet as DynamicWallet } from '@dynamic-labs/legacy-client';
 import { useReactiveClient } from '@dynamic-labs/legacy-react-hooks';
 import nacl from 'tweetnacl';
 import bs58 from 'bs58';
+import { generateDemoMintAddress } from '../utils/generateDemoMintAddress';
 
 import { dynamicClient } from './dynamicClient';
 import { useWalletStore, type WalletConnectionType } from '../features/wallet/store';
@@ -1134,7 +1134,7 @@ export function useWallet(): Wallet {
 
                 // TODO(phase-2): replace this demo placeholder with a real Metaplex
                 // NFT mint transaction built and signed through Dynamic.
-                const mintAddress = Keypair.generate().publicKey.toBase58();
+                const mintAddress = generateDemoMintAddress();
 
                 return { signature, mintAddress, priceLamports: MINT_COST_LAMPORTS };
             }
@@ -1229,5 +1229,5 @@ export function useWallet(): Wallet {
 }
 
 export function generateFakeMintAddress(): string {
-    return Keypair.generate().publicKey.toBase58();
+    return generateDemoMintAddress();
 }
