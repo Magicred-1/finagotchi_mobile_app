@@ -29,6 +29,8 @@ export interface PetSnapshot {
     points: number;
     /** 0-100 */
     happy: number;
+    /** 1-12 evolution sub-stage shown on the hardware screen. */
+    subStage?: number;
 }
 
 export interface DcaPlanSnapshot {
@@ -89,14 +91,17 @@ export function formatAmount(value: number): string {
     return rendered === '' ? '0' : rendered;
 }
 
-/** Full pet snapshot: "<stage>:<streak>:<mood>:<item>:<points>:<happy>". */
+/** Full pet snapshot: "<stage>:<streak>:<mood>:<item>:<points>:<happy>[:<subStage>]". */
 export function buildSnapshot(snapshot: PetSnapshot): string {
     assertUint('streak', snapshot.streak);
     assertUint('mood', snapshot.mood, 5);
     assertUint('item', snapshot.item, 6);
     assertUint('points', snapshot.points);
     assertUint('happy', snapshot.happy, 100);
-    return `${snapshot.stage}:${snapshot.streak}:${snapshot.mood}:${snapshot.item}:${snapshot.points}:${snapshot.happy}`;
+    const base = `${snapshot.stage}:${snapshot.streak}:${snapshot.mood}:${snapshot.item}:${snapshot.points}:${snapshot.happy}`;
+    if (snapshot.subStage === undefined) return base;
+    assertUint('subStage', snapshot.subStage, 12);
+    return `${base}:${snapshot.subStage}`;
 }
 
 /**
@@ -114,6 +119,7 @@ export function buildSnapshotWrites(
         `${snapshot.stage}:${snapshot.streak}:${snapshot.mood}:${snapshot.item}`,
         `points:${snapshot.points}`,
         `happy:${snapshot.happy}`,
+        `substage:${snapshot.subStage ?? 1}`,
     ];
 }
 

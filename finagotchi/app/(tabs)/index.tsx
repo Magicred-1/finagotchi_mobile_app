@@ -23,7 +23,11 @@ import Animated, {
 
 import { PetCanvas } from '../../src/components/PetCanvas';
 import { PressableScale } from '../../src/components/PressableScale';
-import { LevelUpAnimation } from '../../src/components/LevelUpAnimation';
+import { StreakInfo } from '../../src/components/StreakInfo';
+import { StreakFreezeSheet } from '../../src/components/StreakFreezeSheet';
+import { LeagueSheet } from '../../src/components/LeagueSheet';
+import { LeaderboardSheet } from '../../src/components/LeaderboardSheet';
+import { MilestoneCelebration } from '../../src/components/MilestoneCelebration';
 import { Sidebar, SIDEBAR_WIDTH, useSidebarOpenGesture } from '../../src/components/Sidebar';
 import EvolutionCeremony from '../../src/components/EvolutionCeremony';
 import CollectiblesSheet from '../../src/components/CollectiblesSheet';
@@ -38,7 +42,7 @@ import { ConnectDeviceSheet } from '../../src/components/ConnectDeviceSheet';
 import { DCAHome } from '../../src/screens/dca/DCAHome';
 import { useDcaSyncEngine } from '../../src/services/ble/SyncEngine';
 import { dcaEvents, useDcaUiStore } from '../../src/services/dca';
-import { useCheckinStore } from '../../src/features/checkin/store';
+import { MILESTONES, useCheckinStore } from '../../src/features/checkin/store';
 import { localDayKey, useWheelStore } from '../../src/features/wheel/store';
 import {
   BACKGROUND_COLORS,
@@ -89,24 +93,39 @@ function getMood(
   return 'waiting';
 }
 
-function computeProgressPercent(streak: number, stage: number): number {
-  if (stage >= STAGE_THRESHOLDS.length - 1) {
-    return 100;
-  }
-
-  const currentThreshold = STAGE_THRESHOLDS[stage] ?? 0;
-  const nextThreshold = STAGE_THRESHOLDS[stage + 1] ?? currentThreshold + 1;
-  const range = nextThreshold - currentThreshold;
-
-  if (range <= 0) return 100;
-
-  return Math.min(Math.max(0, ((streak - currentThreshold) / range) * 100), 100);
-}
-
 function formatNumber(num: number): string {
   return Math.round(num)
     .toString()
     .replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+}
+
+function happinessColor(value: number): string {
+  if (value >= 70) return colors.success;
+  if (value >= 40) return colors.warning;
+  return colors.danger;
+}
+
+function HappinessBar({ value }: { value: number }) {
+  const pct = Math.min(100, Math.max(0, value));
+  const color = happinessColor(pct);
+  const iconName = pct >= 70 ? 'heart' : pct >= 40 ? 'heart-half-outline' : 'heart-dislike-outline';
+  return (
+    <View style={styles.happinessBar}>
+      <Ionicons name={iconName} size={12} color={color} />
+      <View style={styles.happinessTrack}>
+        <View
+          style={[
+            styles.happinessFill,
+            {
+              width: `${pct}%`,
+              backgroundColor: color,
+            },
+          ]}
+        />
+      </View>
+      <Text style={[styles.happinessText, { color }]}>{pct}%</Text>
+    </View>
+  );
 }
 
 function formatCountdown(ms: number): string {
@@ -155,27 +174,6 @@ function project(initialVelocity: number, decelerationRate = 0.998) {
   return (initialVelocity / 1000) * decelerationRate / (1 - decelerationRate);
 }
 
-type PetAction = {
-  id: string;
-  icon: keyof typeof Ionicons.glyphMap;
-  label: string;
-  cost: number;
-  reaction: PetReaction;
-  mood: PetMood;
-};
-
-const PET_ACTIONS: PetAction[] = [
-  { id: 'caress', icon: 'hand-left-outline', label: 'Caress', cost: 0, reaction: 'jump', mood: 'happy' },
-  { id: 'treat', icon: 'nutrition-outline', label: 'Treat', cost: 50, reaction: 'glow', mood: 'happy' },
-  { id: 'play', icon: 'game-controller-outline', label: 'Play', cost: 100, reaction: 'dance', mood: 'calm' },
-  { id: 'train', icon: 'barbell-outline', label: 'Train', cost: 250, reaction: 'spin', mood: 'proud' },
-];
-
-// Upper bound for the actions drawer content (one row of action buttons,
-// ~80 pt). Accordion animates maxHeight toward this bound; content is
-// clipped by overflow while collapsed.
-const ACTIONS_DRAWER_MAX_HEIGHT = 120;
-
 export default function HomeScreen() {
   const { width } = useWindowDimensions();
   const insets = useSafeAreaInsets();
@@ -187,6 +185,9 @@ export default function HomeScreen() {
   const [questsVisible, setQuestsVisible] = useState(false);
   const [waitlistVisible, setWaitlistVisible] = useState(false);
   const [foodVisible, setFoodVisible] = useState(false);
+  const [streakFreezeVisible, setStreakFreezeVisible] = useState(false);
+  const [leagueVisible, setLeagueVisible] = useState(false);
+  const [leaderboardVisible, setLeaderboardVisible] = useState(false);
   const [bleVisible, setBleVisible] = useState(false);
   const [reviveVisible, setReviveVisible] = useState(false);
   const [communityResurrectVisible, setCommunityResurrectVisible] = useState(false);
@@ -196,8 +197,9 @@ export default function HomeScreen() {
   const [actionMood, setActionMood] = useState<PetMood | undefined>(undefined);
   const [floatingEmoji, setFloatingEmoji] = useState<string | null>(null);
   const [exitToastVisible, setExitToastVisible] = useState(false);
-  const [actionsOpen, setActionsOpen] = useState(false);
   const [overdueSad, setOverdueSad] = useState(false);
+  const [milestoneVisible, setMilestoneVisible] = useState(false);
+  const [milestoneStreak, setMilestoneStreak] = useState(0);
 
   const lastBackPress = useRef(0);
   const toastTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -206,7 +208,6 @@ export default function HomeScreen() {
   const exitToastOpacity = useSharedValue(0);
   const emojiOpacity = useSharedValue(0);
   const emojiTranslateY = useSharedValue(0);
-  const actionsProgress = useSharedValue(0);
   const sidebarTranslateX = useSharedValue(-SIDEBAR_WIDTH);
   const sidebarOpacity = useSharedValue(0);
 
@@ -268,6 +269,9 @@ export default function HomeScreen() {
     communityResurrectVisible ||
     wheelVisible ||
     celebratingStage !== null ||
+    streakFreezeVisible ||
+    leagueVisible ||
+    leaderboardVisible ||
     isDead;
 
   const sidebarOpenGesture = useSidebarOpenGesture({
@@ -278,10 +282,6 @@ export default function HomeScreen() {
   });
 
   const horizontalPadding = Math.min(Math.max(width * 0.05, 16), 24);
-  const isSmallDevice = width < 360;
-  const isTinyDevice = width < 330;
-  const scale = Math.min(Math.max(width / 375, 0.9), 1.1);
-
   const isDoneToday = hasCheckedInToday;
   // A spin is earned by checking in; it stays claimable until spun.
   const spinAvailable = isDoneToday && lastSpinDay !== localDayKey();
@@ -291,16 +291,11 @@ export default function HomeScreen() {
     [currentHour, isDoneToday, streak, happiness]
   );
 
-  const progressPercent = useMemo(
-    () => computeProgressPercent(streak, stage),
-    [streak, stage]
-  );
-
   const xpNeeded = xpForNextLevel(level);
   const xpPercent = Math.min(100, Math.max(0, (xp / xpNeeded) * 100));
 
   const nextStageName =
-    stage < 5 ? STAGE_NAMES[(stage + 1) as 2 | 3 | 4 | 5] : 'Max';
+    stage < 12 ? STAGE_NAMES[(stage + 1) as 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12] : 'Max';
 
   const effectiveMood = actionMood ?? (overdueSad ? 'sad' : mood);
 
@@ -385,6 +380,16 @@ export default function HomeScreen() {
     };
   }, []);
 
+  const previousStreakRef = useRef(streak);
+  useEffect(() => {
+    if (streak > previousStreakRef.current && MILESTONES.includes(streak)) {
+      setMilestoneStreak(streak);
+      setMilestoneVisible(true);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    }
+    previousStreakRef.current = streak;
+  }, [streak]);
+
   // Double-tap back to exit, with visual feedback. Close any open sheet/sidebar first.
   useEffect(() => {
     const onBackPress = () => {
@@ -420,6 +425,18 @@ export default function HomeScreen() {
         setWheelVisible(false);
         return true;
       }
+      if (streakFreezeVisible) {
+        setStreakFreezeVisible(false);
+        return true;
+      }
+      if (leagueVisible) {
+        setLeagueVisible(false);
+        return true;
+      }
+      if (leaderboardVisible) {
+        setLeaderboardVisible(false);
+        return true;
+      }
       if (celebratingStage !== null) {
         setCelebratingStage(null);
         setLastCelebratedStage(stage);
@@ -453,7 +470,7 @@ export default function HomeScreen() {
 
     const subscription = BackHandler.addEventListener('hardwareBackPress', onBackPress);
     return () => subscription.remove();
-  }, [sidebarVisible, bleVisible, collectiblesVisible, questsVisible, waitlistVisible, foodVisible, communityResurrectVisible, wheelVisible, celebratingStage, stage]);
+  }, [sidebarVisible, bleVisible, collectiblesVisible, questsVisible, waitlistVisible, foodVisible, communityResurrectVisible, wheelVisible, streakFreezeVisible, leagueVisible, leaderboardVisible, celebratingStage, stage]);
 
   const REACTION_EMOJIS: Record<PetReaction, string> = {
     jump: '❤️',
@@ -532,51 +549,11 @@ export default function HomeScreen() {
     Alert.alert('Games', 'Mini-games for your Finagotchi are coming soon!');
   }
 
-  function handlePetAction(action: PetAction) {
-    if (isDead) return;
-
-    if (action.cost === 0) {
-      if (!useFreeAction()) {
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-        Alert.alert(
-          'Daily limit reached',
-          'You used all your free caresses for today. Come back tomorrow!'
-        );
-        return;
-      }
-    } else {
-      const success = spendBalance(action.cost);
-      if (!success) {
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-        return;
-      }
-    }
-
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-
-    const happinessBoost =
-      action.id === 'caress' ? 8 :
-      action.id === 'treat' ? 5 :
-      action.id === 'play' ? 15 :
-      action.id === 'train' ? 20 : 5;
-
-    boostHappiness(happinessBoost);
-    addXp(5);
-    triggerEmotion(action.reaction, action.mood);
-  }
-
   const handlePetTap = useCallback(() => {
     if (isDead) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     triggerEmotion('jump', 'happy');
   }, [isDead]);
-
-  function toggleActionsDrawer() {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    const next = !actionsOpen;
-    setActionsOpen(next);
-    actionsProgress.value = withTiming(next ? 1 : 0, { duration: 220 });
-  }
 
   // Drag-to-look: steer the on-device gaze too (throttled by RadialPet).
   const handlePetLook = useCallback(
@@ -688,15 +665,6 @@ export default function HomeScreen() {
     transform: [{ translateY: emojiTranslateY.value }],
   }));
 
-  const actionsDrawerStyle = useAnimatedStyle(() => ({
-    maxHeight: ACTIONS_DRAWER_MAX_HEIGHT * actionsProgress.value,
-    opacity: actionsProgress.value,
-  }));
-
-  const actionsChevronStyle = useAnimatedStyle(() => ({
-    transform: [{ rotate: `${(1 - actionsProgress.value) * 180}deg` }],
-  }));
-
   return (
     <View
       style={[
@@ -716,310 +684,200 @@ export default function HomeScreen() {
             },
           ]}
         >
-        {/* TOP BAR */}
-        <View style={[styles.topBar, isTinyDevice && styles.topBarWrap]}>
-          <PressableScale
-            onPress={() => {
-              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-              setSidebarVisible(true);
-            }}
-            hitSlop={8}
-            accessibilityLabel="Open menu"
-          >
-            <Image
-              source={require('../../assets/ghost-icon-animated.gif')}
-              style={styles.appIcon}
-              resizeMode="contain"
-            />
-          </PressableScale>
-
-          <View style={styles.topBarRight}>
+          {/* TOP BAR */}
+          <View style={styles.topBar}>
             <PressableScale
               onPress={() => {
                 Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                setBleVisible(true);
+                setSidebarVisible(true);
               }}
               hitSlop={8}
-              style={[
-                styles.headerIconButton,
-                isTinyDevice && styles.headerIconButtonSmall,
-              ]}
+              accessibilityLabel="Open menu"
             >
-              <Ionicons
-                name="bluetooth"
-                size={isTinyDevice ? 16 : 18}
-                color={ble.connectedDevice ? colors.primary : colors.text}
-              />
-              <View
-                style={[
-                  styles.bleStatusDot,
-                  {
-                    backgroundColor: ble.connectedDevice
-                      ? '#5DE2A6'
-                      : ble.status === 'reconnecting' || ble.status === 'error'
-                        ? colors.danger
-                        : colors.textMuted,
-                  },
-                ]}
+              <Image
+                source={require('../../assets/ghost-icon-animated.gif')}
+                style={styles.appIcon}
+                resizeMode="contain"
               />
             </PressableScale>
 
-            <PressableScale
-              onPress={() => setQuestsVisible(true)}
-              hitSlop={8}
-              style={[
-                styles.headerIconButton,
-                isTinyDevice && styles.headerIconButtonSmall,
-              ]}
-            >
-              <Ionicons name="flag-outline" size={isTinyDevice ? 16 : 18} color={colors.text} />
-            </PressableScale>
-          </View>
-        </View>
-
-        {/* PET CARD */}
-        <View style={styles.petCard}>
-          <View style={styles.petCardHeader}>
-            <View>
-              <Text style={styles.petName}>{displayName}</Text>
-              <View style={styles.levelRow}>
-                <Text style={styles.levelText}>Lv {level}</Text>
-                <View style={styles.xpTrackMini}>
-                  <View style={[styles.xpFillMini, { width: `${xpPercent}%` }]} />
-                </View>
-                <Text style={styles.xpTextMini}>
-                  {xp}/{xpNeeded}
-                </Text>
-                <LevelUpAnimation level={level} />
-              </View>
-            </View>
-
-            <PressableScale
-              onPress={openFoodSheet}
-              style={[styles.feedButton, isTinyDevice && styles.feedButtonTiny]}
-            >
-              <Text style={styles.fruitIcon}>🍎</Text>
-            </PressableScale>
-          </View>
-
-          <View
-            style={[
-              styles.scene,
-              { backgroundColor: BACKGROUND_COLORS[background][0] },
-            ]}
-          >
-            <View
-              style={[
-                styles.sky,
-                { backgroundColor: BACKGROUND_COLORS[background][1] },
-              ]}
-            />
-            <View style={styles.ground} />
-
-            <GuardianBadge />
-
-            <View style={styles.streakPill}>
-              <Ionicons name="flame" size={12} color={colors.primary} />
-              <Text style={styles.streakPillText}>{streak}</Text>
-            </View>
-
-            {spinAvailable && !isDead && (
+            <View style={styles.topBarRight}>
               <PressableScale
                 onPress={() => {
                   Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                  setWheelVisible(true);
+                  setBleVisible(true);
                 }}
-                style={styles.spinPill}
+                hitSlop={8}
+                style={styles.headerIconButton}
               >
-                <Ionicons name="gift" size={12} color={colors.warning} />
-                <Text style={styles.spinPillText}>Spin</Text>
-              </PressableScale>
-            )}
-
-            <View style={styles.petCenter}>
-              {celebratingStage === null && (
-                <PetCanvas
-                  mood={effectiveMood}
-                  engineMood={waitingForSync ? 'waiting' : deviceMood}
-                  reaction={reaction}
-                  reactionKey={reactionKey}
-                  accessory={accessory}
-                  isSpectral={isSpectral}
-                  onTap={handlePetTap}
-                  onEvolve={handleEvolve}
-                  onLook={handlePetLook}
-                  onLookEnd={handlePetLookEnd}
+                <Ionicons
+                  name="bluetooth"
+                  size={18}
+                  color={ble.connectedDevice ? colors.primary : colors.text}
                 />
-              )}
-              {waitingForSync && <WaitingForSync />}
-              {floatingEmoji && (
-                <Animated.View style={[styles.floatingEmoji, emojiStyle]}>
-                  <Text style={styles.floatingEmojiText}>{floatingEmoji}</Text>
-                </Animated.View>
-              )}
-            </View>
-
-            <View style={styles.evolutionOverlay}>
-              <Text style={styles.evolutionStageName}>
-                {STAGE_NAMES[stage]}
-              </Text>
-              <View style={styles.evolutionTrack}>
                 <View
                   style={[
-                    styles.evolutionFill,
-                    { width: `${progressPercent}%` },
+                    styles.bleStatusDot,
+                    {
+                      backgroundColor: ble.connectedDevice
+                        ? '#5DE2A6'
+                        : ble.status === 'reconnecting' || ble.status === 'error'
+                          ? colors.danger
+                          : colors.textMuted,
+                    },
                   ]}
                 />
+              </PressableScale>
+
+              <View style={styles.headerStatPill}>
+                <Ionicons name="flame" size={14} color={colors.warning} />
+                <Text style={styles.headerStatText}>{streak}</Text>
               </View>
-              <Text style={styles.evolutionNext}>
-                Next: {nextStageName}
-              </Text>
+
+              <View style={styles.headerStatPill}>
+                <Ionicons name="diamond" size={14} color={colors.cyan} />
+                <Text style={styles.headerStatText}>{formatNumber(balance)}</Text>
+              </View>
             </View>
           </View>
 
+          {/* PET CARD */}
+          <View style={styles.petCard}>
+            <View style={styles.petCardHeader}>
+              <View>
+                <Text style={styles.petName}>{displayName}</Text>
+                <View style={styles.levelRow}>
+                  <Text style={styles.levelText}>Lv {level}</Text>
+                  <View style={styles.xpTrackMini}>
+                    <View style={[styles.xpFillMini, { width: `${xpPercent}%` }]} />
+                  </View>
+                  <Text style={styles.xpTextMini}>
+                    {xp}/{xpNeeded}
+                  </Text>
+                </View>
+                <HappinessBar value={happiness} />
+              </View>
+
+              <PressableScale
+                onPress={openFoodSheet}
+                style={styles.feedButton}
+              >
+                <Text style={styles.fruitIcon}>🍎</Text>
+              </PressableScale>
+            </View>
+
+            <View
+              style={[
+                styles.scene,
+                { backgroundColor: BACKGROUND_COLORS[background][0] },
+              ]}
+            >
+              <View
+                style={[
+                  styles.sky,
+                  { backgroundColor: BACKGROUND_COLORS[background][1] },
+                ]}
+              />
+              <View style={styles.ground} />
+
+              {spinAvailable && !isDead && (
+                <PressableScale
+                  onPress={() => {
+                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                    setWheelVisible(true);
+                  }}
+                  style={styles.spinPill}
+                >
+                  <Ionicons name="gift" size={12} color={colors.warning} />
+                  <Text style={styles.spinPillText}>Spin</Text>
+                </PressableScale>
+              )}
+
+              <View style={styles.petCenter}>
+                {celebratingStage === null && (
+                  <PetCanvas
+                    mood={effectiveMood}
+                    engineMood={waitingForSync ? 'waiting' : deviceMood}
+                    reaction={reaction}
+                    reactionKey={reactionKey}
+                    accessory={accessory}
+                    isSpectral={isSpectral}
+                    onTap={handlePetTap}
+                    onEvolve={handleEvolve}
+                    onLook={handlePetLook}
+                    onLookEnd={handlePetLookEnd}
+                  />
+                )}
+                {waitingForSync && <WaitingForSync />}
+                {floatingEmoji && (
+                  <Animated.View style={[styles.floatingEmoji, emojiStyle]}>
+                    <Text style={styles.floatingEmojiText}>{floatingEmoji}</Text>
+                  </Animated.View>
+                )}
+              </View>
+
+              <GuardianBadge />
+            </View>
+          </View>
+
+          {/* STREAK ROW */}
+          <StreakInfo onOpenFreeze={() => setStreakFreezeVisible(true)} />
+
+          {/* LEAGUE / LEADERBOARD ROW */}
+          <View style={styles.socialRow}>
+            <PressableScale onPress={() => setLeagueVisible(true)} style={styles.socialButton}>
+              <Ionicons name="trophy" size={18} color={colors.warning} />
+              <Text style={styles.socialButtonText}>League</Text>
+            </PressableScale>
+            <PressableScale onPress={() => setLeaderboardVisible(true)} style={styles.socialButton}>
+              <Ionicons name="podium" size={18} color={colors.purple} />
+              <Text style={styles.socialButtonText}>Leaderboard</Text>
+            </PressableScale>
+          </View>
+
+          {/* DCA PROMO */}
           <View style={styles.dcaCardWrap}>
             <DCAHome />
           </View>
 
-          <View style={styles.statsRow}>
-            <View style={styles.statChip}>
-              <Ionicons name="wallet-outline" size={14} color={colors.warning} />
-              <Text style={styles.statValue}>{formatNumber(balance)}</Text>
-              <Text style={styles.statLabel}>points</Text>
-            </View>
-            <View
-              style={[
-                styles.statChip,
-                happiness <= 30 && styles.statChipDanger,
-              ]}
-            >
-              <Ionicons
-                name="happy-outline"
-                size={14}
-                color={colors.danger}
-              />
-              <Text
-                style={[
-                  styles.statValue,
-                  happiness <= 30 && styles.statValueDanger,
-                ]}
-              >
-                {Math.round(happiness)}%
-              </Text>
-              <Text style={styles.statLabel}>happiness</Text>
-            </View>
-          </View>
-
-          {waitingForSync && (
-            <Text style={styles.syncCaption}>
-              {'waiting for sync…\nopen the Finagotchi app'}
-            </Text>
-          )}
-
-          <View style={styles.actionsDrawer}>
-            <PressableScale
-              onPress={toggleActionsDrawer}
-              style={styles.actionsHandle}
-            >
-              <View style={styles.actionsHandleBar} />
-              <View style={styles.actionsHandleRow}>
-                <Text style={styles.actionsHandleText}>Actions</Text>
-                <Animated.View style={actionsChevronStyle}>
-                  <Ionicons
-                    name="chevron-up"
-                    size={14}
-                    color={colors.textMuted}
-                  />
-                </Animated.View>
-              </View>
+          {/* ACTION BAR */}
+          <View style={styles.actionBar}>
+            <PressableScale onPress={handleCollectibles} style={styles.actionBarIcon}>
+              <Ionicons name="color-palette-outline" size={22} color={colors.text} />
             </PressableScale>
 
-            <Animated.View style={[styles.actionsDrawerClip, actionsDrawerStyle]}>
-              <View style={styles.petActionsRow}>
-                {PET_ACTIONS.map((action) => {
-                  const canAfford = balance >= action.cost;
-                  return (
-                    <PressableScale
-                      key={action.id}
-                      onPress={() => handlePetAction(action)}
-                      disabled={!canAfford}
-                      style={[
-                        styles.petActionButton,
-                        !canAfford && styles.petActionButtonDisabled,
-                      ]}
-                    >
-                      <Ionicons
-                        name={action.icon}
-                        size={18}
-                        color={canAfford ? colors.text : colors.textMuted}
-                      />
-                      <Text
-                        style={[
-                          styles.petActionLabel,
-                          !canAfford && styles.petActionLabelDisabled,
-                        ]}
-                        numberOfLines={1}
-                      >
-                        {action.label}
-                      </Text>
-                      <View
-                        style={[
-                          styles.petActionPricePill,
-                          action.cost === 0 && styles.petActionPricePillFree,
-                          !canAfford && styles.petActionPricePillDisabled,
-                        ]}
-                      >
-                        <Text
-                          style={[
-                            styles.petActionPriceText,
-                            action.cost === 0 && styles.petActionPriceTextFree,
-                            !canAfford && styles.petActionPriceTextDisabled,
-                          ]}
-                        >
-                          {action.cost === 0 ? 'Free' : formatNumber(action.cost)}
-                        </Text>
-                      </View>
-                    </PressableScale>
-                  );
-                })}
-              </View>
-            </Animated.View>
+            <PressableScale onPress={handleHardware} style={styles.actionBarIcon}>
+              <Ionicons name="hardware-chip-outline" size={22} color={colors.text} />
+            </PressableScale>
+
+            <PressableScale
+              onPress={() => {
+                if (spinAvailable) {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  setWheelVisible(true);
+                } else if (!isDoneToday) {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                  setFoodVisible(true);
+                } else {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  triggerEmotion('jump', 'happy');
+                }
+              }}
+              style={styles.primaryAction}
+            >
+              <Text style={styles.primaryActionText}>
+                {spinAvailable ? 'Spin wheel' : !isDoneToday ? 'Check in' : 'Caress'}
+              </Text>
+            </PressableScale>
+
+            <PressableScale onPress={() => setQuestsVisible(true)} style={styles.actionBarIcon}>
+              <Ionicons name="flag-outline" size={22} color={colors.text} />
+            </PressableScale>
+
+            <PressableScale onPress={handleGames} style={styles.actionBarIcon}>
+              <Ionicons name="game-controller-outline" size={22} color={colors.textMuted} />
+            </PressableScale>
           </View>
-        </View>
-
-        {/* TABS */}
-        <View style={styles.tabBar}>
-          <PressableScale
-            onPress={handleCollectibles}
-            style={styles.tab}
-          >
-            <Ionicons
-              name="color-palette-outline"
-              size={20}
-              color={colors.text}
-            />
-            <Text style={styles.tabText}>Collectibles</Text>
-          </PressableScale>
-
-          <PressableScale
-            onPress={handleHardware}
-            style={styles.tab}
-          >
-            <Ionicons name="hardware-chip-outline" size={20} color={colors.text} />
-            <Text style={styles.tabText}>Hardware</Text>
-          </PressableScale>
-
-          <PressableScale
-            onPress={handleGames}
-            style={[styles.tab, styles.tabMuted]}
-          >
-            <Ionicons name="game-controller-outline" size={20} color={colors.textMuted} />
-            <Text style={[styles.tabText, styles.tabTextMuted]}>Games</Text>
-            <View style={styles.comingSoonBadge}>
-              <Text style={styles.comingSoonText}>Soon</Text>
-            </View>
-          </PressableScale>
-        </View>
         </View>
       </GestureDetector>
 
@@ -1050,6 +908,12 @@ export default function HomeScreen() {
       <PrizeWheel
         visible={wheelVisible}
         onClose={() => setWheelVisible(false)}
+      />
+
+      <MilestoneCelebration
+        visible={milestoneVisible}
+        streak={milestoneStreak}
+        onDismiss={() => setMilestoneVisible(false)}
       />
 
       <QuestsSheet
@@ -1110,6 +974,21 @@ export default function HomeScreen() {
         onHireGuardian={handleHireGuardian}
       />
 
+      <StreakFreezeSheet
+        visible={streakFreezeVisible}
+        onClose={() => setStreakFreezeVisible(false)}
+      />
+
+      <LeagueSheet
+        visible={leagueVisible}
+        onClose={() => setLeagueVisible(false)}
+      />
+
+      <LeaderboardSheet
+        visible={leaderboardVisible}
+        onClose={() => setLeaderboardVisible(false)}
+      />
+
       <CommunityResurrectSheet
         visible={communityResurrectVisible}
         onClose={() => setCommunityResurrectVisible(false)}
@@ -1141,10 +1020,8 @@ const styles = StyleSheet.create({
   },
   container: {
     flex: 1,
-    paddingTop: spacing.sm,
-    paddingBottom: spacing.sm,
     gap: spacing.sm,
-    justifyContent: 'space-between',
+    paddingTop: 4,
   },
   exitToast: {
     position: 'absolute',
@@ -1171,9 +1048,6 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     gap: spacing.sm,
   },
-  topBarWrap: {
-    flexWrap: 'wrap',
-  },
   appIcon: {
     width: 32,
     height: 32,
@@ -1194,9 +1068,21 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
   },
-  headerIconButtonSmall: {
-    width: 36,
-    height: 36,
+  headerStatPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingVertical: 7,
+    paddingHorizontal: 12,
+    borderRadius: radius.pill,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  headerStatText: {
+    color: colors.text,
+    fontSize: 12,
+    fontFamily: 'Poppins_800ExtraBold',
   },
   bleStatusDot: {
     position: 'absolute',
@@ -1213,20 +1099,20 @@ const styles = StyleSheet.create({
   petCard: {
     flex: 1,
     width: '100%',
-    paddingVertical: spacing.md,
     borderRadius: radius.lg,
     backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.border,
-    gap: spacing.sm + spacing.xs,
+    overflow: 'hidden',
   },
   petCardHeader: {
     width: '100%',
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    gap: spacing.sm + spacing.xs,
-    paddingHorizontal: spacing.md,
+    gap: spacing.sm,
+    paddingVertical: 8,
+    paddingHorizontal: spacing.sm,
   },
   petName: {
     color: colors.text,
@@ -1245,7 +1131,7 @@ const styles = StyleSheet.create({
     fontFamily: 'Poppins_700Bold',
   },
   xpTrackMini: {
-    width: 80,
+    width: 70,
     height: 5,
     borderRadius: radius.pill,
     backgroundColor: 'rgba(255,255,255,0.10)',
@@ -1261,6 +1147,51 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontFamily: 'Poppins_700Bold',
   },
+  socialRow: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
+  socialButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 10,
+    borderRadius: radius.md,
+    backgroundColor: 'rgba(255,255,255,0.05)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+  },
+  socialButtonText: {
+    fontSize: 11,
+    fontFamily: 'Poppins_800ExtraBold',
+    color: colors.text,
+  },
+  happinessBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 8,
+    paddingHorizontal: 2,
+  },
+  happinessTrack: {
+    flex: 1,
+    height: 3,
+    borderRadius: 2,
+    backgroundColor: 'rgba(255,255,255,0.10)',
+    overflow: 'hidden',
+  },
+  happinessFill: {
+    height: '100%',
+    borderRadius: 2,
+  },
+  happinessText: {
+    fontSize: 10,
+    fontFamily: 'Poppins_800ExtraBold',
+    minWidth: 28,
+    textAlign: 'right',
+  },
   feedButton: {
     width: 44,
     height: 44,
@@ -1271,11 +1202,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
   },
-  feedButtonTiny: {
-    width: 40,
-    height: 40,
-    borderRadius: radius.md,
-  },
   fruitIcon: {
     fontSize: 22,
   },
@@ -1284,7 +1210,7 @@ const styles = StyleSheet.create({
   scene: {
     flex: 1,
     width: '100%',
-    minHeight: 180,
+    minHeight: 160,
     borderRadius: radius.lg,
     overflow: 'hidden',
     alignItems: 'center',
@@ -1343,26 +1269,6 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontFamily: 'Poppins_800ExtraBold',
   },
-  streakPill: {
-    position: 'absolute',
-    top: 10,
-    left: 10,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    paddingVertical: 5,
-    paddingHorizontal: 10,
-    borderRadius: radius.pill,
-    backgroundColor: 'rgba(7,17,31,0.55)',
-    borderWidth: 1,
-    borderColor: colors.border,
-    zIndex: 5,
-  },
-  streakPillText: {
-    color: colors.text,
-    fontSize: 10,
-    fontFamily: 'Poppins_800ExtraBold',
-  },
   spinPill: {
     position: 'absolute',
     top: 10,
@@ -1376,244 +1282,51 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(7,17,31,0.55)',
     borderWidth: 1,
     borderColor: 'rgba(255,209,102,0.45)',
+    zIndex: 5,
   },
   spinPillText: {
     color: colors.text,
     fontSize: 10,
     fontFamily: 'Poppins_800ExtraBold',
   },
-  syncCaption: {
-    width: '100%',
-    textAlign: 'center',
-    color: colors.textMuted,
-    fontSize: 10,
-    lineHeight: 15,
-    fontFamily: 'Poppins_600SemiBold',
-  },
 
-  /* EVOLUTION OVERLAY */
-  evolutionOverlay: {
-    position: 'absolute',
-    left: 10,
-    right: 10,
-    bottom: 10,
-    gap: 5,
-    paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.sm + spacing.xs,
-    borderRadius: radius.md,
-    backgroundColor: 'rgba(7,17,31,0.45)',
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  evolutionStageName: {
-    color: colors.text,
-    fontSize: 12,
-    fontFamily: 'Poppins_800ExtraBold',
-  },
-  evolutionTrack: {
-    width: '100%',
-    height: 5,
-    borderRadius: radius.pill,
-    backgroundColor: 'rgba(255,255,255,0.12)',
-    overflow: 'hidden',
-  },
-  evolutionFill: {
-    height: '100%',
-    borderRadius: radius.pill,
-    backgroundColor: colors.primary,
-  },
-  evolutionNext: {
-    color: colors.textMuted,
-    fontSize: 10,
-    fontFamily: 'Poppins_600SemiBold',
-  },
-
-  /* STATS ROW */
+  /* DCA PROMO */
   dcaCardWrap: {
     width: '100%',
-    paddingHorizontal: spacing.md,
-    marginBottom: spacing.xs,
   },
-  statsRow: {
+
+  /* ACTION BAR */
+  actionBar: {
     width: '100%',
     flexDirection: 'row',
+    alignItems: 'center',
     gap: spacing.sm,
-    paddingHorizontal: spacing.md,
-  },
-  statChip: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 5,
-    paddingVertical: spacing.sm,
-    borderRadius: radius.md,
-    backgroundColor: colors.background,
-  },
-  statChipDanger: {
-    backgroundColor: 'rgba(255,100,124,0.10)',
-  },
-  statValue: {
-    color: colors.text,
-    fontSize: 13,
-    fontFamily: 'Poppins_800ExtraBold',
-  },
-  statValueDanger: {
-    color: colors.danger,
-  },
-  statLabel: {
-    color: colors.textMuted,
-    fontSize: 10,
-    fontFamily: 'Poppins_600SemiBold',
-  },
-
-  /* PET ACTIONS */
-  petActionsRow: {
-    width: '100%',
-    flexDirection: 'row',
-    gap: spacing.sm,
-    paddingHorizontal: spacing.sm,
-    paddingBottom: spacing.sm,
-  },
-  petActionButton: {
-    flex: 1,
-    minWidth: 0,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: spacing.xs,
-    paddingVertical: spacing.sm + spacing.xs,
-    paddingHorizontal: spacing.xs,
-    borderRadius: radius.md,
-    backgroundColor: colors.background,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  petActionButtonDisabled: {
-    backgroundColor: 'rgba(14,27,46,0.50)',
-    borderColor: 'rgba(255,255,255,0.04)',
-  },
-  petActionLabel: {
-    color: colors.text,
-    fontSize: 11,
-    fontFamily: 'Poppins_700Bold',
-    textAlign: 'center',
-  },
-  petActionLabelDisabled: {
-    color: colors.textMuted,
-  },
-  petActionPricePill: {
-    paddingVertical: 2,
-    paddingHorizontal: 6,
-    borderRadius: radius.sm,
-    backgroundColor: 'rgba(255,255,255,0.08)',
-  },
-  petActionPricePillFree: {
-    backgroundColor: 'rgba(53,215,255,0.10)',
-  },
-  petActionPricePillDisabled: {
-    backgroundColor: 'rgba(255,255,255,0.05)',
-  },
-  petActionPriceText: {
-    color: colors.text,
-    fontSize: 10,
-    fontFamily: 'Poppins_800ExtraBold',
-  },
-  petActionPriceTextFree: {
-    color: colors.primary,
-  },
-  petActionPriceTextDisabled: {
-    color: colors.textMuted,
-  },
-
-  /* ACTIONS DRAWER */
-  actionsDrawer: {
-    marginHorizontal: spacing.md,
-    borderRadius: radius.md,
-    backgroundColor: colors.background,
-    borderWidth: 1,
-    borderColor: colors.border,
-    overflow: 'hidden',
-  },
-  actionsHandle: {
-    alignItems: 'center',
-    paddingTop: 6,
-    paddingBottom: 6,
-    gap: spacing.xs,
-  },
-  actionsHandleBar: {
-    width: 36,
-    height: 4,
-    borderRadius: radius.pill,
-    backgroundColor: 'rgba(255,255,255,0.15)',
-  },
-  actionsHandleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  actionsHandleText: {
-    color: colors.textMuted,
-    fontSize: 10,
-    fontFamily: 'Poppins_700Bold',
-    letterSpacing: 0.6,
-    textTransform: 'uppercase',
-  },
-  actionsDrawerClip: {
-    overflow: 'hidden',
-  },
-
-  /* TABS */
-  tabBar: {
-    width: '100%',
-    flexDirection: 'row',
-    gap: spacing.xs,
     padding: spacing.xs,
     borderRadius: radius.lg,
-    backgroundColor: colors.background,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  tab: {
-    flex: 1,
-    minWidth: 0,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: spacing.xs,
-    paddingVertical: spacing.sm + spacing.xs,
-    borderRadius: radius.md,
     backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.border,
+    marginBottom: 0,
   },
-  tabText: {
-    color: colors.text,
-    fontSize: 12,
-    fontFamily: 'Poppins_700Bold',
-    textAlign: 'center',
+  actionBarIcon: {
+    width: 44,
+    height: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: radius.md,
+    backgroundColor: colors.background,
   },
-  tabMuted: {
-    backgroundColor: 'rgba(14,27,46,0.60)',
-    borderColor: 'rgba(255,255,255,0.04)',
+  primaryAction: {
+    flex: 1,
+    height: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: radius.md,
+    backgroundColor: colors.primary,
   },
-  tabTextMuted: {
-    color: colors.textMuted,
-  },
-  comingSoonBadge: {
-    position: 'absolute',
-    top: 8,
-    right: 8,
-    paddingVertical: 3,
-    paddingHorizontal: 6,
-    borderRadius: radius.sm,
-    backgroundColor: 'rgba(153,69,255,0.16)',
-    borderWidth: 1,
-    borderColor: 'rgba(153,69,255,0.35)',
-  },
-  comingSoonText: {
-    color: colors.purple,
-    fontSize: 9,
+  primaryActionText: {
+    color: colors.background,
+    fontSize: 15,
     fontFamily: 'Poppins_800ExtraBold',
-    letterSpacing: 0.4,
-    textTransform: 'uppercase',
   },
 });

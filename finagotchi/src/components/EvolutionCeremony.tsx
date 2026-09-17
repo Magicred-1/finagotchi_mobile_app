@@ -43,8 +43,15 @@ const STAGE_TO_RADIAL: Record<NumericStage, StateId> = {
   1: 'egg',
   2: 'coinling',
   3: 'coinling',
-  4: 'hodler',
-  5: 'whale',
+  4: 'coinling',
+  5: 'coinling',
+  6: 'coinling',
+  7: 'coinling',
+  8: 'hodler',
+  9: 'hodler',
+  10: 'whale',
+  11: 'whale',
+  12: 'whale',
 };
 
 export default function EvolutionCeremony({ visible, stage, petName, onDismiss }: Props) {

@@ -2,7 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 
-export type PetStage = 1 | 2 | 3 | 4 | 5;
+export type PetStage = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12;
 
 export type PetBackground = 'default' | 'aurora' | 'sunset' | 'midnight' | 'galaxy' | 'gold';
 export type PetAccessory = 'none' | 'crown' | 'glasses' | 'bowtie' | 'halo' | 'diamond' | 'tshirt';
@@ -18,13 +18,20 @@ export const BACKGROUND_COLORS: Record<PetBackground, readonly [string, string]>
 
 export const STAGE_NAMES: Record<PetStage, string> = {
     1: 'Egg',
-    2: 'Hatchling • Newborn',
-    3: 'Coinling • Saver',
-    4: 'HODLer • Disciplined',
-    5: 'Whale • Legend',
+    2: 'Hatching',
+    3: 'Hatchling',
+    4: 'Tiny Saver',
+    5: 'Coinling',
+    6: 'Staker',
+    7: 'Saver',
+    8: 'HODLer',
+    9: 'Disciplined',
+    10: 'Accumu-whale',
+    11: 'Alpha Whale',
+    12: 'Whale • Legend',
 };
 
-export const STAGE_THRESHOLDS = [0, 1, 7, 30, 90];
+export const STAGE_THRESHOLDS = [0, 1, 2, 3, 5, 7, 14, 30, 60, 90, 120, 180];
 
 /** XP required to go from `level` to `level + 1`. Single source for the curve. */
 export function xpForNextLevel(level: number): number {
@@ -162,6 +169,11 @@ type PetState = {
     checkLifeTimer: () => void;
     /** Time remaining on the 7-day life timer, in ms. */
     getLifeTimerRemainingMs: () => number;
+    /**
+     * Effective time remaining on the life timer, reduced when the creature is
+     * sad. Used for both the UI countdown and the actual death check.
+     */
+    getEffectiveLifeTimerRemainingMs: () => number;
     /** Add XP and check for level up. */
     addXp: (amount: number) => void;
     /**
@@ -452,7 +464,7 @@ export const usePetStore = create<PetState>()(
                     return;
                 }
 
-                if (Date.now() >= new Date(state.lifeTimerEndsAt).getTime()) {
+                if (state.getEffectiveLifeTimerRemainingMs() <= 0) {
                     get().killCreature('neglect');
                 }
             },
@@ -461,6 +473,15 @@ export const usePetStore = create<PetState>()(
                 const end = get().lifeTimerEndsAt;
                 if (!end) return LIFE_DURATION_MS;
                 return Math.max(0, new Date(end).getTime() - Date.now());
+            },
+
+            getEffectiveLifeTimerRemainingMs: () => {
+                const raw = get().getLifeTimerRemainingMs();
+                const { happiness } = get();
+                // Sadness malus: at 0 happiness the timer drains ~2.5x faster,
+                // at 100 happiness there is no malus.
+                const multiplier = 0.4 + (happiness / 100) * 0.6;
+                return Math.max(0, raw * multiplier);
             },
 
             addXp: (amount) => {
@@ -615,9 +636,16 @@ export const usePetStore = create<PetState>()(
 );
 
 export function calculateStage(streak: number): PetStage {
-    if (streak >= 90) return 5;
-    if (streak >= 30) return 4;
-    if (streak >= 7) return 3;
+    if (streak >= 180) return 12;
+    if (streak >= 120) return 11;
+    if (streak >= 90) return 10;
+    if (streak >= 60) return 9;
+    if (streak >= 30) return 8;
+    if (streak >= 14) return 7;
+    if (streak >= 7) return 6;
+    if (streak >= 5) return 5;
+    if (streak >= 3) return 4;
+    if (streak >= 2) return 3;
     if (streak >= 1) return 2;
     return 1;
 }

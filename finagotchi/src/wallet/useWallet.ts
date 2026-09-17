@@ -61,7 +61,7 @@ export type Wallet = {
     verifyEmailOtp: (otp: string) => Promise<void>;
     mintCreatureNft: (
         creatureName: string
-    ) => Promise<{ signature: string; mintAddress: string }>;
+    ) => Promise<{ signature: string; mintAddress: string; priceLamports: number }>;
     payReviveFee: () => Promise<string>;
     /** Signs and sends a transaction through the active connection (Dynamic or MWA). `chain` forces a chain-scoped MWA session for transactions on a different cluster (e.g. mainnet DCA while the app runs devnet). */
     signAndSendTransaction: (
@@ -1121,7 +1121,7 @@ export function useWallet(): Wallet {
         withHumanReadableErrors(
             async (
                 _creatureName: string
-            ): Promise<{ signature: string; mintAddress: string }> => {
+            ): Promise<{ signature: string; mintAddress: string; priceLamports: number }> => {
                 if (!MINT_TREASURY_ADDRESS) {
                     throw new Error('Mint treasury address is not configured');
                 }
@@ -1136,7 +1136,7 @@ export function useWallet(): Wallet {
                 // NFT mint transaction built and signed through Dynamic.
                 const mintAddress = Keypair.generate().publicKey.toBase58();
 
-                return { signature, mintAddress };
+                return { signature, mintAddress, priceLamports: MINT_COST_LAMPORTS };
             }
         ),
         [buildPaymentTransaction, signAndSendTransaction]

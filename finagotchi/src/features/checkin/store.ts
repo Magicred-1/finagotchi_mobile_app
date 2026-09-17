@@ -3,6 +3,8 @@ import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import { LIFE_DURATION_MS, updatePetStage, usePetStore } from '../pet/store';
 import { useWaitlistStore } from '../waitlist/store';
+import { useWalletStore } from '../wallet/store';
+import { recordCheckin as recordCheckinOnServer } from '../dbs/client';
 
 export type CheckinDetails = {
     amount?: number;
@@ -192,6 +194,13 @@ export const useCheckinStore = create<CheckinState>()(
                         balance: pet.balance + 50 * boost,
                     }));
                     usePetStore.getState().addXp(20);
+
+                // Optimistic server sync: fire and forget. The server is
+                // idempotent on (wallet, checkinDate), so duplicates are safe.
+                const wallet = useWalletStore.getState().address;
+                if (wallet) {
+                    recordCheckinOnServer(wallet).catch(() => {});
+                }
                 }
 
                 updatePetStage(newStreak);

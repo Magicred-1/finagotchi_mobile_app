@@ -203,10 +203,12 @@ const WALLET_AUTH_REASONS: readonly string[] = [
     'token_expired',
 ];
 
-async function post<TResponse>(
+type RequestOptions = { bearer?: string; apiKeyForWallet?: string };
+
+async function request<TResponse>(
     path: string,
-    body: Record<string, unknown>,
-    options?: { bearer?: string; apiKeyForWallet?: string },
+    init: { method: string; body?: Record<string, unknown>; query?: Record<string, string> },
+    options?: RequestOptions,
 ): Promise<TResponse> {
     const headers: Record<string, string> = {
         'Content-Type': 'application/json',
@@ -223,12 +225,18 @@ async function post<TResponse>(
 
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+    const url = new URL(`${getQuestServerBaseUrl()}${path}`);
+    if (init.query) {
+        for (const [key, value] of Object.entries(init.query)) {
+            url.searchParams.set(key, value);
+        }
+    }
     let res: Response;
     try {
-        res = await fetch(`${getQuestServerBaseUrl()}${path}`, {
-            method: 'POST',
+        res = await fetch(url.toString(), {
+            method: init.method,
             headers,
-            body: JSON.stringify(body),
+            body: init.body ? JSON.stringify(init.body) : undefined,
             signal: controller.signal,
         });
     } catch (err) {
@@ -268,6 +276,30 @@ async function post<TResponse>(
     }
 
     return (await res.json()) as TResponse;
+}
+
+function post<TResponse>(
+    path: string,
+    body: Record<string, unknown>,
+    options?: RequestOptions,
+): Promise<TResponse> {
+    return request<TResponse>(path, { method: 'POST', body }, options);
+}
+
+function get<TResponse>(
+    path: string,
+    query: Record<string, string>,
+    options?: RequestOptions,
+): Promise<TResponse> {
+    return request<TResponse>(path, { method: 'GET', query }, options);
+}
+
+function del<TResponse>(
+    path: string,
+    body: Record<string, unknown>,
+    options?: RequestOptions,
+): Promise<TResponse> {
+    return request<TResponse>(path, { method: 'DELETE', body }, options);
 }
 
 /** Public (modulo the optional static gate): fetch a fresh single-use challenge. */
@@ -412,14 +444,13 @@ export async function ensureAuthToken(wallet: string): Promise<string> {
  * token is dropped and ONE retry runs with a fresh login — covers server
  * secret rotation and clock skew without signing storms.
  */
-async function authedPost<TResponse>(
-    path: string,
-    body: Record<string, unknown>,
+async function withAuthRetry<TResponse>(
+    fn: (token: string) => Promise<TResponse>,
     wallet: string,
 ): Promise<TResponse> {
     const attempt = async (): Promise<TResponse> => {
         const token = await ensureAuthToken(wallet);
-        return post<TResponse>(path, body, { bearer: token });
+        return fn(token);
     };
     try {
         return await attempt();
@@ -430,6 +461,33 @@ async function authedPost<TResponse>(
         }
         throw err;
     }
+}
+
+/** Authenticated POST that reuses the cached session JWT (with 401 retry). */
+export function authedPost<TResponse>(
+    path: string,
+    body: Record<string, unknown>,
+    wallet: string,
+): Promise<TResponse> {
+    return withAuthRetry((token) => post<TResponse>(path, body, { bearer: token }), wallet);
+}
+
+/** Authenticated GET that reuses the cached session JWT (with 401 retry). */
+export function authedGet<TResponse>(
+    path: string,
+    query: Record<string, string>,
+    wallet: string,
+): Promise<TResponse> {
+    return withAuthRetry((token) => get<TResponse>(path, query, { bearer: token }), wallet);
+}
+
+/** Authenticated DELETE that reuses the cached session JWT (with 401 retry). */
+export function authedDelete<TResponse>(
+    path: string,
+    body: Record<string, unknown>,
+    wallet: string,
+): Promise<TResponse> {
+    return withAuthRetry((token) => del<TResponse>(path, body, { bearer: token }), wallet);
 }
 
 export function backfill(wallet: string): Promise<BackfillResponse> {

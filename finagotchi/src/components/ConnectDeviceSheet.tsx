@@ -150,20 +150,25 @@ export function ConnectDeviceSheet({ visible, onClose, ble }: Props) {
                 </View>
             ) : (
                 <View style={styles.section}>
-                    {scanning && <SearchingRadar />}
+                    {scanning && (
+                        <View style={styles.scanCard}>
+                            <SearchingRadar />
+                            <Text style={styles.scanTitle}>
+                                Searching for nearby Finagotchi…
+                            </Text>
+                        </View>
+                    )}
                     <Text
                         style={[
                             styles.statusText,
-                            scanning && styles.statusTextCentered,
+                            !scanning && styles.statusTextCentered,
                         ]}
                     >
-                        {scanning
-                            ? 'Searching for nearby Finagotchi…'
-                            : connecting
-                              ? 'Connecting…'
-                              : reconnecting
-                                ? 'Connection lost — reconnecting…'
-                                : error ?? 'No Finagotchi found nearby.'}
+                        {connecting
+                            ? 'Connecting…'
+                            : reconnecting
+                              ? 'Connection lost — reconnecting…'
+                              : error ?? 'No Finagotchi found nearby.'}
                     </Text>
 
                     {devices.map((device) => (
@@ -224,6 +229,22 @@ const styles = StyleSheet.create({
     section: {
         gap: spacing.md,
         paddingBottom: spacing.md,
+    },
+    scanCard: {
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: spacing.sm,
+        paddingVertical: spacing.md,
+        borderRadius: radius.md,
+        backgroundColor: colors.surfaceLight,
+        borderWidth: 1,
+        borderColor: colors.border,
+    },
+    scanTitle: {
+        color: colors.primary,
+        fontSize: typography.body,
+        fontFamily: 'Poppins_700Bold',
+        textAlign: 'center',
     },
     statusText: {
         color: colors.textMuted,
