@@ -6,16 +6,23 @@ import {
     type WalletAccount,
 } from '@dynamic-labs-sdk/client';
 import * as Linking from 'expo-linking';
-import * as WebBrowser from 'expo-web-browser';
 import { newDynamicClient } from './newDynamicClient';
 
 export type { WalletOption };
 
 const ALLOWED_WALLETS = new Set(['phantom', 'solflare', 'metamask', 'backpack']);
 
+function isInstalled(walletOption: WalletOption): boolean {
+    return walletOption.connectionOptions.some(
+        (option) => option.type === 'withWalletProvider'
+    );
+}
+
 export async function getWalletOptions(): Promise<WalletOption[]> {
     const options = await getWalletOptionsCatalogue({ includeMobileOptions: true }, newDynamicClient);
-    return options.filter((wallet) => ALLOWED_WALLETS.has(wallet.key));
+    return options.filter(
+        (wallet) => ALLOWED_WALLETS.has(wallet.key) && isInstalled(wallet)
+    );
 }
 
 export async function connectDynamicWallet(
