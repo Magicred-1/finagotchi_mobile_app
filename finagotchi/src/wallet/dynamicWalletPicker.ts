@@ -1,14 +1,14 @@
-import {
-    getWalletOptionsCatalogue,
-    connectWalletOption,
-    isMobile,
-    type WalletOption,
-    type WalletAccount,
+import type {
+    WalletOption,
+    WalletAccount,
 } from '@dynamic-labs-sdk/client';
 import * as Linking from 'expo-linking';
 import { newDynamicClient } from './newDynamicClient';
 
 export type { WalletOption };
+
+const { getWalletOptionsCatalogue, connectWalletOption, isMobile } =
+    await import('@dynamic-labs-sdk/client');
 
 export async function getWalletOptions(): Promise<WalletOption[]> {
     const options = await getWalletOptionsCatalogue({ includeMobileOptions: true }, newDynamicClient);
