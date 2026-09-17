@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
     ActivityIndicator,
     Image,
@@ -26,6 +26,29 @@ type Props = {
     options: WalletOption[];
     loading?: boolean;
 };
+
+function WalletIcon({ iconUrl, name }: { iconUrl?: string; name: string }) {
+    const [failed, setFailed] = useState(false);
+
+    if (iconUrl && !failed) {
+        return (
+            <Image
+                source={{ uri: iconUrl }}
+                style={styles.icon}
+                resizeMode="contain"
+                onError={() => setFailed(true)}
+            />
+        );
+    }
+
+    return (
+        <View style={styles.iconPlaceholder}>
+            <Text style={styles.fallbackLetter}>
+                {name ? name[0].toUpperCase() : 'W'}
+            </Text>
+        </View>
+    );
+}
 
 export function WalletPickerSheet({
     visible,
@@ -67,21 +90,12 @@ export function WalletPickerSheet({
                                 onPress={() => onSelect(item)}
                                 disabled={loading}
                             >
-                                {item.iconUrl ? (
-                                    <Image
-                                        source={{ uri: item.iconUrl }}
-                                        style={styles.icon}
-                                        resizeMode="contain"
-                                    />
-                                ) : (
-                                    <View style={styles.iconPlaceholder}>
-                                        <Ionicons
-                                            name="wallet-outline"
-                                            size={24}
-                                            color={colors.text}
-                                        />
-                                    </View>
-                                )}
+                                <View style={styles.iconWrapper}>
+                                    <WalletIcon iconUrl={item.iconUrl} name={item.name} />
+                                </View>
+                                <Text style={styles.walletName} numberOfLines={1}>
+                                    {item.name}
+                                </Text>
                                 {loading ? (
                                     <ActivityIndicator size="small" color={colors.text} />
                                 ) : null}
@@ -129,8 +143,14 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         justifyContent: 'center',
         gap: spacing.md,
+        flexWrap: 'wrap',
     },
     walletButton: {
+        width: 72,
+        alignItems: 'center',
+        gap: spacing.xs,
+    },
+    iconWrapper: {
         width: 64,
         height: 64,
         borderRadius: radius.md,
@@ -146,8 +166,22 @@ const styles = StyleSheet.create({
     iconPlaceholder: {
         width: 40,
         height: 40,
+        borderRadius: radius.sm,
+        backgroundColor: colors.surfaceLight,
         alignItems: 'center',
         justifyContent: 'center',
+    },
+    fallbackLetter: {
+        color: colors.text,
+        fontSize: 20,
+        fontFamily: 'Poppins_700Bold',
+    },
+    walletName: {
+        color: colors.text,
+        fontSize: typography.small,
+        fontFamily: 'Poppins_500Medium',
+        textAlign: 'center',
+        maxWidth: 72,
     },
     empty: {
         color: colors.textMuted,
