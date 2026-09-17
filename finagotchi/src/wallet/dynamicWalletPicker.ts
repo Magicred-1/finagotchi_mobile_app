@@ -6,26 +6,21 @@ import {
     type WalletAccount,
 } from '@dynamic-labs-sdk/client';
 import * as Linking from 'expo-linking';
+import { newDynamicClient } from './newDynamicClient';
 
 export type { WalletOption };
 
 export async function getWalletOptions(): Promise<WalletOption[]> {
-    const options = await getWalletOptionsCatalogue({ includeMobileOptions: true });
+    const options = await getWalletOptionsCatalogue({ includeMobileOptions: true }, newDynamicClient);
     return options;
 }
 
 export async function connectDynamicWallet(
     walletKey: string
 ): Promise<WalletAccount> {
-    const appUrl = await Linking.getInitialURL().then(
-        (url) => url ?? 'https://www.finagotchi.app'
-    );
-
     const walletAccount = await connectWalletOption({
         walletKey,
         handleWalletBrowserRedirect: ({ chain, walletKey }) => {
-            // React Native: open in-app browser is not used here.
-            // Wallet deep links are handled by onConnectionUri.
             console.warn('Wallet browser redirect not implemented', { chain, walletKey });
         },
         onConnectionUri: async ({ uri }) => {
@@ -33,7 +28,7 @@ export async function connectDynamicWallet(
                 await Linking.openURL(uri);
             }
         },
-    });
+    }, newDynamicClient);
 
     return walletAccount;
 }
