@@ -189,6 +189,9 @@ export default function OnboardingFlow({
     const handleApple = async () => {
         await wallet.connectWithApple();
     };
+    const handleOwnWallet = async () => {
+        await wallet.connectWithOwnWallet();
+    };
 
     const handleRequestEmailOtp = async (email: string) => {
         return wallet.requestEmailOtp(email);
@@ -264,6 +267,7 @@ export default function OnboardingFlow({
                         onConnectPasskey={handlePasskey}
                         onConnectGoogle={handleGoogle}
                         onConnectApple={handleApple}
+    onConnectOwnWallet={handleOwnWallet}
                         onRequestEmailOtp={handleRequestEmailOtp}
                         onVerifyEmailOtp={handleVerifyEmailOtp}
                         onConnectMwa={handleMwa}

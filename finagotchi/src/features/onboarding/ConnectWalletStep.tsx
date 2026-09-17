@@ -26,6 +26,7 @@ type Props = {
     onRequestEmailOtp: (email: string) => Promise<void>;
     onVerifyEmailOtp: (otp: string) => Promise<void>;
     onConnectMwa: () => Promise<void>;
+    onConnectOwnWallet: () => Promise<void>;
 };
 
 type AuthMethod =
@@ -34,7 +35,8 @@ type AuthMethod =
     | 'apple'
     | 'email-request'
     | 'email-verify'
-    | 'mwa';
+    | 'mwa'
+    | 'own-wallet';
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const OTP_LENGTH = 6;
@@ -48,6 +50,7 @@ export default function ConnectWalletStep({
     onRequestEmailOtp,
     onVerifyEmailOtp,
     onConnectMwa,
+    onConnectOwnWallet,
 }: Props) {
     const [activeMethod, setActiveMethod] = useState<AuthMethod | null>(null);
     const [error, setError] = useState<string | null>(null);
@@ -116,6 +119,11 @@ export default function ConnectWalletStep({
     const handleMwa = useCallback(
         () => run('mwa', onConnectMwa),
         [run, onConnectMwa]
+    );
+
+    const handleOwnWallet = useCallback(
+        () => run('own-wallet', onConnectOwnWallet),
+        [run, onConnectOwnWallet]
     );
 
     const handleRequestOtp = useCallback(() => {
@@ -317,20 +325,16 @@ export default function ConnectWalletStep({
                             )}
 
                             <View style={styles.stack}>
-                                {showEmail ? (
-                                    renderEmailForm()
-                                ) : (
+                                {platform === 'ios' && (
                                     <Button
-                                        title="Continue with Email"
-                                        onPress={() => {
-                                            setShowEmail(true);
-                                            clearError();
-                                        }}
+                                        title="Continue with Apple"
+                                        onPress={handleApple}
+                                        loading={isLoading('apple')}
                                         disabled={isBusy}
                                         variant="secondary"
                                         icon={
                                             <Ionicons
-                                                name="mail-outline"
+                                                name="logo-apple"
                                                 size={20}
                                                 color={colors.text}
                                             />
@@ -353,16 +357,35 @@ export default function ConnectWalletStep({
                                     }
                                 />
 
-                                {platform === 'ios' && (
+                                <Button
+                                    title="Connect your wallet"
+                                    onPress={handleOwnWallet}
+                                    loading={isLoading('own-wallet')}
+                                    disabled={isBusy}
+                                    variant="secondary"
+                                    icon={
+                                        <Ionicons
+                                            name="wallet-outline"
+                                            size={20}
+                                            color={colors.text}
+                                        />
+                                    }
+                                />
+
+                                {showEmail ? (
+                                    renderEmailForm()
+                                ) : (
                                     <Button
-                                        title="Continue with Apple"
-                                        onPress={handleApple}
-                                        loading={isLoading('apple')}
+                                        title="Continue with Email"
+                                        onPress={() => {
+                                            setShowEmail(true);
+                                            clearError();
+                                        }}
                                         disabled={isBusy}
                                         variant="secondary"
                                         icon={
                                             <Ionicons
-                                                name="logo-apple"
+                                                name="mail-outline"
                                                 size={20}
                                                 color={colors.text}
                                             />
