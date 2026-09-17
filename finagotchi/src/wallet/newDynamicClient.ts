@@ -3,7 +3,7 @@ import { addSolanaExtension } from '@dynamic-labs-sdk/solana';
 
 declare const process: { env: Record<string, string | undefined> };
 
-export const newDynamicClient = createDynamicClient({
+const newDynamicClient = createDynamicClient({
     environmentId: process.env.EXPO_PUBLIC_DYNAMIC_ENVIRONMENT_ID ?? '',
     metadata: {
         name: 'Finagotchi',
@@ -14,3 +14,5 @@ export const newDynamicClient = createDynamicClient({
 });
 
 addSolanaExtension();
+
+export { newDynamicClient };
