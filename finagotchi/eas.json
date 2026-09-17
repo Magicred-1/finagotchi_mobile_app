@@ -48,10 +48,6 @@
   },
   "submit": {
     "beta": {
-      "ios": {
-        "appleId": "${EAS_APPLE_ID}",
-        "ascAppId": "${EAS_ASC_APP_ID}"
-      },
       "android": {
         "serviceAccountKeyPath": "./credentials/google-service-account.json",
         "track": "internal"

@@ -1,7 +1,14 @@
 import React, { memo, useCallback, useEffect, useRef, useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import {
+  Modal,
+  Pressable,
+  StyleSheet,
+  Text,
+  TouchableWithoutFeedback,
+  View,
+} from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import Svg, { Circle, Defs, Path, RadialGradient, Stop } from 'react-native-svg';
+import Svg, { Circle, Defs, RadialGradient, Stop } from 'react-native-svg';
 import Animated, {
   Easing,
   useAnimatedStyle,
@@ -21,6 +28,8 @@ import type { PetMood as EngineMood } from '../engine/expressions';
 import {
   LIFE_DURATION_MS,
   REVIVE_COOLDOWNS_MS,
+  STAGE_NAMES,
+  STAGE_THRESHOLDS,
   usePetStore,
   type PetAccessory,
   type PetStage as NumericStage,
@@ -62,8 +71,15 @@ const STAGE_TO_RADIAL: Record<NumericStage, StateId> = {
   1: 'egg',
   2: 'coinling',
   3: 'coinling',
-  4: 'hodler',
-  5: 'whale',
+  4: 'coinling',
+  5: 'coinling',
+  6: 'coinling',
+  7: 'coinling',
+  8: 'hodler',
+  9: 'hodler',
+  10: 'whale',
+  11: 'whale',
+  12: 'whale',
 };
 
 function toRadialMood(
@@ -120,8 +136,8 @@ function useLifeClock(): LifeClock {
   const isDead = usePetStore((state) => state.isDead);
   const deathCount = usePetStore((state) => state.deathCount);
   const reviveWindowEndsAt = usePetStore((state) => state.reviveWindowEndsAt);
-  const getLifeTimerRemainingMs = usePetStore(
-    (state) => state.getLifeTimerRemainingMs
+  const getEffectiveLifeTimerRemainingMs = usePetStore(
+    (state) => state.getEffectiveLifeTimerRemainingMs
   );
 
   const [, setTick] = useState(0);
@@ -139,7 +155,7 @@ function useLifeClock(): LifeClock {
     : LIFE_DURATION_MS;
   const remainingMs = inReviveWindow
     ? Math.max(0, new Date(reviveWindowEndsAt).getTime() - Date.now())
-    : getLifeTimerRemainingMs();
+    : getEffectiveLifeTimerRemainingMs();
 
   return {
     fraction: clamp(remainingMs / total, 0, 1),
@@ -150,116 +166,255 @@ function useLifeClock(): LifeClock {
   };
 }
 
-/** One life segment = one day; the creature lives a week. */
-const DAY_MS = 24 * 60 * 60 * 1000;
-const WEEK_SEGMENTS = 7;
-const SEG_DEG = 360 / WEEK_SEGMENTS;
-/** Visual gap between day segments. */
-const SEG_GAP_DEG = 9;
+const STAGE_INDEX_TO_RADIAL: Record<number, StateId> = {
+  0: 'egg',
+  1: 'coinling',
+  2: 'coinling',
+  3: 'coinling',
+  4: 'coinling',
+  5: 'coinling',
+  6: 'coinling',
+  7: 'hodler',
+  8: 'hodler',
+  9: 'whale',
+  10: 'whale',
+  11: 'whale',
+};
 
-/** 0° points straight up, grows clockwise. */
-function polar(angleDeg: number, r: number): { x: number; y: number } {
-  const rad = ((angleDeg - 90) * Math.PI) / 180;
-  return {
-    x: CANVAS / 2 + r * Math.cos(rad),
-    y: CANVAS / 2 + r * Math.sin(rad),
-  };
-}
-
-function arcPath(startDeg: number, endDeg: number, r: number): string {
-  const s = polar(startDeg, r);
-  const e = polar(endDeg, r);
-  const large = endDeg - startDeg > 180 ? 1 : 0;
-  return `M${s.x.toFixed(2)} ${s.y.toFixed(2)} A${r} ${r} 0 ${large} 1 ${e.x.toFixed(2)} ${e.y.toFixed(2)}`;
-}
-
-/**
- * The life timer as a week dial: seven day-segments around the creature,
- * elapsed days go dark, and a bead sits on the live depletion point. Reads
- * like hearts in a game — no numbers needed to grasp "about 5 days left".
- * While dead it collapses to a single continuous arc for the revive window.
- */
-function LifeRing({
-  remainingMs,
-  fraction,
-  isLow,
-  isDead,
+function StageIcon({
+  stage,
+  reached,
+  current,
+  onPress,
 }: {
-  remainingMs: number;
-  fraction: number;
-  isLow: boolean;
-  isDead: boolean;
+  stage: number;
+  reached: boolean;
+  current: boolean;
+  onPress?: () => void;
 }) {
-  const critical = isLow || isDead;
-  const tone = critical
-    ? colors.danger
-    : remainingMs < 2 * DAY_MS
-      ? colors.warning
-      : colors.primary;
-  const daysLeft = clamp(remainingMs / DAY_MS, 0, WEEK_SEGMENTS);
-  const beadDeg = isDead ? fraction * 360 : daysLeft * SEG_DEG;
-  const bead = polar(beadDeg, RING_R);
-
   return (
-    <Svg
-      width={CANVAS}
-      height={CANVAS}
-      viewBox={`0 0 ${CANVAS} ${CANVAS}`}
-      style={StyleSheet.absoluteFill}
-      pointerEvents="none"
+    <Pressable
+      onPress={onPress}
+      style={[
+        styles.stageNode,
+        reached && styles.stageNodeReached,
+        current && styles.stageNodeCurrent,
+      ]}
+      pointerEvents="auto"
     >
-      {isDead ? (
-        <>
-          <Circle
-            cx={CANVAS / 2}
-            cy={CANVAS / 2}
-            r={RING_R}
-            stroke="rgba(255,255,255,0.07)"
-            strokeWidth={2.5}
-            fill="none"
-          />
-          {fraction > 0.01 ? (
-            <Path
-              d={arcPath(0, Math.min(fraction * 360, 359), RING_R)}
-              stroke={tone}
-              strokeWidth={2.5}
-              strokeLinecap="round"
-              fill="none"
-              opacity={0.9}
-            />
-          ) : null}
-        </>
-      ) : (
-        Array.from({ length: WEEK_SEGMENTS }, (_, i) => {
-          const a0 = i * SEG_DEG + SEG_GAP_DEG / 2;
-          const a1 = (i + 1) * SEG_DEG - SEG_GAP_DEG / 2;
-          const fill = clamp(daysLeft - i, 0, 1);
-          return (
-            <Path
-              key={i}
-              d={arcPath(a0, Math.max(a0 + 0.5, a0 + (a1 - a0) * Math.max(fill, 0.02)), RING_R)}
-              stroke={fill > 0 ? tone : 'rgba(255,255,255,0.08)'}
-              strokeWidth={2.5}
-              strokeLinecap="round"
-              fill="none"
-              opacity={fill > 0 ? 0.45 + 0.55 * fill : 1}
-            />
-          );
-        })
-      )}
-      <Circle cx={bead.x} cy={bead.y} r={5.5} fill={tone} opacity={0.25} />
-      <Circle cx={bead.x} cy={bead.y} r={2.8} fill={tone} />
-    </Svg>
+      <View style={styles.stageIconInner}>
+        <RadialPet
+          stage={STAGE_INDEX_TO_RADIAL[stage - 1]}
+          mood="calm"
+          size={22}
+          active={false}
+          isSpectral={false}
+        />
+      </View>
+    </Pressable>
   );
 }
 
-/** Plain-language label: the dial shows the shape of the timer, this says it. */
+function StageTooltip({
+  stage,
+  visible,
+  onClose,
+}: {
+  stage: number;
+  visible: boolean;
+  onClose: () => void;
+}) {
+  if (!visible) return null;
+  const name = STAGE_NAMES[stage as NumericStage];
+  const threshold = STAGE_THRESHOLDS[stage - 1];
+  return (
+    <Modal transparent visible={visible} animationType="fade">
+      <TouchableWithoutFeedback onPress={onClose}>
+        <View style={styles.tooltipOverlay}>
+          <View style={styles.tooltipCard}>
+            <View style={styles.tooltipIcon}>
+              <RadialPet
+                stage={STAGE_INDEX_TO_RADIAL[stage - 1]}
+                mood="calm"
+                size={48}
+                active={false}
+                isSpectral={false}
+              />
+            </View>
+            <Text style={styles.tooltipTitle}>{name}</Text>
+            <Text style={styles.tooltipSubtitle}>Stage {stage}</Text>
+            <Text style={styles.tooltipBody}>
+              Unlocked at {threshold} check-ins.
+            </Text>
+          </View>
+        </View>
+      </TouchableWithoutFeedback>
+    </Modal>
+  );
+}
+
+function StageProgress() {
+  const stage = usePetStore((s) => s.stage);
+  const totalCheckins = usePetStore((s) => s.totalCheckins);
+  const [tooltipStage, setTooltipStage] = useState<number | null>(null);
+  const currentIndex = Math.max(1, Math.min(stage, STAGE_THRESHOLDS.length)) - 1;
+  const nextIndex = Math.min(currentIndex + 1, STAGE_THRESHOLDS.length - 1);
+  const currentThreshold = STAGE_THRESHOLDS[currentIndex];
+  const nextThreshold = STAGE_THRESHOLDS[nextIndex];
+  const progressInRange =
+    nextThreshold === currentThreshold
+      ? 1
+      : clamp(
+          (totalCheckins - currentThreshold) /
+            (nextThreshold - currentThreshold),
+          0,
+          1
+        );
+  const isMaxed = stage === STAGE_THRESHOLDS.length;
+  const fullProgress = stage - 1 + progressInRange;
+  const fillWidth = clamp(
+    (fullProgress / (STAGE_THRESHOLDS.length - 1)) * 100,
+    0,
+    100
+  );
+  const nodes = STAGE_THRESHOLDS.length;
+
+  return (
+    <View style={styles.stageProgressWrapper}>
+      <StageTooltip
+        stage={tooltipStage ?? stage}
+        visible={tooltipStage !== null}
+        onClose={() => setTooltipStage(null)}
+      />
+      <View style={styles.stageTrackWrapper}>
+        <View style={styles.stageTrackBackground}>
+          <View style={[styles.stageTrackFill, { width: `${fillWidth}%` }]} />
+        </View>
+        <View style={styles.stageNodes} pointerEvents="box-none">
+          {STAGE_THRESHOLDS.map((_, i) => {
+            const reached = i < stage;
+            const current = i === stage - 1;
+            return (
+              <View
+                key={i}
+                style={[
+                  styles.stageNodePosition,
+                  { left: `${(i / (nodes - 1)) * 100}%` },
+                ]}
+                pointerEvents="box-none"
+              >
+                <StageIcon
+                  stage={i + 1}
+                  reached={reached}
+                  current={current}
+                  onPress={() => setTooltipStage(i + 1)}
+                />
+              </View>
+            );
+          })}
+        </View>
+      </View>
+      <View style={styles.stageLabelRow}>
+        <Text style={styles.stageName}>{STAGE_NAMES[stage as NumericStage]}</Text>
+        {!isMaxed ? (
+          <Text style={styles.stageToGo}>
+            {totalCheckins}/{nextThreshold} to next
+          </Text>
+        ) : (
+          <Text style={styles.stageToGo}>Max stage reached</Text>
+        )}
+      </View>
+    </View>
+  );
+}
+
 function LifeTimerText({ text, critical }: { text: string; critical: boolean }) {
   const tone = critical ? colors.danger : colors.textMuted;
   return (
     <View style={styles.lifeTimerPill}>
       <Ionicons name="heart-outline" size={11} color={tone} />
       <Text style={[styles.lifeTimerText, { color: tone }]}>{text} left</Text>
+    </View>
+  );
+}
+
+function BleSignal() {
+  const pulse = useSharedValue(0);
+
+  useEffect(() => {
+    pulse.value = withRepeat(
+      withTiming(1, { duration: 1200, easing: Easing.linear }),
+      -1,
+      false
+    );
+  }, [pulse]);
+
+  const dotStyle = useAnimatedStyle(() => ({
+    opacity: 0.4 + 0.6 * Math.sin(pulse.value * Math.PI * 2),
+    transform: [{ scale: 1 + 0.25 * Math.sin(pulse.value * Math.PI * 2) }],
+  }));
+
+  return (
+    <View style={styles.blePill} pointerEvents="none">
+      <Animated.View style={[styles.bleDot, dotStyle]} />
+      <Ionicons name="bluetooth" size={14} color={colors.primary} />
+      <Text style={styles.bleText}>Connecting</Text>
+    </View>
+  );
+}
+
+function SleepingZzz() {
+  const time = useSharedValue(0);
+
+  useEffect(() => {
+    time.value = withRepeat(
+      withTiming(1, { duration: 2400, easing: Easing.linear }),
+      -1,
+      false
+    );
+  }, [time]);
+
+  const z1 = useAnimatedStyle(() => {
+    const progress = (time.value + 0.0) % 1;
+    return {
+      opacity: progress < 0.2 ? 0 : 1 - progress,
+      transform: [
+        { translateY: -progress * 28 },
+        { translateX: Math.sin(progress * Math.PI * 2) * 4 },
+        { scale: 0.6 + progress * 0.4 },
+      ],
+    };
+  });
+
+  const z2 = useAnimatedStyle(() => {
+    const progress = (time.value + 0.33) % 1;
+    return {
+      opacity: progress < 0.2 ? 0 : 1 - progress,
+      transform: [
+        { translateY: -progress * 28 },
+        { translateX: Math.sin(progress * Math.PI * 2) * 4 },
+        { scale: 0.6 + progress * 0.4 },
+      ],
+    };
+  });
+
+  const z3 = useAnimatedStyle(() => {
+    const progress = (time.value + 0.66) % 1;
+    return {
+      opacity: progress < 0.2 ? 0 : 1 - progress,
+      transform: [
+        { translateY: -progress * 28 },
+        { translateX: Math.sin(progress * Math.PI * 2) * 4 },
+        { scale: 0.6 + progress * 0.4 },
+      ],
+    };
+  });
+
+  return (
+    <View style={StyleSheet.absoluteFill} pointerEvents="none">
+      <Animated.Text style={[styles.sleepZ, z1]}>z</Animated.Text>
+      <Animated.Text style={[styles.sleepZ, z2]}>z</Animated.Text>
+      <Animated.Text style={[styles.sleepZ, z3]}>Z</Animated.Text>
     </View>
   );
 }
@@ -384,16 +539,22 @@ function PetCanvasInner({
     }
   }, [reaction, reactionKey, reactionScale, reactionRotate, reactionOpacity]);
 
+  const waiting = engineMood === 'waiting';
+  const isSleeping = !waiting && (mood === 'sleeping' || engineMood === 'sleepy');
+
   const animatedStyle = useAnimatedStyle(() => {
     // Derive idle float from a single time value. Body breath is now handled
     // by the procedural engine inside RadialPet so the SVG path itself morphs.
     const t = time.value * Math.PI * 2;
     const idleY = Math.sin(t * 0.45) * -4;
+    // Waiting scene: calmer, almost hovering breath. Sleeping: slower, deeper breath + tiny sway.
+    const sleepBreath = waiting ? 1 + Math.sin(t * 0.25) * 0.015 : isSleeping ? 1 + Math.sin(t * 0.18) * 0.04 : 1;
+    const sleepSway = isSleeping ? Math.sin(t * 0.12) * 1.5 : 0;
     return {
       transform: [
         { translateY: idleY },
-        { scale: reactionScale.value },
-        { rotate: `${reactionRotate.value}deg` },
+        { scale: reactionScale.value * sleepBreath },
+        { rotate: `${reactionRotate.value + sleepSway}deg` },
       ],
       opacity: reactionOpacity.value,
     };
@@ -466,6 +627,10 @@ function PetCanvasInner({
 
         <Animated.View style={[styles.groundShadow, shadowStyle]} />
 
+        {engineMood === 'waiting' && <BleSignal />}
+
+        {isSleeping && <SleepingZzz />}
+
         <Animated.View style={animatedStyle}>
           <View style={styles.petContainer}>
             <RadialPet
@@ -482,13 +647,10 @@ function PetCanvasInner({
           </View>
         </Animated.View>
 
-        <LifeRing
-          remainingMs={life.remainingMs}
-          fraction={life.fraction}
-          isLow={life.isLow}
-          isDead={life.isDead}
-        />
+
       </View>
+
+      <StageProgress />
 
       <LifeTimerText text={life.text} critical={life.isLow || life.isDead} />
     </View>
@@ -532,6 +694,171 @@ const styles = StyleSheet.create({
   lifeTimerText: {
     fontSize: 11,
     fontFamily: 'Poppins_600SemiBold',
+    letterSpacing: 0.2,
+  },
+  blePill: {
+    position: 'absolute',
+    top: 12,
+    alignSelf: 'center',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingVertical: 5,
+    paddingHorizontal: 12,
+    borderRadius: 999,
+    backgroundColor: 'rgba(14,27,46,0.80)',
+    borderWidth: 1,
+    borderColor: 'rgba(53,215,255,0.35)',
+  },
+  bleDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 4,
+    backgroundColor: colors.primary,
+  },
+  bleText: {
+    color: colors.text,
+    fontSize: 10,
+    fontFamily: 'Poppins_800ExtraBold',
+  },
+  sleepZ: {
+    position: 'absolute',
+    top: CANVAS / 2 - 60,
+    right: CANVAS / 2 - 50,
+    color: colors.text,
+    fontSize: 20,
+    fontFamily: 'Poppins_800ExtraBold',
+    opacity: 0.8,
+  },
+  stageProgressWrapper: {
+    width: '100%',
+    alignItems: 'center',
+    marginTop: 4,
+    paddingHorizontal: 12,
+  },
+  stageTrackWrapper: {
+    width: '100%',
+    height: 20,
+    justifyContent: 'center',
+  },
+  stageTrackBackground: {
+    width: '100%',
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    overflow: 'hidden',
+    justifyContent: 'center',
+  },
+  stageTrackFill: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    bottom: 0,
+    backgroundColor: colors.primary,
+    borderRadius: 2,
+  },
+  stageNodes: {
+    ...StyleSheet.absoluteFillObject,
+    width: '100%',
+    top: 0,
+    bottom: 0,
+  },
+  stageNodePosition: {
+    position: 'absolute',
+    top: '50%',
+    marginTop: -10,
+    marginLeft: -10,
+    zIndex: 2,
+  },
+  stageNode: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    borderWidth: 1.5,
+    borderColor: 'rgba(255,255,255,0.15)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  stageNodeReached: {
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
+  },
+  stageNodeCurrent: {
+    shadowColor: colors.primary,
+    shadowOffset: { width: 0, height: 0 },
+    shadowRadius: 6,
+    shadowOpacity: 0.6,
+    elevation: 4,
+    transform: [{ scale: 1.12 }],
+  },
+  stageIconInner: {
+    width: 14,
+    height: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  tooltipOverlay: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(2,6,12,0.72)',
+    paddingHorizontal: 24,
+  },
+  tooltipCard: {
+    width: '100%',
+    maxWidth: 280,
+    alignItems: 'center',
+    padding: 24,
+    borderRadius: 20,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  tooltipIcon: {
+    width: 64,
+    height: 64,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 12,
+  },
+  tooltipTitle: {
+    fontSize: 18,
+    fontFamily: 'Poppins_800ExtraBold',
+    color: colors.text,
+    letterSpacing: 0.2,
+  },
+  tooltipSubtitle: {
+    fontSize: 12,
+    fontFamily: 'Poppins_600SemiBold',
+    color: colors.textMuted,
+    marginTop: 2,
+  },
+  tooltipBody: {
+    fontSize: 12,
+    fontFamily: 'Poppins_600SemiBold',
+    color: colors.textMuted,
+    marginTop: 8,
+    textAlign: 'center',
+  },
+  stageLabelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    marginTop: 6,
+  },
+  stageName: {
+    fontSize: 13,
+    fontFamily: 'Poppins_800ExtraBold',
+    color: colors.text,
+    letterSpacing: 0.2,
+  },
+  stageToGo: {
+    fontSize: 12,
+    fontFamily: 'Poppins_600SemiBold',
+    color: colors.textMuted,
     letterSpacing: 0.2,
   },
 });

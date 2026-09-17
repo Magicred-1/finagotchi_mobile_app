@@ -1,0 +1,103 @@
+import {
+    authedGet,
+    authedPost,
+    authedDelete,
+} from '../quest-engine/client';
+
+export interface DbsCheckin {
+    checkinDate: string;
+    createdAt: number;
+}
+
+export interface DbsStreakFreeze {
+    wallet: string;
+    count: number;
+    freezeLastUsedAt: number | null;
+    updatedAt: number | null;
+}
+
+export interface DbsLeague {
+    wallet: string;
+    score: number;
+    currentTier: string;
+}
+
+export interface DbsLeaderboardEntry {
+    wallet: string;
+    score: number;
+    displayName: string;
+    isFriend: boolean;
+    updatedAt: number;
+}
+
+export interface DbsLeaderboardResponse {
+    global: DbsLeaderboardEntry[];
+    friends: DbsLeaderboardEntry[];
+}
+
+function todayKey(): string {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+export async function recordCheckin(wallet: string): Promise<DbsCheckin> {
+    const res = (await authedPost('/dbs/checkins', { wallet, checkinDate: todayKey() }, wallet)) as {
+        wallet: string;
+        checkinDate: string;
+        inserted: boolean;
+    };
+    return { checkinDate: res.checkinDate, createdAt: Date.now() };
+}
+
+export async function fetchCheckins(wallet: string): Promise<DbsCheckin[]> {
+    const res = (await authedGet('/dbs/checkins', { wallet }, wallet)) as {
+        checkins: DbsCheckin[];
+    };
+    return res.checkins;
+}
+
+export async function fetchStreakFreeze(wallet: string): Promise<DbsStreakFreeze> {
+    const res = (await authedGet('/dbs/streak-freeze', { wallet }, wallet)) as DbsStreakFreeze;
+    return res;
+}
+
+export async function addStreakFreezes(wallet: string, amount: number): Promise<DbsStreakFreeze> {
+    const res = (await authedPost('/dbs/streak-freeze/add', { wallet, amount }, wallet)) as DbsStreakFreeze;
+    return res;
+}
+
+export async function useStreakFreezeOnServer(wallet: string, date: string): Promise<DbsStreakFreeze> {
+    const res = (await authedPost('/dbs/streak-freeze/use', { wallet, date }, wallet)) as {
+        wallet: string;
+        date: string;
+        used: boolean;
+        remaining: number;
+    };
+    return { wallet, count: res.remaining, freezeLastUsedAt: Date.now(), updatedAt: Date.now() };
+}
+
+export async function addLeagueScore(wallet: string, amount: number): Promise<DbsLeague> {
+    const res = (await authedPost('/dbs/league/add', { wallet, amount }, wallet)) as DbsLeague;
+    return res;
+}
+
+export async function fetchLeaderboard(wallet: string): Promise<DbsLeaderboardResponse> {
+    const res = (await authedGet('/dbs/leaderboard', { wallet }, wallet)) as {
+        global: DbsLeaderboardEntry[];
+        friends: DbsLeaderboardEntry[];
+    };
+    return res;
+}
+
+export async function upsertLeaderboardEntry(
+    wallet: string,
+    displayName: string,
+    score: number,
+    isFriend: boolean
+): Promise<void> {
+    await authedPost('/dbs/leaderboard', { wallet, displayName, score, isFriend }, wallet);
+}
+
+export async function deleteLeaderboardEntry(wallet: string): Promise<void> {
+    await authedDelete('/dbs/leaderboard', { wallet }, wallet);
+}

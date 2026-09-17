@@ -364,6 +364,7 @@ export function useDcaSyncEngine(ble: FinagotchiBle): DcaSyncStatus {
                 item: bleSync.accessoryIndex(pet.accessory),
                 points: Math.round(pet.balance),
                 happy: Math.round(pet.happiness),
+                subStage: pet.stage,
             };
             const plans = plansToSnapshots(
                 planStore.usePlanStore.getState().plans

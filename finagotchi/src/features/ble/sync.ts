@@ -17,16 +17,23 @@ export const STAGE_TO_STATE_ID: Record<PetStage, StateId> = {
     1: 'egg',
     2: 'coinling',
     3: 'coinling',
-    4: 'hodler',
-    5: 'whale',
+    4: 'coinling',
+    5: 'coinling',
+    6: 'coinling',
+    7: 'coinling',
+    8: 'hodler',
+    9: 'hodler',
+    10: 'whale',
+    11: 'whale',
+    12: 'whale',
 };
 
 /** Firmware stage name → app stage (contract: egg=1, coinling=2, hodler=4, whale=5). */
 const STATE_ID_TO_STAGE: Record<StateId, PetStage> = {
     egg: 1,
-    coinling: 2,
-    hodler: 4,
-    whale: 5,
+    coinling: 4,
+    hodler: 8,
+    whale: 10,
 };
 
 const STATE_ORDER: StateId[] = ['egg', 'coinling', 'hodler', 'whale'];
@@ -275,9 +282,10 @@ export function useDeviceSync(
                 lastSentStreak: streak,
             });
             // Happiness is RAM-only on the device and points drive its stats
-            // bar, so stats are part of every connect snapshot.
+            // bar, so stats are part of every connect snapshot. The sub-stage
+            // badge (1-12) is sent alongside the base 4-state stage.
             sendCommandRef.current(
-                `stage:${pet.stage};mood:${mood};item:${item};points:${points};happy:${happy};streak:${streak}`
+                `stage:${pet.stage};substage:${pet.stage};mood:${mood};item:${item};points:${points};happy:${happy};streak:${streak}`
             );
         };
 
@@ -314,7 +322,7 @@ export function useDeviceSync(
                         return;
                     }
                     useDeviceControlStore.setState({ lastSentStage: state.stage });
-                    sendCommandRef.current(`stage:${state.stage}`);
+                    sendCommandRef.current(`stage:${state.stage};substage:${state.stage}`);
                 }
 
                 if (state.accessory !== prev.accessory) {

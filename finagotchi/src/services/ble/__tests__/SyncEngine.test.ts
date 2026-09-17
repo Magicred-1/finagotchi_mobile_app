@@ -22,6 +22,7 @@ const PET: PetSnapshot = {
     item: 0,
     points: 750,
     happy: 100,
+    subStage: 1,
 };
 
 const PLANS: DcaPlanSnapshot[] = [
@@ -77,7 +78,7 @@ describe('onConnect write sequence', () => {
         ]);
         // Pinned payload strings (frozen contract).
         expect(commands()).toEqual([
-            'egg:5:2:0:750:100',
+            'egg:5:2:0:750:100:1',
             'epoch:1780000000',
             'dca:count:1',
             'dca:plan:0:1:1780086400:0.25:SPYX:3:1.5',
@@ -112,15 +113,16 @@ describe('onConnect write sequence', () => {
 
         await engine.onConnect({ pet, plans: [], mtuPayload: 20 });
 
-        expect(buildSnapshot(pet)).toBe('coinling:5:2:0:750:100');
-        expect(commands().slice(0, 3)).toEqual([
+        expect(buildSnapshot(pet)).toBe('coinling:5:2:0:750:100:1');
+        expect(commands().slice(0, 4)).toEqual([
             'coinling:5:2:0',
             'points:750',
             'happy:100',
+            'substage:1',
         ]);
-        expect(commands().slice(0, 3)).toEqual(buildSnapshotWrites(pet, 20));
+        expect(commands().slice(0, 4)).toEqual(buildSnapshotWrites(pet, 20));
         // No truncated full snapshot ever reaches the device.
-        expect(commands()).not.toContain('coinling:5:2:0:750:100');
+        expect(commands()).not.toContain('coinling:5:2:0:750:100:1');
         expect(commands().every((cmd) => cmd.length <= 20 || cmd.startsWith('dca:'))).toBe(
             true
         );
@@ -185,7 +187,7 @@ describe('plan rewrites and device-state reconciliation', () => {
         writes.length = 0;
 
         // Echo of the last pushed snapshot: no writes.
-        await engine.onDeviceState('egg:5:2:0:750:100');
+        await engine.onDeviceState('egg:5:2:0:750:100:1');
         expect(commands()).toEqual([]);
 
         // Genuine device-side change: the app (authoritative) re-pushes once.
@@ -194,7 +196,7 @@ describe('plan rewrites and device-state reconciliation', () => {
 
         // The device echoing the re-push must not start a loop.
         writes.length = 0;
-        await engine.onDeviceState('egg:5:2:0:750:100');
+        await engine.onDeviceState('egg:5:2:0:750:100:1');
         expect(commands()).toEqual([]);
     });
 });

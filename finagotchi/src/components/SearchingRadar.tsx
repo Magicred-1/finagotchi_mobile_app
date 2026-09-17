@@ -15,9 +15,9 @@ import { colors } from '../theme/tokens';
 
 const RING_COUNT = 3;
 const RING_DURATION = 2400;
-const RING_SIZE = 56;
+const RING_SIZE = 44;
 /** How far past the center circle the rings expand before fading out. */
-const RING_MAX_SCALE = 3.2;
+const RING_MAX_SCALE = 2.6;
 
 function PulseRing({ delay }: { delay: number }) {
     const progress = useSharedValue(0);
@@ -64,7 +64,7 @@ export function SearchingRadar() {
 
 const styles = StyleSheet.create({
     container: {
-        height: RING_SIZE * RING_MAX_SCALE,
+        height: 120,
         alignItems: 'center',
         justifyContent: 'center',
     },

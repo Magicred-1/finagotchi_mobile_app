@@ -22,6 +22,7 @@ import { useWalletStore } from '../../features/wallet/store';
 import { useOnboardingStore } from './store';
 import { usePetStore } from '../../features/pet/store';
 import { login } from '../quest-engine';
+import { registerNftCreature } from '../nft/client';
 
 type Step =
     | 'splash'
@@ -226,8 +227,14 @@ export default function OnboardingFlow({
             throw new Error('Wallet not connected');
         }
 
-        const { mintAddress } = await wallet.mintCreatureNft(creatureName);
+        const { mintAddress, signature: mintTxSignature, priceLamports: mintPriceLamports } = await wallet.mintCreatureNft(creatureName);
         mintCreature(creatureName, mintAddress);
+
+        // Register the creature in the server-side DB registry.
+        // The server will later be replaced by on-chain minting + metadata.
+        if (walletAddress) {
+            registerNftCreature(walletAddress, mintAddress, creatureName, usePetStore.getState().stage, mintTxSignature, mintPriceLamports ?? 0).catch(() => {});
+        }
 
         setStep('hatch');
     };
