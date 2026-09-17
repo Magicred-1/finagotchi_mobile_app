@@ -21,6 +21,7 @@ import bs58 from 'bs58';
 import { generateDemoMintAddress } from '../utils/generateDemoMintAddress';
 
 import { dynamicClient } from './dynamicClient';
+import { getWalletOptions, type WalletOption as DynamicWalletOption } from './dynamicWalletPicker';
 import { useWalletStore, type WalletConnectionType } from '../features/wallet/store';
 import { observeOutgoingTx } from '../features/quest-engine/observe';
 import { normalizeSignatureBytes } from '../features/quest-engine/signatureBytes';
@@ -57,7 +58,7 @@ export type Wallet = {
     connectWithPasskey: () => Promise<void>;
     connectWithGoogle: () => Promise<void>;
     connectWithApple: () => Promise<void>;
-    connectWithOwnWallet: () => Promise<void>;
+    connectWithOwnWallet: () => Promise<DynamicWalletOption[]>;
     requestEmailOtp: (email: string) => Promise<void>;
     verifyEmailOtp: (otp: string) => Promise<void>;
     mintCreatureNft: (
@@ -973,7 +974,8 @@ export function useWallet(): Wallet {
 
     const connectWithOwnWallet = useCallback(
         withHumanReadableErrors(async () => {
-            throw new Error("Connect your own wallet is not yet supported via this flow.");
+            const options = await getWalletOptions();
+            return options;
         }),
         []
     );
