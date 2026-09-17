@@ -1,4 +1,6 @@
 import React, { useEffect, useState } from 'react';
+import { WalletPickerSheet } from '../../components/WalletPickerSheet';
+import type { WalletOption } from '../../wallet/dynamicWalletPicker';
 import { Platform } from 'react-native';
 import Animated, {
     ReduceMotion,
@@ -60,6 +62,8 @@ export default function OnboardingFlow({
     initialStep = 'splash',
     onFinished,
 }: Props) {
+    const [walletOptions, setWalletOptions] = useState<WalletOption[]>([]);
+    const [walletPickerVisible, setWalletPickerVisible] = useState(false);
     const [step, setStep] = useState<Step>(initialStep);
     const [displayedStep, setDisplayedStep] = useState<Step>(initialStep);
     const [creatureName, setCreatureName] = useState('');
@@ -190,7 +194,9 @@ export default function OnboardingFlow({
         await wallet.connectWithApple();
     };
     const handleOwnWallet = async () => {
-        await wallet.connectWithOwnWallet();
+        const options = await wallet.connectWithOwnWallet();
+        setWalletOptions(options);
+        setWalletPickerVisible(true);
     };
 
     const handleRequestEmailOtp = async (email: string) => {
