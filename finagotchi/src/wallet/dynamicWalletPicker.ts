@@ -6,6 +6,7 @@ import {
     type WalletAccount,
 } from '@dynamic-labs-sdk/client';
 import * as Linking from 'expo-linking';
+import * as WebBrowser from 'expo-web-browser';
 import { newDynamicClient } from './newDynamicClient';
 
 export type { WalletOption };
@@ -18,10 +19,13 @@ export async function getWalletOptions(): Promise<WalletOption[]> {
 export async function connectDynamicWallet(
     walletKey: string
 ): Promise<WalletAccount> {
+    const appUrl = (await Linking.getInitialURL()) ?? 'https://www.finagotchi.app';
+
     const walletAccount = await connectWalletOption({
         walletKey,
-        handleWalletBrowserRedirect: ({ chain, walletKey }) => {
-            console.warn('Wallet browser redirect not implemented', { chain, walletKey });
+        handleWalletBrowserRedirect: async ({ walletKey }) => {
+            // Fallback: try to open the wallet's universal link / website.
+            await WebBrowser.openBrowserAsync(`https://${walletKey}.com`);
         },
         onConnectionUri: async ({ uri }) => {
             if (isMobile()) {
