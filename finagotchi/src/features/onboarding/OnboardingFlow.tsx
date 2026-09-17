@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { WalletPickerSheet } from '../../components/WalletPickerSheet';
+import { connectDynamicWallet } from '../../wallet/dynamicWalletPicker';
 import type { WalletOption } from '../../wallet/dynamicWalletPicker';
 import { Platform } from 'react-native';
 import Animated, {
@@ -199,6 +200,15 @@ export default function OnboardingFlow({
         setWalletPickerVisible(true);
     };
 
+    const handleSelectWallet = async (walletKey: string) => {
+        try {
+            await connectDynamicWallet(walletKey);
+            setWalletPickerVisible(false);
+        } catch (err) {
+            console.error('Failed to connect wallet:', err);
+        }
+    };
+
     const handleRequestEmailOtp = async (email: string) => {
         return wallet.requestEmailOtp(email);
     };
@@ -320,8 +330,16 @@ export default function OnboardingFlow({
     };
 
     return (
-        <Animated.View style={[{ flex: 1 }, contentStyle]}>
-            {renderStep(displayedStep)}
-        </Animated.View>
+        <>
+            <Animated.View style={[{ flex: 1 }, contentStyle]}>
+                {renderStep(displayedStep)}
+            </Animated.View>
+            <WalletPickerSheet
+                visible={walletPickerVisible}
+                onClose={() => setWalletPickerVisible(false)}
+                onSelect={(wallet) => handleSelectWallet(wallet.key)}
+                options={walletOptions}
+            />
+        </>
     );
 }
