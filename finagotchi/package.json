@@ -14,6 +14,9 @@
     "clean": "rm -rf node_modules .expo ios android pnpm-lock.yaml && pnpm install"
   },
   "dependencies": {
+    "@dynamic-labs-sdk/client": "^1.33.4",
+    "@dynamic-labs-sdk/react-hooks": "^1.33.4",
+    "@dynamic-labs-sdk/solana": "^1.33.4",
     "@dynamic-labs/legacy-client": "^5.8.0",
     "@dynamic-labs/legacy-react-hooks": "^5.8.0",
     "@dynamic-labs/legacy-react-native-extension": "^5.8.0",
@@ -30,6 +33,7 @@
     "@solana/wallet-adapter-base": "^0.9.27",
     "@solana/wallet-adapter-react": "^0.15.39",
     "@solana/web3.js": "^1.98.4",
+    "@tanstack/react-query": "^5.103.1",
     "axios": "^1.19.0",
     "bs58": "^6.0.0",
     "buffer": "^6.0.3",
