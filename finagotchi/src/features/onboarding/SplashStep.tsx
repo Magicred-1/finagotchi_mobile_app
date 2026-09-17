@@ -1,12 +1,12 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
     Pressable,
     SafeAreaView,
     StyleSheet,
     Text,
     View,
-    Image,
     useWindowDimensions,
+    Image as RNImage,
 } from 'react-native';
 import Animated, {
     Easing,
@@ -18,9 +18,9 @@ import Animated, {
     withSequence,
     withTiming,
 } from 'react-native-reanimated';
+import { Image as WebPImage } from 'react-native-webp-format';
 
-import { RadialPet } from '../../components/RadialPet';
-import { colors, spacing, typography } from '../../theme/tokens';
+import { colors, spacing } from '../../theme/tokens';
 
 type Props = {
     onFinished?: () => void;
@@ -35,6 +35,7 @@ export default function SplashStep({ onFinished }: Props) {
     const reducedMotion = useReducedMotion();
     const [skipped, setSkipped] = useState(false);
     const { width } = useWindowDimensions();
+    const revealFinished = useRef(false);
 
     useEffect(() => {
         if (reducedMotion) {
@@ -80,41 +81,28 @@ export default function SplashStep({ onFinished }: Props) {
             )
         );
 
-        textOpacity.value = withDelay(
-            500,
-            withTiming(1, { duration: 600 })
-        );
-
-        hintOpacity.value = withDelay(
-            1100,
-            withTiming(1, { duration: 400 })
-        );
+        textOpacity.value = withDelay(500, withTiming(1, { duration: 600 }));
+        hintOpacity.value = withDelay(1100, withTiming(1, { duration: 400 }));
 
         const timer = setTimeout(() => finish(), 1200);
         return () => clearTimeout(timer);
     }, [onFinished, opacity, scale, floatY, textOpacity, hintOpacity, reducedMotion]);
 
     const finish = () => {
-        if (skipped) return;
+        if (skipped || revealFinished.current) return;
+        revealFinished.current = true;
         setSkipped(true);
         onFinished?.();
     };
 
     const creatureStyle = useAnimatedStyle(() => ({
         opacity: opacity.value,
-        transform: [
-            { translateY: floatY.value },
-            { scale: scale.value },
-        ],
+        transform: [{ translateY: floatY.value }, { scale: scale.value }],
     }));
 
     const textStyle = useAnimatedStyle(() => ({
         opacity: textOpacity.value,
-        transform: [
-            {
-                translateY: (1 - textOpacity.value) * 10,
-            },
-        ],
+        transform: [{ translateY: (1 - textOpacity.value) * 10 }],
     }));
 
     const hintStyle = useAnimatedStyle(() => ({
@@ -128,16 +116,17 @@ export default function SplashStep({ onFinished }: Props) {
         <SafeAreaView style={styles.safe}>
             <Pressable style={styles.container} onPress={finish}>
                 <Animated.View style={[styles.creatureWrap, creatureStyle]}>
-                    <RadialPet stage="egg" mood="calm" size={160} />
+                    <WebPImage
+                        source={require('../../../assets/logos/ghost-animated.webp')}
+                        style={styles.ghost}
+                        resizeMode="contain"
+                    />
                 </Animated.View>
 
                 <Animated.View style={[styles.brand, textStyle]}>
-                    <Image
+                    <RNImage
                         source={require('../../../assets/logos/finagotchi_logo.png')}
-                        style={{
-                            width: logoWidth,
-                            height: logoHeight,
-                        }}
+                        style={{ width: logoWidth, height: logoHeight }}
                         resizeMode="contain"
                     />
                     <Text style={styles.tagline}>
@@ -171,6 +160,10 @@ const styles = StyleSheet.create({
         height: 200,
         alignItems: 'center',
         justifyContent: 'center',
+    },
+    ghost: {
+        width: 160,
+        height: 160,
     },
     brand: {
         alignItems: 'center',
