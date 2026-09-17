@@ -18,7 +18,7 @@ import Animated, {
     withSequence,
     withTiming,
 } from 'react-native-reanimated';
-import { Image as WebPImage } from 'react-native-webp-format';
+import GifImage from 'react-native-gif';
 
 import { colors, spacing } from '../../theme/tokens';
 
@@ -116,8 +116,8 @@ export default function SplashStep({ onFinished }: Props) {
         <SafeAreaView style={styles.safe}>
             <Pressable style={styles.container} onPress={finish}>
                 <Animated.View style={[styles.creatureWrap, creatureStyle]}>
-                    <WebPImage
-                        source={require('../../../assets/logos/ghost-animated.webp')}
+                    <GifImage
+                        source={require('../../../assets/logos/ghost-animated.gif')}
                         style={styles.ghost}
                         resizeMode="contain"
                     />
