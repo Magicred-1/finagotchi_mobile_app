@@ -1,4 +1,7 @@
-import { createDynamicClient } from '@dynamic-labs-sdk/client';
+import {
+    createDynamicClient,
+    initializeClient,
+} from '@dynamic-labs-sdk/client';
 import { addSolanaExtension } from '@dynamic-labs-sdk/solana';
 
 declare const process: { env: Record<string, string | undefined> };
@@ -14,3 +17,7 @@ export const newDynamicClient = createDynamicClient({
 });
 
 addSolanaExtension(newDynamicClient);
+
+initializeClient(newDynamicClient).catch((err) => {
+    console.error('Failed to initialize new Dynamic client:', err);
+});
