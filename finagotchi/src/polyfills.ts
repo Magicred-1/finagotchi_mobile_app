@@ -1,14 +1,3 @@
-// Polyfill for Event constructor used by @dynamic-labs-sdk/client in React Native.
-if (typeof (globalThis as any).Event !== 'function') {
-    class EventPolyfill {
-        type: string;
-        constructor(type: string) {
-            this.type = type;
-        }
-    }
-    (globalThis as any).Event = EventPolyfill as any;
-}
-
 // Polyfills must run before any wallet SDK code is evaluated.
 // The base64 polyfill is required by Dynamic's React Native SDK.
 import '@react-native-anywhere/polyfill-base64';
@@ -55,4 +44,15 @@ if (typeof (globalThis as any).crypto.randomBytes !== 'function') {
         }
         return Buffer.from(bytes);
     };
+}
+
+// Polyfill for Event constructor used by @dynamic-labs-sdk/client in React Native.
+if (typeof (globalThis as any).Event !== 'function') {
+    class EventPolyfill {
+        type: string;
+        constructor(type: string) {
+            this.type = type;
+        }
+    }
+    (globalThis as any).Event = EventPolyfill as any;
 }
