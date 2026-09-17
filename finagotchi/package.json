@@ -17,6 +17,7 @@
     "@dynamic-labs-sdk/client": "^1.33.4",
     "@dynamic-labs-sdk/react-hooks": "^1.33.4",
     "@dynamic-labs-sdk/solana": "^1.33.4",
+    "@dynamic-labs-sdk/wallet-connect": "^1.33.4",
     "@dynamic-labs/legacy-client": "^5.8.0",
     "@dynamic-labs/legacy-react-hooks": "^5.8.0",
     "@dynamic-labs/legacy-react-native-extension": "^5.8.0",

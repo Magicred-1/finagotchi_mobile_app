@@ -11,21 +11,20 @@ import { newDynamicClient } from './newDynamicClient';
 
 export type { WalletOption };
 
+const ALLOWED_WALLETS = new Set(['phantom', 'solflare', 'metamask', 'backpack']);
+
 export async function getWalletOptions(): Promise<WalletOption[]> {
     const options = await getWalletOptionsCatalogue({ includeMobileOptions: true }, newDynamicClient);
-    return options;
+    return options.filter((wallet) => ALLOWED_WALLETS.has(wallet.key));
 }
 
 export async function connectDynamicWallet(
     walletKey: string
 ): Promise<WalletAccount> {
-    const appUrl = (await Linking.getInitialURL()) ?? 'https://www.finagotchi.app';
-
     const walletAccount = await connectWalletOption({
         walletKey,
-        handleWalletBrowserRedirect: async ({ walletKey }) => {
-            // Fallback: try to open the wallet's universal link / website.
-            await WebBrowser.openBrowserAsync(`https://${walletKey}.com`);
+        handleWalletBrowserRedirect: async ({ chain, walletKey }) => {
+            console.warn('Wallet browser redirect', { chain, walletKey });
         },
         onConnectionUri: async ({ uri }) => {
             if (isMobile()) {
