@@ -296,7 +296,7 @@ export default function ConnectWalletStep({
                                 <>
                                     <View style={styles.stack}>
                                         <Button
-                                            title={isSeeker ? "Connect Seeker Wallet" : "Connect Android Wallet"}
+                                            title={isSeeker ? "Connect Seeker Wallet" : "Connect your wallet"}
                                             onPress={handleMwa}
                                             loading={isLoading('mwa')}
                                             disabled={isBusy}

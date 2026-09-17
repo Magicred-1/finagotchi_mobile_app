@@ -4,12 +4,10 @@ export type WalletOption = {
     key: string;
     name: string;
     iconUrl: string;
-    connectionOptions: { type: string }[];
-    installationUrls?: { [platform: string]: string };
 };
 
 export async function getWalletOptions(): Promise<WalletOption[]> {
-    const options = (await (dynamicClient as any).wallets.getWalletOptions()) as WalletOption[];
+    const options = ((dynamicClient as any).wallets.walletOptions as WalletOption[]) ?? [];
     return options;
 }
 
