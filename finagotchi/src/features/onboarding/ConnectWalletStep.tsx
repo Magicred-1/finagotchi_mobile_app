@@ -357,21 +357,6 @@ export default function ConnectWalletStep({
                                     }
                                 />
 
-                                <Button
-                                    title="Connect your wallet"
-                                    onPress={handleOwnWallet}
-                                    loading={isLoading('own-wallet')}
-                                    disabled={isBusy}
-                                    variant="secondary"
-                                    icon={
-                                        <Ionicons
-                                            name="wallet-outline"
-                                            size={20}
-                                            color={colors.text}
-                                        />
-                                    }
-                                />
-
                                 {showEmail ? (
                                     renderEmailForm()
                                 ) : (
@@ -411,6 +396,27 @@ export default function ConnectWalletStep({
                                     Passkey sign-in works once you have signed
                                     in with email or Google on this device.
                                 </Text>
+
+                                <View style={styles.divider}>
+                                    <View style={styles.dividerLine} />
+                                    <Text style={styles.dividerText}>or</Text>
+                                    <View style={styles.dividerLine} />
+                                </View>
+
+                                <Button
+                                    title="Connect your wallet"
+                                    onPress={handleOwnWallet}
+                                    loading={isLoading('own-wallet')}
+                                    disabled={isBusy}
+                                    variant="secondary"
+                                    icon={
+                                        <Ionicons
+                                            name="wallet-outline"
+                                            size={20}
+                                            color={colors.text}
+                                        />
+                                    }
+                                />
                             </View>
 
                             {error ? (
