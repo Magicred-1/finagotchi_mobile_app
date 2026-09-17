@@ -57,6 +57,7 @@ export type Wallet = {
     connectWithPasskey: () => Promise<void>;
     connectWithGoogle: () => Promise<void>;
     connectWithApple: () => Promise<void>;
+    connectWithOwnWallet: () => Promise<void>;
     requestEmailOtp: (email: string) => Promise<void>;
     verifyEmailOtp: (otp: string) => Promise<void>;
     mintCreatureNft: (
@@ -970,6 +971,13 @@ export function useWallet(): Wallet {
         []
     );
 
+    const connectWithOwnWallet = useCallback(
+        withHumanReadableErrors(async () => {
+            throw new Error("Connect your own wallet is not yet supported via this flow.");
+        }),
+        []
+    );
+
     const requestEmailOtp = useCallback(
         withHumanReadableErrors(async (email: string) => {
             await dynamicClient.auth.email.sendOTP(email);
@@ -1194,6 +1202,7 @@ export function useWallet(): Wallet {
             connectWithPasskey,
             connectWithGoogle,
             connectWithApple,
+        connectWithOwnWallet,
             requestEmailOtp,
             verifyEmailOtp,
             mintCreatureNft,
