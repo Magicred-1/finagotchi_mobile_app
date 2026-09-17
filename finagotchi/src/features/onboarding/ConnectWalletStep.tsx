@@ -13,6 +13,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 
 import { Button } from '../../components/Button';
+import { IconButton } from '../../components/IconButton';
 import { PressableScale } from '../../components/PressableScale';
 import { RadialPet } from '../../components/RadialPet';
 import { colors, radius, spacing, typography } from '../../theme/tokens';
@@ -295,7 +296,7 @@ export default function ConnectWalletStep({
                                 <>
                                     <View style={styles.stack}>
                                         <Button
-                                            title="Connect Solana Mobile Wallet"
+                                            title={isSeeker ? "Connect Seeker Wallet" : "Connect Android Wallet"}
                                             onPress={handleMwa}
                                             loading={isLoading('mwa')}
                                             disabled={isBusy}
@@ -310,7 +311,7 @@ export default function ConnectWalletStep({
                                         <Text style={styles.hint}>
                                             {isSeeker
                                                 ? 'Use the built-in Seeker wallet.'
-                                                : 'Solana Mobile Wallet or any MWA-compatible wallet.'}
+                                                : 'Use your Solana Mobile Wallet or any MWA-compatible wallet.'}
                                         </Text>
                                     </View>
 
@@ -325,73 +326,43 @@ export default function ConnectWalletStep({
                             )}
 
                             <View style={styles.stack}>
-                                {platform === 'ios' && (
-                                    <Button
-                                        title="Continue with Apple"
-                                        onPress={handleApple}
-                                        loading={isLoading('apple')}
-                                        disabled={isBusy}
-                                        variant="secondary"
-                                        icon={
-                                            <Ionicons
-                                                name="logo-apple"
-                                                size={20}
-                                                color={colors.text}
-                                            />
-                                        }
-                                    />
-                                )}
-
-                                <Button
-                                    title="Continue with Google"
-                                    onPress={handleGoogle}
-                                    loading={isLoading('google')}
-                                    disabled={isBusy}
-                                    variant="secondary"
-                                    icon={
-                                        <Ionicons
-                                            name="logo-google"
-                                            size={20}
-                                            color={colors.text}
+                                <View style={styles.socialRow}>
+                                    {platform === 'ios' && (
+                                        <IconButton
+                                            icon={<Ionicons name="logo-apple" size={24} color={colors.text} />}
+                                            label="Apple"
+                                            onPress={handleApple}
+                                            loading={isLoading('apple')}
+                                            disabled={isBusy}
                                         />
-                                    }
-                                />
-
-                                {showEmail ? (
-                                    renderEmailForm()
-                                ) : (
-                                    <Button
-                                        title="Continue with Email"
+                                    )}
+                                    <IconButton
+                                        icon={<Ionicons name="logo-google" size={24} color={colors.text} />}
+                                        label="Google"
+                                        onPress={handleGoogle}
+                                        loading={isLoading('google')}
+                                        disabled={isBusy}
+                                    />
+                                    <IconButton
+                                        icon={<Ionicons name="mail-outline" size={24} color={colors.text} />}
+                                        label="Email"
                                         onPress={() => {
                                             setShowEmail(true);
                                             clearError();
                                         }}
                                         disabled={isBusy}
-                                        variant="secondary"
-                                        icon={
-                                            <Ionicons
-                                                name="mail-outline"
-                                                size={20}
-                                                color={colors.text}
-                                            />
-                                        }
                                     />
-                                )}
+                                    <IconButton
+                                        icon={<Ionicons name="finger-print-outline" size={24} color={colors.text} />}
+                                        label="Passkey"
+                                        onPress={handlePasskey}
+                                        loading={isLoading('passkey')}
+                                        disabled={isBusy}
+                                    />
+                                </View>
 
-                                <Button
-                                    title="Continue with Passkey"
-                                    onPress={handlePasskey}
-                                    loading={isLoading('passkey')}
-                                    disabled={isBusy}
-                                    variant="secondary"
-                                    icon={
-                                        <Ionicons
-                                            name="finger-print-outline"
-                                            size={20}
-                                            color={colors.text}
-                                        />
-                                    }
-                                />
+                                {showEmail && renderEmailForm()}
+
                                 <Text style={styles.hint}>
                                     Passkey sign-in works once you have signed
                                     in with email or Google on this device.
@@ -489,6 +460,12 @@ const styles = StyleSheet.create({
     stack: {
         width: '100%',
         gap: spacing.sm,
+    },
+    socialRow: {
+        flexDirection: 'row',
+        justifyContent: 'center',
+        gap: spacing.md,
+        flexWrap: 'wrap',
     },
     emailBox: {
         width: '100%',
