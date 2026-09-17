@@ -9,21 +9,28 @@ if (typeof (globalThis as any).Buffer === 'undefined') {
     (globalThis as any).Buffer = Buffer;
 }
 
-// @solana/web3.js -> @noble/curves -> @noble/hashes checks for
-// globalThis.crypto.getRandomValues at module evaluation time. React Native
-// Hermes/JSC do not expose a global crypto object, so ensure one is present.
+// React Native Hermes/JSC do not expose a global crypto object, so ensure one
+// is present. Some libraries (WalletConnect, @noble/hashes) read
+// crypto.getRandomValues synchronously at module load time, so this polyfill
+// must run before any of those modules are imported.
 if (typeof globalThis.crypto !== 'object' || globalThis.crypto === null) {
     (globalThis as any).crypto = {} as Crypto;
 }
 
-// react-native-get-random-values should have installed the real native
-// getRandomValues. If for some reason it did not (e.g. remote debugging or
-// missing native module), install a Math.random() fallback so that
-// Keypair.generate() and other Solana calls do not hard-crash.
-if (typeof globalThis.crypto.getRandomValues !== 'function') {
+function installCryptoGetRandomValues() {
+    const original = (globalThis as any).crypto.getRandomValues;
+    if (typeof original === 'function') {
+        return;
+    }
+
     (globalThis as any).crypto.getRandomValues = (
         array: Uint8Array | ArrayBufferView
     ): Uint8Array | ArrayBufferView => {
+        // Prefer the native implementation if it has become available.
+        if (typeof original === 'function') {
+            return original.call((globalThis as any).crypto, array);
+        }
+
         const view =
             array instanceof ArrayBuffer
                 ? new Uint8Array(array)
@@ -34,6 +41,8 @@ if (typeof globalThis.crypto.getRandomValues !== 'function') {
         return array;
     };
 }
+
+installCryptoGetRandomValues();
 
 // Also expose a minimal randomBytes for libraries that check Node's crypto.
 if (typeof (globalThis as any).crypto.randomBytes !== 'function') {
