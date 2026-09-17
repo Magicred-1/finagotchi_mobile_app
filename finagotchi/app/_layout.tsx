@@ -6,6 +6,9 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import * as SplashScreen from 'expo-splash-screen';
 
 import { dynamicClient } from '../src/wallet/dynamicClient';
+import { newDynamicClient } from '../src/wallet/newDynamicClient';
+import { DynamicProvider } from '@dynamic-labs-sdk/react-hooks';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 import OnboardingFlow from '../src/features/onboarding/OnboardingFlow';
 import { useOnboardingStore } from '../src/features/onboarding/store';
@@ -27,6 +30,8 @@ import {
 } from '@expo-google-fonts/poppins';
 
 SplashScreen.preventAutoHideAsync();
+
+const queryClient = new QueryClient();
 
 export default function RootLayout() {
   return (
