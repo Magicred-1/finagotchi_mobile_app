@@ -18,6 +18,7 @@ import { useWallet } from '../src/wallet/useWallet';
 import { SheetPortalHost } from '../src/components/SheetPortal';
 import { useFillWatcher } from '../src/services/dca';
 import { useQuestEngine } from '../src/features/quest-engine/useQuestEngine';
+import { useUpdateCheck } from './hooks/useUpdateCheck';
 
 import {
   Poppins_400Regular,
@@ -72,6 +73,9 @@ function AppContent() {
 
   // Poll on-chain DCA accounts for fills; a fill feeds the existing pet loop.
   useFillWatcher();
+
+  // EAS Update prompt for TestFlight builds.
+  useUpdateCheck();
 
   // Wallet connection and creature mint are mandatory. If any required state
   // is missing, force the user back into onboarding at the appropriate step.
