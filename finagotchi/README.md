@@ -20,6 +20,9 @@ eas build --platform ios --profile testflight
 
 # Submit the build to App Store Connect / TestFlight
 eas submit --platform ios --profile testflight
+
+# Or use the single pnpm script that builds and submits in one step
+pnpm eas:push:testflight
 ```
 
 Publish an EAS Update to the `testflight` channel:
