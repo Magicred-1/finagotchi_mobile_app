@@ -4,6 +4,32 @@ Mobile companion app for the Finagotchi ESP32-S3 device. Renders the same
 procedural blob pet as the firmware (same TypeScript engine, `src/engine/`),
 connects to the device over BLE, and keeps app and device in sync.
 
+## iOS TestFlight Distribution
+
+Required environment variables:
+
+- `EAS_APPLE_ID` — Apple ID / username for the App Store Connect account.
+- `EAS_APPLE_TEAM_ID` — Apple Developer Team ID.
+- `EAS_ASC_APP_ID` — App Store Connect App ID for Finagotchi.
+
+Build and submit manually to TestFlight:
+
+```sh
+# Build an iOS archive for the TestFlight profile
+eas build --platform ios --profile testflight
+
+# Submit the build to App Store Connect / TestFlight
+eas submit --platform ios --profile testflight
+```
+
+Publish an EAS Update to the `testflight` channel:
+
+```sh
+eas update --channel testflight --platform ios
+```
+
+Build numbers are incremented automatically because the `testflight` profile in `eas.json` has `"autoIncrement": true`.
+
 ## Running
 
 BLE does **not** work in Expo Go — you need a development build:
