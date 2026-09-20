@@ -35,6 +35,14 @@
       },
       "channel": "beta"
     },
+    "testflight": {
+      "distribution": "store",
+      "autoIncrement": true,
+      "ios": {
+        "resourceClass": "m-medium"
+      },
+      "channel": "testflight"
+    },
     "production": {
       "autoIncrement": true,
       "android": {
@@ -47,6 +55,12 @@
     }
   },
   "submit": {
+    "testflight": {
+      "ios": {
+        "appleId": "${EAS_APPLE_ID}",
+        "ascAppId": "${EAS_ASC_APP_ID}"
+      }
+    },
     "beta": {
       "android": {
         "serviceAccountKeyPath": "./credentials/google-service-account.json",
