@@ -17,11 +17,15 @@ config.resolver.sourceExts = ['cjs', ...config.resolver.sourceExts];
 // Hermes/JSC don't include it, so intercept that import and point it at our
 // minimal JS polyfill.
 const cryptoPolyfillPath = path.resolve(__dirname, 'src/crypto-polyfill.ts');
+const streamPolyfillPath = require.resolve('stream-browserify');
 const originalResolveRequest = config.resolver.resolveRequest;
 
 config.resolver.resolveRequest = (context, moduleName, platform, info) => {
     if (moduleName === 'crypto') {
         return { filePath: cryptoPolyfillPath, type: 'sourceFile' };
+    }
+    if (moduleName === 'stream') {
+        return { filePath: streamPolyfillPath, type: 'sourceFile' };
     }
     if (originalResolveRequest) {
         return originalResolveRequest(context, moduleName, platform, info);
