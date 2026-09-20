@@ -57,6 +57,7 @@
   "submit": {
     "testflight": {
       "ios": {
+        "appleTeamId": "${EAS_APPLE_TEAM_ID}",
         "appleId": "${EAS_APPLE_ID}",
         "ascAppId": "${EAS_ASC_APP_ID}"
       }
