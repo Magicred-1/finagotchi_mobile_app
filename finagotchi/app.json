@@ -15,7 +15,6 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.magicred1.finagotchi",
-      "buildNumber": "1.0.0.0",
       "associatedDomains": [
         "applinks:finagotchi.app",
         "webcredentials:finagotchi.app",
