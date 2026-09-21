@@ -18,6 +18,7 @@ config.resolver.sourceExts = ['cjs', ...config.resolver.sourceExts];
 // minimal JS polyfill.
 const cryptoPolyfillPath = path.resolve(__dirname, 'src/crypto-polyfill.ts');
 const streamPolyfillPath = require.resolve('stream-browserify');
+const wsShimPath = path.resolve(__dirname, 'src/ws-shim.ts');
 const originalResolveRequest = config.resolver.resolveRequest;
 
 config.resolver.resolveRequest = (context, moduleName, platform, info) => {
@@ -26,6 +27,12 @@ config.resolver.resolveRequest = (context, moduleName, platform, info) => {
     }
     if (moduleName === 'stream') {
         return { filePath: streamPolyfillPath, type: 'sourceFile' };
+    }
+    // `ws` is a Node WebSocket library that imports Node built-ins (zlib).
+    // In React Native we can use the global WebSocket instead, so redirect the
+    // import to a tiny shim that re-exports it.
+    if (moduleName === 'ws') {
+        return { filePath: wsShimPath, type: 'sourceFile' };
     }
     if (originalResolveRequest) {
         return originalResolveRequest(context, moduleName, platform, info);
