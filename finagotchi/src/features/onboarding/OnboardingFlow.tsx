@@ -26,6 +26,7 @@ import { useOnboardingStore } from './store';
 import { usePetStore } from '../../features/pet/store';
 import { login } from '../quest-engine';
 import { registerNftCreature } from '../nft/client';
+import { restoreCreatureFromServer } from '../pet/creatureSync';
 
 type Step =
     | 'splash'
@@ -70,6 +71,14 @@ export default function OnboardingFlow({
     const [creatureName, setCreatureName] = useState('');
     const [fundingDismissed, setFundingDismissed] = useState(false);
     const [mintBalanceChecked, setMintBalanceChecked] = useState(false);
+    // While true, a server restore check is in flight — hold rendering so a
+    // returning user never sees the name/mint steps for a creature they own.
+    const [restoreChecking, setRestoreChecking] = useState(
+        () =>
+            initialStep === 'name' &&
+            !!useWalletStore.getState().address &&
+            !!useOnboardingStore.getState().serverAuthConsentAt
+    );
 
     const wallet = useWallet();
     const walletAddress = useWalletStore((state) => state.address);
@@ -155,12 +164,41 @@ export default function OnboardingFlow({
 
     // Auto-advance from connect once the wallet authorizes. First-time users
     // pass through the server sign-in consent step; returning users (consent
-    // already granted) skip straight to naming.
+    // already granted) skip straight to naming — after a restore check so a
+    // creature already registered server-side is never minted again.
     useEffect(() => {
-        if (wallet.connected && step === 'connect') {
-            setStep(serverAuthConsentAt ? 'name' : 'auth');
+        if (!wallet.connected || step !== 'connect') return;
+        if (!serverAuthConsentAt) {
+            setStep('auth');
+            return;
         }
+        let cancelled = false;
+        setRestoreChecking(true);
+        void tryRestore().then((restored) => {
+            if (cancelled) return;
+            setRestoreChecking(false);
+            setStep(restored ? 'reminder' : 'name');
+        });
+        return () => {
+            cancelled = true;
+        };
     }, [wallet.connected, step, serverAuthConsentAt]);
+
+    // Forced re-entry at the naming step (returning user whose local mint
+    // data is gone): restore from the server before offering a paid re-mint.
+    useEffect(() => {
+        if (!restoreChecking || step !== 'name') return;
+        let cancelled = false;
+        void tryRestore().then((restored) => {
+            if (cancelled) return;
+            setRestoreChecking(false);
+            if (restored) setStep('reminder');
+        });
+        return () => {
+            cancelled = true;
+        };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     // Guard against landing on a step we cannot complete.
     useEffect(() => {
@@ -182,6 +220,28 @@ export default function OnboardingFlow({
             setStep('mint');
         }
     }, [step, walletAddress, creatureName]);
+
+    /**
+     * Restore the creature from the server when the wallet already has one.
+     * Returns true when a creature was restored — callers reroute to the
+     * reminder step instead of naming/minting. Never throws.
+     */
+    async function tryRestore(): Promise<boolean> {
+        const address = useWalletStore.getState().address;
+        if (!address || !useOnboardingStore.getState().serverAuthConsentAt) {
+            return false;
+        }
+        if (usePetStore.getState().mintAddress) return true;
+        try {
+            const restored = await restoreCreatureFromServer(address);
+            if (restored) {
+                setCreatureName(usePetStore.getState().name ?? '');
+            }
+            return restored;
+        } catch {
+            return false;
+        }
+    }
 
     const handlePasskey = async () => {
         await wallet.connectWithPasskey();
@@ -229,7 +289,12 @@ export default function OnboardingFlow({
         // signature without consent on record.
         grantServerAuthConsent();
         await login(walletAddress);
-        setStep('name');
+        // A wallet that already owns a creature gets it restored here —
+        // no second mint, no wiped progress.
+        setRestoreChecking(true);
+        const restored = await tryRestore();
+        setRestoreChecking(false);
+        setStep(restored ? 'reminder' : 'name');
     };
 
     const handleAuthSkip = () => {
@@ -246,8 +311,15 @@ export default function OnboardingFlow({
             throw new Error('Wallet not connected');
         }
 
+        // Final guard against double-minting: if this wallet already owns a
+        // creature server-side, restore it instead of charging for another.
+        if (await tryRestore()) {
+            setStep('reminder');
+            return;
+        }
+
         const { mintAddress, signature: mintTxSignature, priceLamports: mintPriceLamports } = await wallet.mintCreatureNft(creatureName);
-        mintCreature(creatureName, mintAddress);
+        mintCreature(creatureName, mintAddress, mintTxSignature);
 
         // Register the creature in the server-side DB registry.
         // The server will later be replaced by on-chain minting + metadata.
@@ -332,7 +404,7 @@ export default function OnboardingFlow({
     return (
         <>
             <Animated.View style={[{ flex: 1 }, contentStyle]}>
-                {renderStep(displayedStep)}
+                {restoreChecking ? null : renderStep(displayedStep)}
             </Animated.View>
             <WalletPickerSheet
                 visible={walletPickerVisible}
