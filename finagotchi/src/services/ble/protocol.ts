@@ -6,8 +6,10 @@
  * firmware. Pure TypeScript, no React Native imports — also used by tests.
  */
 
-/** MTU the app requests on Android (iOS negotiates automatically). */
-export const PROTOCOL_MTU = 128;
+/** MTU the app requests on Android (iOS negotiates automatically). 256 is
+ *  required so the 3-field provisioning payload (ssid + pass + device token)
+ *  fits in a single write; firmware supports it. */
+export const PROTOCOL_MTU = 256;
 /** ATT payload before MTU negotiation (23 - 3 header bytes). */
 export const DEFAULT_ATT_PAYLOAD = 20;
 /** Spacing between replayed dca:hit writes (device toast queue is 3 deep). */

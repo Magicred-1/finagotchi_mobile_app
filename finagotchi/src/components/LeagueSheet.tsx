@@ -1,8 +1,9 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { Modal, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
 import { LEAGUE_TIERS, useLeagueStore } from '../features/league/store';
+import { useWalletStore } from '../features/wallet/store';
 import { colors, radius, spacing, typography } from '../theme/tokens';
 import { PressableScale } from './PressableScale';
 
@@ -14,7 +15,15 @@ interface Props {
 export function LeagueSheet({ visible, onClose }: Props) {
     const { currentTier, score, getProgress } = useLeagueStore();
     const tier = useLeagueStore((s) => s.getTier());
+    const syncFromServer = useLeagueStore((s) => s.syncFromServer);
+    const wallet = useWalletStore((s) => s.address);
     const progress = getProgress();
+
+    useEffect(() => {
+        if (visible && wallet) {
+            syncFromServer().catch(() => {});
+        }
+    }, [visible, wallet, syncFromServer]);
 
     return (
         <Modal transparent visible={visible} animationType="slide">

@@ -16,9 +16,10 @@ UTF-8 strings with no trailing newline unless stated otherwise.
 | Provisioning characteristic | `0000f1a2-0000-1000-8000-00805f9b34fb` | WRITE (encrypted writes only) |
 
 - Advertised device name: `Finagotchi`.
-- MTU: **128** (app calls `requestMTU(128)` on Android after connect; iOS
+- MTU: **256** (app calls `requestMTU(256)` on Android after connect; iOS
   negotiates automatically). If negotiation fails the app falls back to the
   default 20-byte ATT payload and splits writes (see §3, snapshot fallback).
+  Raised from 128 in the 2026-09 cloud-sync revision — see §2.
 
 ## 2. Pairing
 
@@ -34,6 +35,25 @@ only — requires an encrypted/bonded link):
 ```
 
 Exactly one `\n` separator, no trailing newline.
+
+**Revision 2026-09 (cloud sync):** an optional third field carries the device
+token that lets the hardware pull pet state directly from the API server:
+
+```
+<ssid>\n<pass>\n<deviceToken>
+```
+
+Two-field writes remain valid and simply leave Wi-Fi-only provisioning in
+place. Because the token makes the payload up to ~226 bytes, the MTU is now
+**256** (was 128): the app calls `requestMTU(256)` on Android and firmware
+requests 256 as well. Devices running older firmware negotiate 128/185 and
+only support the two-field payload.
+
+With a token provisioned, the device polls
+`GET https://api.finagotchi.app/device/state` (Bearer token) every 60 s while
+no app is connected, and applies `{stage, sub, streak, mood, points, happy}`
+from the server. While an app is connected, the app remains authoritative and
+the device pauses cloud polling.
 
 ## 3. State characteristic commands (app → device, `0xf1a1` writes)
 

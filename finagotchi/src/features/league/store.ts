@@ -2,7 +2,15 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import { useWalletStore } from '../wallet/store';
-import { addLeagueScore as addLeagueScoreOnServer } from '../dbs/client';
+import {
+    addLeagueScore as addLeagueScoreOnServer,
+    fetchLeague,
+} from '../dbs/client';
+
+/** League score awarded for a successful daily check-in. */
+export const CHECKIN_SCORE = 10;
+/** League score awarded per stage gained on evolution. */
+export const EVOLUTION_SCORE = 50;
 
 export const LEAGUE_TIERS = [
     { name: 'Bronze', rank: 1, color: '#CD7F32', minScore: 0, promotion: 100, demotion: 0 },
@@ -31,6 +39,7 @@ type LeagueState = {
     seasonEndsAt: string;
     leaderboardScope: 'global' | 'friends';
     addScore: (amount: number) => void;
+    syncFromServer: () => Promise<void>;
     setScope: (scope: 'global' | 'friends') => void;
     getTier: () => (typeof LEAGUE_TIERS)[number];
     getProgress: () => { current: number; target: number; percent: number };
@@ -63,10 +72,33 @@ export const useLeagueStore = create<LeagueState>()(
                     score: nextScore,
                     currentTier: computeTier(nextScore),
                 });
-                // Optimistic server sync; the server recomputes the tier.
+                // Optimistic server sync; the server recomputes the tier and
+                // its response reconciles local state back to authoritative.
                 const wallet = useWalletStore.getState().address;
                 if (wallet) {
-                    addLeagueScoreOnServer(wallet, amount).catch(() => {});
+                    addLeagueScoreOnServer(wallet, amount)
+                        .then((res) => {
+                            set({
+                                score: res.score,
+                                currentTier: computeTier(res.score),
+                            });
+                        })
+                        .catch(() => {});
+                }
+            },
+            syncFromServer: async () => {
+                const wallet = useWalletStore.getState().address;
+                if (!wallet) return;
+                try {
+                    const res = await fetchLeague(wallet);
+                    if (res.score !== get().score) {
+                        set({
+                            score: res.score,
+                            currentTier: computeTier(res.score),
+                        });
+                    }
+                } catch {
+                    // Offline or not authenticated yet; keep local state.
                 }
             },
             setScope: (scope) => set({ leaderboardScope: scope }),
@@ -91,26 +123,3 @@ export const useLeagueStore = create<LeagueState>()(
     )
 );
 
-const MOCK_FRIENDS: LeaderboardEntry[] = [
-    { userId: 'u1', name: 'You', score: 0, tier: 'Bronze' },
-    { userId: 'u2', name: 'Alice', score: 340, tier: 'Silver' },
-    { userId: 'u3', name: 'Bob', score: 120, tier: 'Bronze' },
-    { userId: 'u4', name: 'Carol', score: 890, tier: 'Diamond' },
-    { userId: 'u5', name: 'Dave', score: 560, tier: 'Platinum' },
-];
-
-const MOCK_GLOBAL: LeaderboardEntry[] = [
-    { userId: 'g1', name: 'Finn', score: 1250, tier: 'Whale' },
-    { userId: 'g2', name: 'Satoshi', score: 980, tier: 'Diamond' },
-    { userId: 'g3', name: 'Vitalik', score: 760, tier: 'Diamond' },
-    { userId: 'g4', name: 'HodlQueen', score: 520, tier: 'Platinum' },
-    { userId: 'g5', name: 'DCA_King', score: 310, tier: 'Gold' },
-];
-
-export function getLeaderboard(scope: 'global' | 'friends', currentScore: number, currentTier: LeagueTierName): LeaderboardEntry[] {
-    const me: LeaderboardEntry = { userId: 'me', name: 'You', score: currentScore, tier: currentTier };
-    const base = scope === 'friends' ? [...MOCK_FRIENDS] : [...MOCK_GLOBAL];
-    base.push(me);
-    base.sort((a, b) => b.score - a.score);
-    return base;
-}

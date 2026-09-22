@@ -328,11 +328,17 @@ export function useDcaSyncEngine(ble: FinagotchiBle): DcaSyncStatus {
 
         let cancelled = false;
         void (async () => {
-            // The frozen contract MTU is 128; the BLE hook negotiates 185 for
-            // its own writes, so re-negotiate here. Failure falls back to the
-            // default 20-byte ATT payload and snapshot writes split (§3.1).
+            // Re-negotiate the contract MTU on Android (iOS negotiates
+            // automatically). Failure falls back to the default 20-byte ATT
+            // payload and snapshot writes split (§3.1).
             let mtuPayload = PROTOCOL_MTU - 3;
-            const { Platform } = await import('react-native');
+            // Deep path, not the 'react-native' barrel: dynamically importing
+            // the barrel enumerates every lazy getter in RN's index (including
+            // the removed PushNotificationIOS), which throws a fatal invariant
+            // on iOS release builds.
+            const { Platform } = await import(
+                'react-native/Libraries/Utilities/Platform'
+            );
             if (Platform.OS === 'android') {
                 try {
                     await connectedDevice.requestMTU(PROTOCOL_MTU);
