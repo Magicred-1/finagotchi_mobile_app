@@ -18,6 +18,7 @@ import { useWallet } from '../src/wallet/useWallet';
 import { SheetPortalHost } from '../src/components/SheetPortal';
 import { useFillWatcher } from '../src/services/dca';
 import { useQuestEngine } from '../src/features/quest-engine/useQuestEngine';
+import { useCreatureSync } from '../src/features/pet/creatureSync';
 import { useUpdateCheck } from './hooks/useUpdateCheck';
 
 import {
@@ -70,6 +71,10 @@ function AppContent() {
 
   // Verified quest engine: wallet auth signer, daily quest sync, claim flush.
   useQuestEngine();
+
+  // Restore/heal the creature registry against the server on wallet connect,
+  // so a returning user never has to mint again after a reinstall.
+  useCreatureSync();
 
   // Poll on-chain DCA accounts for fills; a fill feeds the existing pet loop.
   useFillWatcher();

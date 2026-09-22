@@ -75,6 +75,8 @@ type PetState = {
     name: string | null;
     mintAddress: string | null;
     mintedAt: string | null;
+    /** Tx signature of the mint, kept so the server registry can be healed if the mint-time registration was lost. */
+    mintTxSignature: string | null;
     lastCelebratedStage: PetStage;
     evolvedAt: string | null;
     background: PetBackground;
@@ -122,7 +124,7 @@ type PetState = {
 
     getStage: () => PetStage;
     setCreatureName: (name: string) => void;
-    mintCreature: (name: string, mintAddress: string) => void;
+    mintCreature: (name: string, mintAddress: string, mintTxSignature?: string) => void;
     setLastCelebratedStage: (stage: PetStage) => void;
     setCosmetic: (patch: Partial<Pick<PetState, 'background' | 'accessory'>>) => void;
     /** Add to the spendable balance. */
@@ -216,6 +218,7 @@ export const usePetStore = create<PetState>()(
             name: null,
             mintAddress: null,
             mintedAt: null,
+            mintTxSignature: null,
             lastCelebratedStage: 1,
             evolvedAt: null,
             background: 'default',
@@ -248,12 +251,13 @@ export const usePetStore = create<PetState>()(
                 set({ name: name.trim() || null });
             },
 
-            mintCreature: (name, mintAddress) => {
+            mintCreature: (name, mintAddress, mintTxSignature) => {
                 const now = new Date().toISOString();
                 set({
                     name: name.trim() || null,
                     mintAddress,
                     mintedAt: now,
+                    mintTxSignature: mintTxSignature ?? null,
                     stage: 1,
                     lastCelebratedStage: 1,
                     evolvedAt: now,
