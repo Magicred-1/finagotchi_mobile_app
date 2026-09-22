@@ -2,10 +2,13 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Modal, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
-import { getLeaderboard, useLeagueStore, type LeaderboardEntry } from '../features/league/store';
+import { useLeagueStore, type LeaderboardEntry } from '../features/league/store';
 import { colors, radius, spacing, typography } from '../theme/tokens';
 import { PressableScale } from './PressableScale';
-import { fetchLeaderboard } from '../features/dbs/client';
+import {
+    fetchLeaderboard,
+    type DbsLeaderboardResponse,
+} from '../features/dbs/client';
 import { useWalletStore } from '../features/wallet/store';
 
 interface Props {
@@ -13,38 +16,62 @@ interface Props {
     onClose: () => void;
 }
 
+function shortWallet(wallet: string): string {
+    return wallet.slice(0, 4) + '...' + wallet.slice(-4);
+}
+
+function toEntry(entry: {
+    wallet: string;
+    score: number;
+    displayName: string;
+    tier: string;
+    isFriend?: boolean;
+}): LeaderboardEntry {
+    return {
+        userId: entry.wallet,
+        name: entry.displayName || shortWallet(entry.wallet),
+        score: entry.score,
+        tier: entry.tier as LeaderboardEntry['tier'],
+        isFriend: entry.isFriend,
+    };
+}
+
 export function LeaderboardSheet({ visible, onClose }: Props) {
     const scope = useLeagueStore((s) => s.leaderboardScope);
     const setScope = useLeagueStore((s) => s.setScope);
     const score = useLeagueStore((s) => s.score);
     const tier = useLeagueStore((s) => s.currentTier);
+    const syncFromServer = useLeagueStore((s) => s.syncFromServer);
     const wallet = useWalletStore((s) => s.address);
-    const [globalEntries, setGlobalEntries] = useState<LeaderboardEntry[] | null>(null);
+    const [data, setData] = useState<DbsLeaderboardResponse | null>(null);
+    const [failed, setFailed] = useState(false);
 
     useEffect(() => {
         if (!visible || !wallet) return;
+        setFailed(false);
+        syncFromServer().catch(() => {});
         fetchLeaderboard(wallet)
-            .then((res) => {
-                const mapped: LeaderboardEntry[] = res.global.map((entry) => ({
-                    userId: entry.wallet,
-                    name: entry.displayName || entry.wallet.slice(0, 4) + '...' + entry.wallet.slice(-4),
-                    score: entry.score,
-                    tier: 'Bronze',
-                    isFriend: entry.isFriend,
-                }));
-                setGlobalEntries(mapped);
-            })
+            .then((res) => setData(res))
             .catch(() => {
-                setGlobalEntries([]);
+                setData(null);
+                setFailed(true);
             });
-    }, [visible, wallet]);
+    }, [visible, wallet, syncFromServer]);
 
     const entries = useMemo(() => {
-        if (scope === 'global' && globalEntries !== null) {
-            return globalEntries;
+        const rows = scope === 'global' ? data?.global : data?.friends;
+        const mapped = (rows ?? []).map(toEntry);
+        if (wallet && !mapped.some((e) => e.userId === wallet)) {
+            const own = data?.own;
+            mapped.push(
+                own
+                    ? { ...toEntry(own), name: 'You' }
+                    : { userId: wallet, name: 'You', score, tier }
+            );
         }
-        return getLeaderboard(scope, score, tier);
-    }, [scope, score, tier, globalEntries]);
+        mapped.sort((a, b) => b.score - a.score);
+        return mapped;
+    }, [scope, data, wallet, score, tier]);
 
     return (
         <Modal transparent visible={visible} animationType="slide">
@@ -88,7 +115,13 @@ export function LeaderboardSheet({ visible, onClose }: Props) {
 
                     <View style={styles.list}>
                         {entries.map((entry, index) => (
-                            <View key={entry.userId} style={styles.row}>
+                            <View
+                                key={entry.userId}
+                                style={[
+                                    styles.row,
+                                    entry.userId === wallet && styles.rowOwn,
+                                ]}
+                            >
                                 <Text style={styles.rank}>{index + 1}</Text>
                                 <View style={[styles.avatar, { backgroundColor: entry.isFriend ? colors.purple : colors.surfaceLight }]}>
                                     <Text style={styles.avatarText}>{entry.name[0]}</Text>
@@ -100,6 +133,15 @@ export function LeaderboardSheet({ visible, onClose }: Props) {
                                 <Text style={styles.score}>{entry.score}</Text>
                             </View>
                         ))}
+                        {entries.length === 0 && (
+                            <Text style={styles.emptyText}>
+                                {failed
+                                    ? 'Leaderboard unavailable — check your connection.'
+                                    : wallet
+                                      ? 'No entries yet. Check in daily to climb the ranks.'
+                                      : 'Connect your wallet to see the leaderboard.'}
+                            </Text>
+                        )}
                     </View>
                 </View>
             </View>
@@ -164,6 +206,17 @@ const styles = StyleSheet.create({
         padding: spacing.sm,
         borderRadius: radius.md,
         backgroundColor: 'rgba(255,255,255,0.05)',
+    },
+    rowOwn: {
+        borderWidth: 1,
+        borderColor: colors.primary,
+    },
+    emptyText: {
+        fontSize: typography.small,
+        fontFamily: 'Poppins_600SemiBold',
+        color: colors.textMuted,
+        textAlign: 'center',
+        paddingVertical: spacing.md,
     },
     rank: {
         width: 28,

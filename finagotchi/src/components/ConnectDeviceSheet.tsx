@@ -8,12 +8,7 @@ import { Button } from './Button';
 import { PressableScale } from './PressableScale';
 import { SearchingRadar } from './SearchingRadar';
 import { colors, radius, spacing, typography } from '../theme/tokens';
-import { usePetStore, STAGE_NAMES } from '../features/pet/store';
-import {
-    MOODS,
-    nextEvolutionStage,
-    useDeviceControlStore,
-} from '../features/ble/sync';
+import { MOODS, useDeviceControlStore } from '../features/ble/sync';
 import type { FinagotchiBle } from '../features/ble/types';
 
 type Props = {
@@ -37,7 +32,6 @@ export function ConnectDeviceSheet({ visible, onClose, ble }: Props) {
         sendCommand,
     } = ble;
 
-    const stage = usePetStore((state) => state.stage);
     const deviceMood = useDeviceControlStore((state) => state.deviceMood);
     const pushMood = useDeviceControlStore((state) => state.pushMood);
 
@@ -53,17 +47,9 @@ export function ConnectDeviceSheet({ visible, onClose, ble }: Props) {
     const connecting = status === 'connecting';
     const reconnecting = status === 'reconnecting';
 
-    const nextStage = nextEvolutionStage(stage);
-
     function handleMoodPress(moodId: (typeof MOODS)[number]['id'], index: number) {
         pushMood(moodId);
         sendCommand(`mood:${index}`);
-    }
-
-    function handleEvolve() {
-        if (!nextStage) return;
-        // The device sync subscription writes `stage:<n>` to the device.
-        usePetStore.setState({ stage: nextStage });
     }
 
     return (
@@ -134,17 +120,6 @@ export function ConnectDeviceSheet({ visible, onClose, ble }: Props) {
                             })}
                         </View>
                     </View>
-
-                    <Button
-                        title={
-                            nextStage
-                                ? `Evolve to ${STAGE_NAMES[nextStage].split(' • ')[0]}`
-                                : 'Fully evolved'
-                        }
-                        variant="secondary"
-                        disabled={!nextStage}
-                        onPress={handleEvolve}
-                    />
 
                     <Button title="Disconnect" variant="secondary" onPress={disconnect} />
                 </View>

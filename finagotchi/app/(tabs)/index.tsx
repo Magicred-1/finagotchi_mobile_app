@@ -60,6 +60,7 @@ import {
   useDeviceControlStore,
   useDeviceSync,
 } from '../../src/features/ble/sync';
+import { usePetStateSync } from '../../src/features/pet/usePetStateSync';
 import { WaitingForSync } from '../../src/components/WaitingForSync';
 import type { PetMood as EngineMood } from '../../src/engine/expressions';
 import { colors, radius, spacing, typography } from '../../src/theme/tokens';
@@ -310,6 +311,9 @@ export default function HomeScreen() {
   // Mirror stage/mood/accessory/reactions to the connected device and back.
   useDeviceSync(ble, currentEngineMood, reaction, reactionKey);
   const deviceMood = useDeviceControlStore((state) => state.deviceMood);
+
+  // Push pet state to the server so paired hardware can sync standalone.
+  usePetStateSync();
 
   // DCA layer, in required order: a fill is points bump (FillWatcher's feed,
   // upstream) → pet dance (subscription here, registered first) → dca:hit

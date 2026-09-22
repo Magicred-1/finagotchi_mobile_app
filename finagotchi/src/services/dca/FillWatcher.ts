@@ -326,14 +326,20 @@ export function useFillWatcher(): void {
         }, FILL_POLL_INTERVAL_MS);
 
         // Lazy import keeps the core module loadable without react-native.
-        void import('react-native').then(({ AppState }) => {
-            if (cancelled) return;
-            subscription = AppState.addEventListener('change', (state) => {
-                if (state === 'active') {
-                    void watcher.poll();
-                }
-            });
-        });
+        // Deep path, not the 'react-native' barrel: dynamically importing the
+        // barrel enumerates every lazy getter in RN's index (including the
+        // removed PushNotificationIOS), which throws a fatal invariant on iOS
+        // release builds.
+        void import('react-native/Libraries/AppState/AppState').then(
+            ({ AppState }) => {
+                if (cancelled) return;
+                subscription = AppState.addEventListener('change', (state) => {
+                    if (state === 'active') {
+                        void watcher.poll();
+                    }
+                });
+            }
+        );
 
         return () => {
             cancelled = true;

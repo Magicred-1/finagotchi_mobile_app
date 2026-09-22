@@ -57,9 +57,9 @@
   "submit": {
     "testflight": {
       "ios": {
-        "appleTeamId": "${EAS_APPLE_TEAM_ID}",
-        "appleId": "${EAS_APPLE_ID}",
-        "ascAppId": "${EAS_ASC_APP_ID}"
+        "appleTeamId": "LZT8Q7UY42",
+        "appleId": "djasongadiou@gmail.com",
+        "ascAppId": "6812557726"
       }
     },
     "beta": {
@@ -70,8 +70,9 @@
     },
     "production": {
       "ios": {
-        "appleId": "${EAS_APPLE_ID}",
-        "ascAppId": "${EAS_ASC_APP_ID}"
+        "appleTeamId": "LZT8Q7UY42",
+        "appleId": "djasongadiou@gmail.com",
+        "ascAppId": "6812557726"
       },
       "android": {
         "serviceAccountKeyPath": "./credentials/google-service-account.json",

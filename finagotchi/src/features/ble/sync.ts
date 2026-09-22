@@ -36,15 +36,6 @@ const STATE_ID_TO_STAGE: Record<StateId, PetStage> = {
     whale: 10,
 };
 
-const STATE_ORDER: StateId[] = ['egg', 'coinling', 'hodler', 'whale'];
-
-/** Next app stage along egg → coinling → hodler → whale, or null at whale. */
-export function nextEvolutionStage(stage: PetStage): PetStage | null {
-    const index = STATE_ORDER.indexOf(STAGE_TO_STATE_ID[stage]);
-    if (index < 0 || index >= STATE_ORDER.length - 1) return null;
-    return STATE_ID_TO_STAGE[STATE_ORDER[index + 1]];
-}
-
 /** Firmware mood id = index into EXPRESSIONS (see firmware BLE contract). */
 export const MOODS = EXPRESSIONS.map((expression, index) => ({
     id: expression.id,

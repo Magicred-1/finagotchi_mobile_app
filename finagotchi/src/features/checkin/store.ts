@@ -5,6 +5,7 @@ import { LIFE_DURATION_MS, updatePetStage, usePetStore } from '../pet/store';
 import { useWaitlistStore } from '../waitlist/store';
 import { useWalletStore } from '../wallet/store';
 import { recordCheckin as recordCheckinOnServer } from '../dbs/client';
+import { CHECKIN_SCORE, EVOLUTION_SCORE, useLeagueStore } from '../league/store';
 
 export type CheckinDetails = {
     amount?: number;
@@ -201,9 +202,17 @@ export const useCheckinStore = create<CheckinState>()(
                 if (wallet) {
                     recordCheckinOnServer(wallet).catch(() => {});
                 }
+                useLeagueStore.getState().addScore(CHECKIN_SCORE);
                 }
 
+                const stageBefore = usePetStore.getState().stage;
                 updatePetStage(newStreak);
+                const stageAfter = usePetStore.getState().stage;
+                if (stageAfter > stageBefore) {
+                    useLeagueStore
+                        .getState()
+                        .addScore(EVOLUTION_SCORE * (stageAfter - stageBefore));
+                }
 
                 const milestone = MILESTONES.includes(newStreak)
                     ? newStreak

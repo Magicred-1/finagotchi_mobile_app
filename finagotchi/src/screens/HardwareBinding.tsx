@@ -18,6 +18,9 @@ import { SearchingRadar } from '../components/SearchingRadar';
 import { colors, radius, spacing, typography } from '../theme/tokens';
 import { FINAGOTCHI_SERVICE_UUID, useFinagotchiDevice } from '../features/ble';
 import { useDcaSyncEngine } from '../services/ble/SyncEngine';
+import { requestDeviceToken } from '../features/dbs/client';
+import { useWalletStore } from '../features/wallet/store';
+import { useOnboardingStore } from '../features/onboarding/store';
 
 /** Provisioning characteristic (contract §1); encrypted writes only. */
 const PROVISIONING_CHAR_UUID = '0000f1a2-0000-1000-8000-00805f9b34fb';
@@ -46,6 +49,7 @@ export default function HardwareBinding() {
     const [password, setPassword] = useState('');
     const [provisioning, setProvisioning] = useState(false);
     const [provisionError, setProvisionError] = useState<string | null>(null);
+    const [cloudLinked, setCloudLinked] = useState(false);
 
     const scanning = status === 'scanning';
     const connecting = status === 'connecting';
@@ -67,17 +71,34 @@ export default function HardwareBinding() {
         setProvisioning(true);
         setProvisionError(null);
         try {
-            // Contract §2: "<ssid>\n<pass>", one separator, no trailing
-            // newline. Firmware rejects writes on an unencrypted link.
-            const payload = Buffer.from(`${ssid}\n${password}`, 'utf8').toString(
-                'base64'
-            );
+            // When the wallet is server-authed, also issue a device token so
+            // the hardware can pull pet state from the API while standalone.
+            // Without it, fall back to Wi-Fi-only provisioning.
+            let deviceToken: string | null = null;
+            const wallet = useWalletStore.getState().address;
+            const consent = useOnboardingStore.getState().serverAuthConsentAt;
+            if (wallet && consent) {
+                try {
+                    deviceToken = await requestDeviceToken(wallet);
+                } catch {
+                    deviceToken = null;
+                }
+            }
+
+            // Contract §2: "<ssid>\n<pass>" (optional third field carries the
+            // device token), one separator, no trailing newline. Firmware
+            // rejects writes on an unencrypted link.
+            const raw = deviceToken
+                ? `${ssid}\n${password}\n${deviceToken}`
+                : `${ssid}\n${password}`;
+            const payload = Buffer.from(raw, 'utf8').toString('base64');
             await connectedDevice.writeCharacteristicWithResponseForService(
                 FINAGOTCHI_SERVICE_UUID,
                 PROVISIONING_CHAR_UUID,
                 payload
             );
 
+            setCloudLinked(deviceToken !== null);
             setStep('done');
         } catch (e) {
             setProvisionError(
@@ -264,10 +285,19 @@ export default function HardwareBinding() {
                                         {connectedDevice?.name ?? 'Finagotchi'}
                                     </Text>
                                     <Text style={styles.successLabel}>
-                                        Wi-Fi provisioned
+                                        {cloudLinked
+                                            ? 'Wi-Fi + cloud sync provisioned'
+                                            : 'Wi-Fi provisioned'}
                                     </Text>
                                 </View>
                             </View>
+                            {!cloudLinked && (
+                                <Text style={styles.syncLabel}>
+                                    Cloud sync not linked — connect your wallet
+                                    before pairing to let the device sync on its
+                                    own.
+                                </Text>
+                            )}
                             <Text style={styles.syncLabel}>
                                 {syncStatus.connected
                                     ? 'Connected and syncing'

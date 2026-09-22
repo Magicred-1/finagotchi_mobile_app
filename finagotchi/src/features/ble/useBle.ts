@@ -22,7 +22,7 @@ export type { BleStatus, FinagotchiBle, FinagotchiState } from './types';
 const SCAN_TIMEOUT_MS = 15000;
 /** Default ATT payload (MTU 23 minus 3 header bytes) before negotiation. */
 const DEFAULT_WRITE_PAYLOAD = 20;
-const REQUESTED_MTU = 185;
+const REQUESTED_MTU = 256;
 /** Delays between auto-reconnect attempts; gives up after the last one. */
 const RECONNECT_BACKOFF_MS = [1000, 2000, 4000, 8000, 15000, 30000];
 

@@ -20,19 +20,23 @@ export interface DbsLeague {
     wallet: string;
     score: number;
     currentTier: string;
+    seasonId: string | null;
+    updatedAt: number | null;
 }
 
 export interface DbsLeaderboardEntry {
     wallet: string;
     score: number;
     displayName: string;
-    isFriend: boolean;
-    updatedAt: number;
+    tier: string;
+    isFriend?: boolean;
+    updatedAt?: number;
 }
 
 export interface DbsLeaderboardResponse {
     global: DbsLeaderboardEntry[];
     friends: DbsLeaderboardEntry[];
+    own: DbsLeaderboardEntry | null;
 }
 
 function todayKey(): string {
@@ -81,10 +85,16 @@ export async function addLeagueScore(wallet: string, amount: number): Promise<Db
     return res;
 }
 
+export async function fetchLeague(wallet: string): Promise<DbsLeague> {
+    const res = (await authedGet('/dbs/league', { wallet }, wallet)) as DbsLeague;
+    return res;
+}
+
 export async function fetchLeaderboard(wallet: string): Promise<DbsLeaderboardResponse> {
     const res = (await authedGet('/dbs/leaderboard', { wallet }, wallet)) as {
         global: DbsLeaderboardEntry[];
         friends: DbsLeaderboardEntry[];
+        own: DbsLeaderboardEntry | null;
     };
     return res;
 }
@@ -100,4 +110,42 @@ export async function upsertLeaderboardEntry(
 
 export async function deleteLeaderboardEntry(wallet: string): Promise<void> {
     await authedDelete('/dbs/leaderboard', { wallet }, wallet);
+}
+
+export interface DbsPetState {
+    wallet: string;
+    stage: number;
+    substage: number;
+    streak: number;
+    mood: string;
+    points: number;
+    happy: number;
+    updatedAt: number | null;
+}
+
+export type PetStatePayload = Omit<DbsPetState, 'wallet' | 'updatedAt'>;
+
+export async function pushPetState(
+    wallet: string,
+    state: PetStatePayload
+): Promise<void> {
+    await authedPost('/dbs/pet-state', { wallet, ...state }, wallet);
+}
+
+export async function fetchPetState(wallet: string): Promise<DbsPetState> {
+    const res = (await authedGet('/dbs/pet-state', { wallet }, wallet)) as DbsPetState;
+    return res;
+}
+
+/**
+ * Issue a long-lived device token bound to this wallet. The raw token is
+ * returned once (the server stores only its hash) and is meant to be
+ * provisioned onto the hardware device alongside the Wi-Fi credentials.
+ */
+export async function requestDeviceToken(wallet: string): Promise<string> {
+    const res = (await authedPost('/device/pair', { wallet }, wallet)) as {
+        wallet: string;
+        token: string;
+    };
+    return res.token;
 }
