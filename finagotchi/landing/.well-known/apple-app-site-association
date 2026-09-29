@@ -1,0 +1,12 @@
+{
+  "applinks": {
+    "details": [
+      {
+        "appIDs": ["LZT8Q7UY42.com.magicred1.finagotchi"],
+        "components": [
+          { "/": "*" }
+        ]
+      }
+    ]
+  }
+}

@@ -22,7 +22,14 @@ import { generateDemoMintAddress } from '../utils/generateDemoMintAddress';
 
 import { dynamicClient } from './dynamicClient';
 import { getWalletOptions, type WalletOption as DynamicWalletOption } from './dynamicWalletPicker';
+import {
+    disconnectExternalWallet,
+    signAndSendWithExternalWallet,
+    signMessageWithExternalWallet,
+    signTransactionWithExternalWallet,
+} from './externalWallet';
 import { useWalletStore, type WalletConnectionType } from '../features/wallet/store';
+import { isDemoAccountEmail } from '../features/wallet/demoAccount';
 import { observeOutgoingTx } from '../features/quest-engine/observe';
 import { normalizeSignatureBytes } from '../features/quest-engine/signatureBytes';
 
@@ -357,32 +364,6 @@ function extractWalletSignature(
         : null;
 }
 
-/**
- * Splices the wallet's signature into the ORIGINAL crafted transaction and
- * serializes that. Wallet round-trips can rebuild the message (Dynamic's
- * legacy conversion recompiles account keys) and Jupiter rejects those with
- * "Transaction accounts modified" — so the bytes returned must be Jupiter's
- * own, with only the signature slot changed.
- */
-function applySignatureToCraftedTx(
-    transaction: VersionedTransaction,
-    wallet: PublicKey,
-    signature: Uint8Array
-): string {
-    const signerKeys = transaction.message.staticAccountKeys.slice(
-        0,
-        transaction.message.header.numRequiredSignatures
-    );
-    const index = signerKeys.findIndex((key) => key.equals(wallet));
-    if (index < 0) {
-        throw new Error(
-            'The crafted transaction has no signer slot for this wallet'
-        );
-    }
-    transaction.signatures[index] = signature;
-    return Buffer.from(transaction.serialize()).toString('base64');
-}
-
 /** LUTs for Jupiter-crafted deposits are mainnet accounts. */
 const MAINNET_RPC =
     process.env.EXPO_PUBLIC_JUPITER_RPC ?? 'https://api.mainnet-beta.solana.com';
@@ -583,6 +564,62 @@ function diffWalletTx(
 }
 
 /**
+ * Dynamic's signing transport lives in a hosted web page inside the native
+ * overlay webview. When that page fails to load (offline at boot, ATS or a
+ * bad hosted deploy), signing requests vanish into a dead channel and the
+ * returned promise NEVER settles — from the user's side the app simply
+ * ignores the tap. The client exposes the load lifecycle via `sdk.loadState`
+ * plus a self-healing `sdk.retry()`, so gate every Dynamic signing request
+ * on the transport being ready and fail fast with an actionable error.
+ */
+const DYNAMIC_TRANSPORT_READY_TIMEOUT_MS = 30_000;
+/** A stuck prompt must not spin forever; 3 minutes covers slow biometrics. */
+const WALLET_SIGNING_TIMEOUT_MS = 3 * 60_000;
+
+function withTimeout<T>(
+    promise: Promise<T>,
+    ms: number,
+    message: string
+): Promise<T> {
+    return new Promise<T>((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error(message)), ms);
+        promise.then(
+            (value) => {
+                clearTimeout(timer);
+                resolve(value);
+            },
+            (error) => {
+                clearTimeout(timer);
+                reject(error);
+            }
+        );
+    });
+}
+
+async function ensureDynamicSignerReady(): Promise<void> {
+    const sdk = dynamicClient.sdk;
+    if (sdk.loadState.status === 'ready') return;
+
+    // Give an in-flight load a bounded window…
+    try {
+        await withTimeout(
+            sdk.waitForReady(),
+            DYNAMIC_TRANSPORT_READY_TIMEOUT_MS,
+            'wallet service load timed out'
+        );
+        return;
+    } catch {
+        // …then force one retry cycle (retry() resolves on the next
+        // ready/failed transition, or immediately with the current state).
+    }
+    const status = (await sdk.retry()).status;
+    if (status === 'ready') return;
+    throw new Error(
+        'The wallet service failed to start — check your connection, then force-close and reopen the app.'
+    );
+}
+
+/**
  * Signs an arbitrary UTF-8 message with the active wallet (Dynamic or MWA),
  * returning a bs58 ed25519 signature. Module-level (no hooks) so non-React
  * services such as the DCA fill watcher can use it for API auth challenges.
@@ -596,11 +633,25 @@ export const signMessageWithWallet = withHumanReadableErrors(
     const payload = new Uint8Array(Buffer.from(message, 'utf8'));
 
     if (session.connectionType === 'dynamic') {
+        await ensureDynamicSignerReady();
         const signer = dynamicClient.solana.getSigner({
             wallet: findDynamicSolanaWallet(),
         });
-        const { signature } = await signer.signMessage(payload);
+        const { signature } = await withTimeout(
+            signer.signMessage(payload),
+            WALLET_SIGNING_TIMEOUT_MS,
+            'The wallet never answered the signature request — please try again.'
+        );
         return bs58.encode(normalizeSignatureBytes(signature, 'Dynamic'));
+    }
+
+    if (session.connectionType === 'external') {
+        const signature = await withTimeout(
+            signMessageWithExternalWallet(address, payload),
+            WALLET_SIGNING_TIMEOUT_MS,
+            'The wallet never answered the signature request — please try again.'
+        );
+        return bs58.encode(signature);
     }
 
     if (session.connectionType === 'mwa') {
@@ -629,6 +680,59 @@ export const signMessageWithWallet = withHumanReadableErrors(
 );
 
 /**
+ * Signs a Jupiter-crafted deposit with any wallet that takes a legacy
+ * Transaction: converts the v0 craft to the probe-verified legacy byte shape
+ * (LUTs inlined, crafted account order preserved), delegates the actual
+ * signature to `sign`, then returns bytes Jupiter accepts — our exact legacy
+ * wire format when the wallet signed as-is, the wallet's own bytes when it
+ * rebuilt the transaction (Jupiter accepts any account order, probe-verified;
+ * splicing that signature into the craft would verify against nothing).
+ *
+ * Every wallet gets the legacy shape: v0 + LUTs makes wallet-side simulation
+ * stall or rewrite the transaction (Seeker rewrites v0, Dynamic's confirmation
+ * UI stalls resolving LUTs on iOS). Legacy carries every account inline.
+ */
+async function signCraftedTxAsLegacy(
+    transaction: VersionedTransaction,
+    walletKey: PublicKey,
+    sign: (
+        legacyTx: Transaction
+    ) => Promise<Transaction | VersionedTransaction>
+): Promise<string> {
+    const legacyMessage = await toLegacyMessagePreservingOrder(transaction);
+    const legacyBytes = legacyMessage.serialize();
+    const legacyTx = Transaction.populate(
+        legacyMessage,
+        Array.from(
+            { length: legacyMessage.header.numRequiredSignatures },
+            () => EMPTY_SIGNATURE
+        )
+    );
+    const signed = await sign(legacyTx);
+    const signature = extractWalletSignature(signed, walletKey);
+    if (!signature) {
+        throw new Error(
+            'Your wallet did not add its signature — please try again.'
+        );
+    }
+
+    if (
+        nacl.sign.detached.verify(legacyBytes, signature, walletKey.toBytes())
+    ) {
+        return serializeLegacyWithSignature(legacyMessage, walletKey, signature);
+    }
+
+    const bytes =
+        'version' in signed
+            ? signed.serialize()
+            : signed.serialize({
+                  requireAllSignatures: false,
+                  verifySignatures: false,
+              });
+    return Buffer.from(bytes).toString('base64');
+}
+
+/**
  * Signs (WITHOUT sending) a base64 VersionedTransaction with the active
  * wallet, returning the signed transaction as base64.
  */
@@ -638,22 +742,37 @@ export const signTransactionWithWallet = withHumanReadableErrors(
     const transaction = deserializeVersionedTx(base64Tx);
 
     if (session.connectionType === 'dynamic') {
-        const signer = dynamicClient.solana.getSigner({
-            wallet: findDynamicSolanaWallet(),
+        await ensureDynamicSignerReady();
+        const dynamicWallet = findDynamicSolanaWallet();
+        const signer = dynamicClient.solana.getSigner({ wallet: dynamicWallet });
+        const walletKey = new PublicKey(dynamicWallet.address);
+
+        return signCraftedTxAsLegacy(transaction, walletKey, async (legacyTx) => {
+            // The Solana extension bundles its own @solana/web3.js copy; the
+            // types are structurally identical but not nominally assignable.
+            return (await withTimeout(
+                signer.signTransaction(
+                    legacyTx as unknown as Parameters<typeof signer.signTransaction>[0]
+                ),
+                WALLET_SIGNING_TIMEOUT_MS,
+                'The wallet never answered the signature request — please try again.'
+            )) as Transaction | VersionedTransaction;
         });
-        // The Solana extension bundles its own @solana/web3.js copy; the
-        // types are structurally identical but not nominally assignable.
-        const signed = (await signer.signTransaction(
-            transaction as unknown as Parameters<typeof signer.signTransaction>[0]
-        )) as Transaction | VersionedTransaction;
-        const walletKey = new PublicKey(findDynamicSolanaWallet().address);
-        const signature = extractWalletSignature(signed, walletKey);
-        if (!signature) {
-            throw new Error(
-                'Your wallet did not add its signature — please try again.'
-            );
+    }
+
+    if (session.connectionType === 'external') {
+        const { address } = useWalletStore.getState();
+        if (!address) {
+            throw new Error('Wallet not connected');
         }
-        return applySignatureToCraftedTx(transaction, walletKey, signature);
+        const walletKey = new PublicKey(address);
+        return signCraftedTxAsLegacy(transaction, walletKey, async (legacyTx) =>
+            withTimeout(
+                signTransactionWithExternalWallet(address, legacyTx),
+                WALLET_SIGNING_TIMEOUT_MS,
+                'The wallet never answered the signature request — please try again.'
+            )
+        );
     }
 
     if (session.connectionType === 'mwa') {
@@ -874,6 +993,12 @@ export function useWallet(): Wallet {
     useEffect(() => {
         if (!authenticatedUser) return;
 
+        // Dynamic Test Accounts (App Store review) get payment-gated
+        // actions for free; flag the session so the UI can skip charges.
+        useWalletStore
+            .getState()
+            .setDemoAccount(isDemoAccountEmail(authenticatedUser.email));
+
         const solWallet = findSolanaWallet(userWallets);
 
         if (solWallet?.address) {
@@ -1081,6 +1206,11 @@ export function useWallet(): Wallet {
                     signature = await signAndSendWithDynamic(transaction);
                 } else if (connectionType === 'mwa') {
                     signature = await signAndSendWithMwa(transaction, chain);
+                } else if (connectionType === 'external') {
+                    signature = await signAndSendWithExternalWallet(
+                        publicKey.toBase58(),
+                        transaction
+                    );
                 } else {
                     throw new Error('No active wallet connection');
                 }
@@ -1188,8 +1318,12 @@ export function useWallet(): Wallet {
             }
         }
 
+        if (connectionType === 'external' && publicKey) {
+            await disconnectExternalWallet(publicKey.toBase58());
+        }
+
         disconnectStore();
-    }, [connectionType, authToken, disconnectStore]);
+    }, [connectionType, authToken, publicKey, disconnectStore]);
 
     return useMemo(
         () => ({

@@ -1,4 +1,8 @@
 // Polyfills must run before any wallet SDK code is evaluated.
+// The WalletConnect shim is FIRST: it installs the globals the WalletConnect
+// sign client expects (crypto, encoding, event targets) and must precede
+// every other shim (Dynamic WalletConnect integration docs, RN setup).
+import '@walletconnect/react-native-compat';
 // The base64 polyfill is required by Dynamic's React Native SDK.
 import '@react-native-anywhere/polyfill-base64';
 import 'react-native-get-random-values';

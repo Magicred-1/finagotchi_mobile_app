@@ -22,6 +22,8 @@ import { FundWalletSheet, type FundingRequest } from './FundWalletSheet';
 type Props = {
     creatureName: string;
     walletAddress: string;
+    /** Demo account (App Store review): minting is free, copy says so. */
+    isDemo?: boolean;
     /** Present when the connected embedded wallet may need SOL to mint. */
     funding?: FundingRequest;
     onMint: () => Promise<void>;
@@ -32,6 +34,7 @@ type MintStatus = 'idle' | 'minting' | 'success' | 'error';
 export default function MintStep({
     creatureName,
     walletAddress,
+    isDemo = false,
     funding,
     onMint,
 }: Props) {
@@ -123,8 +126,9 @@ export default function MintStep({
                             isSmall && styles.bodySmall,
                         ]}
                     >
-                        Minting your creature requires a small SOL fee, and
-                        the NFT metadata will be tied to your wallet.
+                        {isDemo
+                            ? 'Demo account: minting is free and no real NFT is created.'
+                            : 'Minting your creature requires a small SOL fee, and the NFT metadata will be tied to your wallet.'}
                     </Text>
                     <Text style={styles.address}>
                         Wallet: {truncatedAddress}

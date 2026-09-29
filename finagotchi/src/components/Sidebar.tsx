@@ -13,6 +13,7 @@ import QRCode from 'react-native-qrcode-svg';
 import {
     Gesture,
     GestureDetector,
+    ScrollView,
 } from 'react-native-gesture-handler';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter, usePathname, Href } from 'expo-router';
@@ -30,11 +31,24 @@ import * as Haptics from 'expo-haptics';
 
 import { useWallet } from '../wallet/useWallet';
 import { usePetStore } from '../features/pet/store';
+import {
+    formatTokenAmount,
+    formatUsd,
+    useWalletBalances,
+} from '../features/wallet/balances';
+import { TokenLogo } from '../screens/dca/TokenLogo';
 import { ExportKeySheet } from './ExportKeySheet';
 import { PressableScale } from './PressableScale';
 import { colors, radius, shadows, spacing, springs, typography } from '../theme/tokens';
 
-export const SIDEBAR_WIDTH = 300;
+/**
+ * Responsive drawer width: 85% of the screen, capped so foldables/tablets
+ * don't get an oversized panel. Layout and both swipe gestures derive their
+ * bounds from this, so they can never disagree on where "closed" is.
+ */
+export function getSidebarWidth(screenWidth: number): number {
+    return Math.min(Math.round(screenWidth * 0.85), 340);
+}
 const SWIPE_THRESHOLD = 60;
 const OPEN_SWIPE_THRESHOLD = 30;
 const FLICK_VELOCITY = 650;
@@ -52,6 +66,28 @@ function truncateAddress(address: string | null) {
     return `${address.slice(0, 6)}...${address.slice(-6)}`;
 }
 
+/**
+ * Row icon: xStocks reuse the Backed logo fetch; SOL/USDC get the same
+ * letter circle TokenLogo falls back to, so the column stays uniform.
+ */
+function BalanceIcon({ ticker, size = 26 }: { ticker: string; size?: number }) {
+    if (ticker !== 'SOL' && ticker !== 'USDC') {
+        return <TokenLogo ticker={ticker} size={size} />;
+    }
+    return (
+        <View
+            style={[
+                styles.balanceIcon,
+                { width: size, height: size, borderRadius: size / 2 },
+            ]}
+        >
+            <Text style={[styles.balanceIconLetter, { fontSize: size * 0.42 }]}>
+                {ticker.charAt(0)}
+            </Text>
+        </View>
+    );
+}
+
 function project(initialVelocity: number, decelerationRate = 0.998) {
     'worklet';
     return (initialVelocity / 1000) * decelerationRate / (1 - decelerationRate);
@@ -62,6 +98,8 @@ type OpenGestureOptions = {
     opacity: SharedValue<number>;
     enabled: boolean;
     onOpen: () => void;
+    /** Drawer width in px — gesture bounds follow the responsive layout. */
+    sidebarWidth: number;
 };
 
 /**
@@ -77,6 +115,7 @@ export function useSidebarOpenGesture({
     opacity,
     enabled,
     onOpen,
+    sidebarWidth,
 }: OpenGestureOptions) {
     const dragStartX = useSharedValue(0);
     const dragStartY = useSharedValue(0);
@@ -117,8 +156,8 @@ export function useSidebarOpenGesture({
         .onUpdate((event) => {
             'worklet';
             const x = Math.max(0, event.translationX);
-            translateX.value = Math.min(0, -SIDEBAR_WIDTH + x);
-            opacity.value = Math.min(1, x / SIDEBAR_WIDTH);
+            translateX.value = Math.min(0, -sidebarWidth + x);
+            opacity.value = Math.min(1, x / sidebarWidth);
         })
         .onEnd((event) => {
             'worklet';
@@ -130,7 +169,7 @@ export function useSidebarOpenGesture({
             if (shouldOpen) {
                 runOnJS(onOpen)();
             } else {
-                translateX.value = withSpring(-SIDEBAR_WIDTH, springs.default);
+                translateX.value = withSpring(-sidebarWidth, springs.default);
                 opacity.value = withTiming(0, { duration: 200 });
             }
         });
@@ -174,6 +213,11 @@ export function Sidebar({
     const [qrVisible, setQrVisible] = useState(false);
     const [exportVisible, setExportVisible] = useState(false);
     const walletAddress = wallet.publicKey?.toBase58() ?? null;
+    const {
+        rows: balanceRows,
+        totalUsd,
+        loading: balancesLoading,
+    } = useWalletBalances(walletAddress, visible && wallet.connected);
 
     const handleShowQr = useCallback(() => {
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -193,12 +237,13 @@ export function Sidebar({
         }
     }, [walletAddress]);
 
-    const internalTranslateX = useSharedValue(-SIDEBAR_WIDTH);
+    const internalTranslateX = useSharedValue(-getSidebarWidth(width));
     const internalOpacity = useSharedValue(0);
 
     const translateX = externalTranslateX ?? internalTranslateX;
     const opacity = externalOpacity ?? internalOpacity;
     const contentShift = useSharedValue(-16);
+    const sidebarWidth = getSidebarWidth(width);
 
     const onCloseRef = useRef(onClose);
     useEffect(() => {
@@ -222,10 +267,10 @@ export function Sidebar({
     }, [translateX, opacity, contentShift]);
 
     const animateClose = useCallback((velocity = 0) => {
-        if (translateX.value <= -SIDEBAR_WIDTH + 1 && opacity.value <= 0.01) return;
+        if (translateX.value <= -sidebarWidth + 1 && opacity.value <= 0.01) return;
         const isFlick = Math.abs(velocity) > FLICK_VELOCITY;
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-        translateX.value = withSpring(-SIDEBAR_WIDTH, {
+        translateX.value = withSpring(-sidebarWidth, {
             ...(isFlick ? springs.momentum : springs.default),
             velocity,
             reduceMotion: ReduceMotion.System,
@@ -236,7 +281,7 @@ export function Sidebar({
             }
         });
         contentShift.value = withTiming(-16, { duration: 180 });
-    }, [translateX, opacity, contentShift]);
+    }, [translateX, opacity, contentShift, sidebarWidth]);
 
     useEffect(() => {
         if (visible) {
@@ -257,15 +302,15 @@ export function Sidebar({
         .onUpdate((event) => {
             const x = event.translationX;
             if (x <= 0) {
-                translateX.value = Math.max(-SIDEBAR_WIDTH, x);
-                opacity.value = Math.max(0, 1 + x / SIDEBAR_WIDTH);
+                translateX.value = Math.max(-sidebarWidth, x);
+                opacity.value = Math.max(0, 1 + x / sidebarWidth);
             }
         })
         .onEnd((event) => {
             const projectedX = event.translationX + project(event.velocityX);
             const shouldClose =
                 projectedX < -SWIPE_THRESHOLD ||
-                event.translationX < -SIDEBAR_WIDTH * 0.4;
+                event.translationX < -sidebarWidth * 0.4;
 
             const velocity = event.velocityX;
             const isFlick = Math.abs(velocity) > FLICK_VELOCITY;
@@ -273,7 +318,7 @@ export function Sidebar({
 
             if (shouldClose) {
                 runOnJS(Haptics.impactAsync)(Haptics.ImpactFeedbackStyle.Light);
-                translateX.value = withSpring(-SIDEBAR_WIDTH, {
+                translateX.value = withSpring(-sidebarWidth, {
                     ...springConfig,
                     velocity,
                     reduceMotion: ReduceMotion.System,
@@ -358,13 +403,25 @@ export function Sidebar({
                             styles.sidebar,
                             sidebarStyle,
                             {
-                                width: SIDEBAR_WIDTH,
+                                width: sidebarWidth,
                                 height,
                                 paddingTop: insets.top + spacing.lg,
                             },
                         ]}
                     >
                         <Animated.View style={[{ flex: 1 }, contentStyle]}>
+                            {/* Content scrolls: the balances card made the
+                                column taller than small screens, and a clipped
+                                drawer is unnavigable. RNGH's ScrollView
+                                negotiates with the close pan (vertical drags
+                                fail it and scroll natively). */}
+                            <ScrollView
+                                style={styles.scroll}
+                                showsVerticalScrollIndicator={false}
+                                contentContainerStyle={{
+                                    paddingBottom: insets.bottom + spacing.lg,
+                                }}
+                            >
                             {/* HEADER */}
                             <View style={styles.headerCard}>
                                 <View style={styles.headerGlow} />
@@ -482,6 +539,90 @@ export function Sidebar({
                                 </View>
 
                                 {wallet.connected ? (
+                                    <View style={styles.balanceCard}>
+                                        <View style={styles.balanceHeader}>
+                                            <Text style={styles.balanceHeaderLabel}>
+                                                Total balance
+                                            </Text>
+                                            <Text style={styles.balanceHeaderValue}>
+                                                {totalUsd !== null
+                                                    ? formatUsd(totalUsd)
+                                                    : '–'}
+                                            </Text>
+                                        </View>
+                                        {balanceRows.length > 0 ? (
+                                            balanceRows.map((row, index) => (
+                                                <View
+                                                    key={row.ticker}
+                                                    style={[
+                                                        styles.balanceRow,
+                                                        index > 0 &&
+                                                            styles.balanceRowDivider,
+                                                    ]}
+                                                >
+                                                    <BalanceIcon
+                                                        ticker={row.ticker}
+                                                    />
+                                                    <View
+                                                        style={styles.balanceRowBody}
+                                                    >
+                                                        <Text
+                                                            style={
+                                                                styles.balanceTicker
+                                                            }
+                                                        >
+                                                            {row.ticker}
+                                                        </Text>
+                                                        <Text
+                                                            style={
+                                                                styles.balanceName
+                                                            }
+                                                            numberOfLines={1}
+                                                        >
+                                                            {row.name}
+                                                        </Text>
+                                                    </View>
+                                                    <View
+                                                        style={
+                                                            styles.balanceRowValues
+                                                        }
+                                                    >
+                                                        <Text
+                                                            style={
+                                                                styles.balanceUsd
+                                                            }
+                                                        >
+                                                            {row.usdValue !==
+                                                            null
+                                                                ? formatUsd(
+                                                                      row.usdValue
+                                                                  )
+                                                                : '–'}
+                                                        </Text>
+                                                        <Text
+                                                            style={
+                                                                styles.balanceAmount
+                                                            }
+                                                        >
+                                                            {formatTokenAmount(
+                                                                row.amount
+                                                            )}{' '}
+                                                            {row.ticker}
+                                                        </Text>
+                                                    </View>
+                                                </View>
+                                            ))
+                                        ) : (
+                                            <Text style={styles.balanceEmpty}>
+                                                {balancesLoading
+                                                    ? 'Fetching balances…'
+                                                    : 'Balances unavailable'}
+                                            </Text>
+                                        )}
+                                    </View>
+                                ) : null}
+
+                                {wallet.connected ? (
                                     <View style={styles.walletActions}>
                                         <PressableScale
                                             onPress={handleShowQr}
@@ -542,6 +683,7 @@ export function Sidebar({
                                     </PressableScale>
                                 ) : null}
                             </View>
+                            </ScrollView>
 
                             <Modal
                                 visible={qrVisible}
@@ -653,6 +795,9 @@ const styles = StyleSheet.create({
         height: 44,
         borderRadius: radius.pill,
         backgroundColor: 'rgba(255,255,255,0.14)',
+    },
+    scroll: {
+        flex: 1,
     },
     headerCard: {
         marginBottom: spacing.lg,
@@ -827,6 +972,88 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         gap: spacing.sm,
         marginTop: spacing.xs,
+    },
+    balanceCard: {
+        marginTop: spacing.sm,
+        padding: spacing.md,
+        borderRadius: radius.md,
+        backgroundColor: 'rgba(7,17,31,0.40)',
+        borderWidth: 1,
+        borderColor: colors.border,
+    },
+    balanceHeader: {
+        gap: 2,
+        paddingBottom: spacing.sm,
+        borderBottomWidth: StyleSheet.hairlineWidth,
+        borderBottomColor: colors.border,
+    },
+    balanceHeaderLabel: {
+        color: colors.textMuted,
+        fontSize: 10,
+        fontFamily: 'Poppins_600SemiBold',
+        textTransform: 'uppercase',
+        letterSpacing: 1,
+    },
+    balanceHeaderValue: {
+        color: colors.text,
+        fontSize: typography.title,
+        fontFamily: 'Poppins_700Bold',
+        fontVariant: ['tabular-nums'],
+    },
+    balanceRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: spacing.sm,
+        paddingVertical: spacing.xs + 2,
+    },
+    balanceRowDivider: {
+        borderTopWidth: StyleSheet.hairlineWidth,
+        borderTopColor: colors.border,
+    },
+    balanceIcon: {
+        backgroundColor: colors.surfaceLight,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    balanceIconLetter: {
+        color: colors.textMuted,
+        fontFamily: 'Poppins_600SemiBold',
+    },
+    balanceRowBody: {
+        flex: 1,
+        gap: 1,
+    },
+    balanceTicker: {
+        color: colors.text,
+        fontSize: typography.small,
+        fontFamily: 'Poppins_600SemiBold',
+    },
+    balanceName: {
+        color: colors.textMuted,
+        fontSize: 11,
+        fontFamily: 'Poppins_400Regular',
+    },
+    balanceRowValues: {
+        alignItems: 'flex-end',
+        gap: 1,
+    },
+    balanceUsd: {
+        color: colors.text,
+        fontSize: typography.small,
+        fontFamily: 'Poppins_600SemiBold',
+        fontVariant: ['tabular-nums'],
+    },
+    balanceAmount: {
+        color: colors.textMuted,
+        fontSize: 11,
+        fontFamily: 'Poppins_500Medium',
+        fontVariant: ['tabular-nums'],
+    },
+    balanceEmpty: {
+        color: colors.textMuted,
+        fontSize: typography.small,
+        fontFamily: 'Poppins_500Medium',
+        paddingVertical: spacing.xs,
     },
     walletActionButton: {
         flex: 1,

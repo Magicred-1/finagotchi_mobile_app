@@ -34,6 +34,7 @@ import {
     useDcaUiStore,
     usePlanStore,
     type CadenceId,
+    type PlanOrderStep,
 } from '../../services/dca';
 import { useWallet } from '../../wallet/useWallet';
 import {
@@ -84,6 +85,17 @@ const CADENCE_SHORT: Record<CadenceId, string> = {
     weekly: 'Weekly',
     biweekly: '2 wks',
     monthly: 'Monthly',
+};
+
+/** Submit-progress copy per create/cancel stage (shown while submitting). */
+const STEP_LABELS: Record<PlanOrderStep, string> = {
+    check: 'Checking your balance…',
+    auth: 'Approve the login message in your wallet…',
+    vault: 'Preparing your DCA vault…',
+    craft: 'Preparing the deposit…',
+    sign: 'Approve the signature in your wallet…',
+    simulate: 'Checking the deposit…',
+    submit: 'Creating your plan…',
 };
 
 const SEGMENTED_PAD = 3;
@@ -250,6 +262,7 @@ export function DCAWizardSheet({
     const [cadenceId, setCadenceId] = useState<CadenceId>('weekly');
     const [budget, setBudget] = useState(50);
     const [submitting, setSubmitting] = useState(false);
+    const [progressStep, setProgressStep] = useState<PlanOrderStep | null>(null);
     const [error, setError] = useState<string | null>(null);
 
     // Informational quotes only — never blocks the flow.
@@ -267,6 +280,7 @@ export function DCAWizardSheet({
                 : null
         );
         setError(null);
+        setProgressStep(null);
         contentAnim.value = 0;
         contentAnim.value = withTiming(1, {
             ...STEP_IN,
@@ -310,12 +324,14 @@ export function DCAWizardSheet({
 
         setSubmitting(true);
         setError(null);
+        setProgressStep(null);
         try {
             const walletPubkey = wallet.publicKey.toBase58();
             const auth = {
                 walletPubkey,
                 signMessage: wallet.signMessage,
                 signTransaction: wallet.signTransaction,
+                onStep: setProgressStep,
             };
 
             if (recreate && pauseId) {
@@ -740,9 +756,11 @@ export function DCAWizardSheet({
                                             <Text
                                                 style={styles.submittingText}
                                             >
-                                                {recreate
-                                                    ? 'Approve the login message, then the cancel and deposit signatures…'
-                                                    : 'Approve the login message, then 1 deposit signature…'}
+                                                {progressStep
+                                                    ? STEP_LABELS[progressStep]
+                                                    : recreate
+                                                      ? 'Approve the login message, then the cancel and deposit signatures…'
+                                                      : 'Approve the login message, then 1 deposit signature…'}
                                             </Text>
                                         </View>
                                     )}

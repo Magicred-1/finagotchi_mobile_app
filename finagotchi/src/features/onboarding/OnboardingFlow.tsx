@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from 'react';
+import { Alert, Platform } from 'react-native';
 import { WalletPickerSheet } from '../../components/WalletPickerSheet';
 import { connectDynamicWallet } from '../../wallet/dynamicWalletPicker';
 import type { WalletOption } from '../../wallet/dynamicWalletPicker';
-import { Platform } from 'react-native';
 import Animated, {
     ReduceMotion,
     runOnJS,
@@ -21,12 +21,14 @@ import ReminderStep from './ReminderStep';
 
 import { useWallet } from '../../wallet/useWallet';
 import { MIN_MINT_BALANCE_LAMPORTS } from '../../wallet/useWallet';
+import { toHumanReadableWalletError } from '../../wallet/useWallet';
 import { useWalletStore } from '../../features/wallet/store';
 import { useOnboardingStore } from './store';
 import { usePetStore } from '../../features/pet/store';
 import { login } from '../quest-engine';
 import { registerNftCreature } from '../nft/client';
 import { restoreCreatureFromServer } from '../pet/creatureSync';
+import { generateDemoMintAddress } from '../../utils/generateDemoMintAddress';
 
 type Step =
     | 'splash'
@@ -82,6 +84,7 @@ export default function OnboardingFlow({
 
     const wallet = useWallet();
     const walletAddress = useWalletStore((state) => state.address);
+    const demoAccount = useWalletStore((state) => state.demoAccount);
     const serverAuthConsentAt = useOnboardingStore(
         (state) => state.serverAuthConsentAt
     );
@@ -154,11 +157,13 @@ export default function OnboardingFlow({
 
     // Only embedded (Dynamic) wallets get the funding prompt; external MWA
     // wallet users manage their own SOL. Shown once the pre-mint balance
-    // check above has settled and the wallet cannot cover the mint.
+    // check above has settled and the wallet cannot cover the mint. Demo
+    // accounts (App Store review) mint for free, so no prompt.
     const needsFunding =
         step === 'mint' &&
         mintBalanceChecked &&
         connectionType === 'dynamic' &&
+        !demoAccount &&
         wallet.solBalance !== null &&
         wallet.solBalance < MIN_MINT_BALANCE_LAMPORTS;
 
@@ -265,7 +270,10 @@ export default function OnboardingFlow({
             await connectDynamicWallet(walletKey);
             setWalletPickerVisible(false);
         } catch (err) {
-            console.error('Failed to connect wallet:', err);
+            // approval() rejects when the user declines in their wallet or
+            // the WalletConnect session dies — say so instead of looking dead.
+            const friendly = toHumanReadableWalletError(err);
+            Alert.alert('Wallet connection failed', friendly.message);
         }
     };
 
@@ -309,6 +317,15 @@ export default function OnboardingFlow({
     const handleMint = async () => {
         if (!walletAddress) {
             throw new Error('Wallet not connected');
+        }
+
+        // Demo accounts (Dynamic Test Accounts, App Store review): skip the
+        // SOL payment and the server registry — the reviewer's mint address
+        // is a local placeholder.
+        if (demoAccount) {
+            mintCreature(creatureName, generateDemoMintAddress());
+            setStep('hatch');
+            return;
         }
 
         // Final guard against double-minting: if this wallet already owns a
@@ -376,6 +393,7 @@ export default function OnboardingFlow({
                     <MintStep
                         creatureName={creatureName}
                         walletAddress={walletAddress}
+                        isDemo={demoAccount}
                         funding={{
                             visible: needsFunding && !fundingDismissed,
                             walletAddress,

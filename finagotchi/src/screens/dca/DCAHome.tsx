@@ -6,7 +6,6 @@ import {
     Text,
     View,
 } from 'react-native';
-import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import Animated, {
@@ -22,8 +21,10 @@ import {
     SUPPORTED_TOKENS,
     type DcaPlan,
 } from '../../services/dca';
+import { BottomSheet } from '../../components/BottomSheet';
 import { PressableScale } from '../../components/PressableScale';
 import { colors, radius, spacing, typography } from '../../theme/tokens';
+import { DCADetail } from './DCADetail';
 import { DCAWizardSheet } from './DCAWizardSheet';
 import { TokenLogo } from './TokenLogo';
 import { cadenceAbbrev, formatUsdc, timeUntilShort } from './format';
@@ -36,7 +37,15 @@ const LOGO_ROTATE_MS = 1600;
  * One plan in the horizontal strip: logo, buy rule, and a live "next in"
  * countdown that ticks so the status never goes stale on screen.
  */
-function PlanChip({ plan, index }: { plan: DcaPlan; index: number }) {
+function PlanChip({
+    plan,
+    index,
+    onOpen,
+}: {
+    plan: DcaPlan;
+    index: number;
+    onOpen: () => void;
+}) {
     const nowSec = useNowSeconds();
     const overdue = isOverdue(plan);
 
@@ -53,7 +62,7 @@ function PlanChip({ plan, index }: { plan: DcaPlan; index: number }) {
             <PressableScale
                 onPress={() => {
                     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                    router.push(`/dca/${plan.id}`);
+                    onOpen();
                 }}
                 style={[styles.chip, overdue && styles.chipOverdue]}
                 accessibilityRole="button"
@@ -137,6 +146,7 @@ function RotatingTokenLogo() {
 export function DCAHome() {
     const plans = usePlanStore((state) => state.plans);
     const [wizardOpen, setWizardOpen] = useState(false);
+    const [openPlanId, setOpenPlanId] = useState<string | null>(null);
 
     const activePlans = plans.filter((plan) => plan.status === 'active');
     const overdueCount = activePlans.filter(isOverdue).length;
@@ -194,7 +204,12 @@ export function DCAHome() {
                         contentContainerStyle={styles.chipRow}
                     >
                         {activePlans.map((plan, index) => (
-                            <PlanChip key={plan.id} plan={plan} index={index} />
+                            <PlanChip
+                                key={plan.id}
+                                plan={plan}
+                                index={index}
+                                onOpen={() => setOpenPlanId(plan.id)}
+                            />
                         ))}
                         <PressableScale
                             onPress={openWizard}
@@ -216,6 +231,24 @@ export function DCAHome() {
                 visible={wizardOpen}
                 onClose={() => setWizardOpen(false)}
             />
+
+            {/**
+             * Plan detail opens as a portal sheet IN PLACE — never as a
+             * transparentModal route. A native modal window draws over the
+             * root (where portal sheets render) and on iOS it swallows every
+             * touch, leaving the drawer visible but frozen.
+             */}
+            <BottomSheet
+                visible={openPlanId !== null}
+                onClose={() => setOpenPlanId(null)}
+            >
+                {openPlanId !== null ? (
+                    <DCADetail
+                        planId={openPlanId}
+                        onClose={() => setOpenPlanId(null)}
+                    />
+                ) : null}
+            </BottomSheet>
         </View>
     );
 }

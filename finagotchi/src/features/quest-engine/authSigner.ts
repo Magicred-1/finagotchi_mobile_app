@@ -86,8 +86,22 @@ export function createDynamicAuthSigner(): AuthSigner {
     };
 }
 
-// TODO(auth): if a third connection type is ever added, implement the same
-// AuthSigner interface — (message: Uint8Array, wallet: string) =>
-// Promise<Uint8Array> returning a raw 64-byte ed25519 signature — and pick
-// the factory from useWalletStore's session.connectionType where
-// setAuthSigner is called.
+/**
+ * Auth signer for external (WalletConnect) wallets — Phantom, Solflare,
+ * MetaMask, Backpack connected through the new Dynamic SDK. The wallet app
+ * is brought to the foreground for approval by the
+ * walletConnectUserActionRequested listener in wallet/newDynamicClient.ts.
+ */
+export function createExternalAuthSigner(): AuthSigner {
+    return async (message, walletAddress) => {
+        const { signMessageWithExternalWallet } = await import(
+            '../../wallet/externalWallet'
+        );
+        return signMessageWithExternalWallet(walletAddress, message);
+    };
+}
+
+// Note: additional connection types implement the same AuthSigner interface
+// — (message: Uint8Array, wallet: string) => Promise<Uint8Array> returning a
+// raw 64-byte ed25519 signature — and are picked from useWalletStore's
+// session.connectionType where setAuthSigner is called (see useQuestEngine).
