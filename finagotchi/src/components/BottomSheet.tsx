@@ -65,9 +65,9 @@ export function BottomSheet({ visible, onClose, title, children }: Props) {
     // The sheet renders through a portal at the app root so it escapes the
     // parent's layout and clipping (RN has no portals). Deliberately NOT an
     // RN Modal: a Modal is a separate native window that draws above
-    // Dynamic's embedded-webview overlay, burying Dynamic's signature UI
-    // under our sheets. The host stays mounted through the close animation
-    // and the node unmounts only when it finishes.
+    // Dynamic's in-tree WebView, burying its signature UI under our sheets.
+    // The host stays mounted through the close animation and the node
+    // unmounts only when it finishes.
     const [modalVisible, setModalVisible] = useState(visible);
 
     // Keep the latest onClose in a ref so `close` stays referentially stable.

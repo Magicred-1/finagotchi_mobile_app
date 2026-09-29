@@ -2,7 +2,11 @@ import { useEffect } from 'react';
 
 import { useWalletStore } from '../wallet/store';
 import { useOnboardingStore } from '../onboarding/store';
-import { createDynamicAuthSigner, createMwaAuthSigner } from './authSigner';
+import {
+    createDynamicAuthSigner,
+    createExternalAuthSigner,
+    createMwaAuthSigner,
+} from './authSigner';
 import { clearAuthSession, ensureAuthToken, setAuthSigner } from './client';
 import { startQuestSync } from './sync';
 
@@ -11,8 +15,8 @@ import { startQuestSync } from './sync';
  * root (next to useWallet):
  *
  * - Registers the wallet auth signer matching the active connection (Dynamic
- *   embedded or MWA) so the server login can sign its challenge; clears it
- *   on disconnect.
+ *   embedded, MWA, or external WalletConnect) so the server login can sign
+ *   its challenge; clears it on disconnect.
  * - Proactively refreshes the server session JWT once the user has consented
  *   (onboarding auth step) — subsequent sync calls ride the cached token
  *   instead of prompting the wallet per request.
@@ -39,7 +43,9 @@ export function useQuestEngine(): void {
                 ? createMwaAuthSigner(
                       () => useWalletStore.getState().session.authToken
                   )
-                : createDynamicAuthSigner()
+                : connectionType === 'external'
+                  ? createExternalAuthSigner()
+                  : createDynamicAuthSigner()
         );
         return () => setAuthSigner(null);
     }, [address, connectionType]);

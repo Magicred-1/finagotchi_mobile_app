@@ -28,7 +28,7 @@ import { StreakFreezeSheet } from '../../src/components/StreakFreezeSheet';
 import { LeagueSheet } from '../../src/components/LeagueSheet';
 import { LeaderboardSheet } from '../../src/components/LeaderboardSheet';
 import { MilestoneCelebration } from '../../src/components/MilestoneCelebration';
-import { Sidebar, SIDEBAR_WIDTH, useSidebarOpenGesture } from '../../src/components/Sidebar';
+import { Sidebar, getSidebarWidth, useSidebarOpenGesture } from '../../src/components/Sidebar';
 import EvolutionCeremony from '../../src/components/EvolutionCeremony';
 import CollectiblesSheet from '../../src/components/CollectiblesSheet';
 import PrizeWheel from '../../src/components/PrizeWheel';
@@ -209,7 +209,8 @@ export default function HomeScreen() {
   const exitToastOpacity = useSharedValue(0);
   const emojiOpacity = useSharedValue(0);
   const emojiTranslateY = useSharedValue(0);
-  const sidebarTranslateX = useSharedValue(-SIDEBAR_WIDTH);
+  const sidebarWidth = getSidebarWidth(width);
+  const sidebarTranslateX = useSharedValue(-sidebarWidth);
   const sidebarOpacity = useSharedValue(0);
 
   const wallet = useWallet();
@@ -280,6 +281,7 @@ export default function HomeScreen() {
     opacity: sidebarOpacity,
     enabled: !sidebarVisible && !anyOverlayOpen,
     onOpen: () => setSidebarVisible(true),
+    sidebarWidth,
   });
 
   const horizontalPadding = Math.min(Math.max(width * 0.05, 16), 24);
@@ -640,6 +642,8 @@ export default function HomeScreen() {
         usePetStore.setState({ reviveTokens: reviveTokens - 1 });
       } else if (balance >= REMINT_COST_POINTS) {
         usePetStore.setState({ balance: balance - REMINT_COST_POINTS });
+      } else if (useWalletStore.getState().demoAccount) {
+        // Demo accounts (App Store review) revive without the SOL fee.
       } else {
         const walletConnected = Boolean(useWalletStore.getState().address);
         if (!walletConnected) {

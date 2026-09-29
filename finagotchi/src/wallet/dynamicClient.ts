@@ -11,14 +11,16 @@ export const dynamicClient = createClient({
     .extend(
         ReactNativeExtension({
             appOrigin: 'https://www.finagotchi.app',
-            // Host Dynamic's UI (signature prompts, key export, step-up auth)
-            // in a native overlay window outside the RN view tree. Without
-            // it, Dynamic renders in an in-tree WebView that sits UNDERNEATH
-            // the app's RN Modals (our sheets) when they request a signature.
-            // Keep <dynamicClient.reactNative.WebView /> mounted: it becomes
-            // a no-op on this path, and is the required fallback on binaries
-            // where the EmbeddedWebView native module isn't linked yet.
-            embeddedWebView: true,
+            // Deliberately NOT `embeddedWebView: true`. The native overlay
+            // lives in its own UIWindow; on iOS it appears transparent yet
+            // still grabs every touch at the native level whenever a
+            // signature is requested — freezing the whole app (and never
+            // showing the prompt). The default in-tree react-native-webview
+            // hides with opacity 0 + zIndex -10000 (touch-transparent) and
+            // only covers the app while Dynamic actually renders a prompt.
+            // Sheets render through the in-tree SheetPortal (not RN Modals),
+            // and app/_layout.tsx mounts the WebView LAST so prompts draw
+            // above screens and sheets.
         })
     )
     .extend(SolanaExtension());

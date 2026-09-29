@@ -87,6 +87,36 @@ function getFetch(): FetchImpl {
     return fetchImpl ?? globalThis.fetch;
 }
 
+/**
+ * Hard cap on every outbound call. Without it a black-holed endpoint
+ * (connection accepted, response never sent) hangs the create flow before
+ * any wallet prompt — looking exactly like a dead "Confirm" button.
+ */
+const FETCH_TIMEOUT_MS = 20_000;
+
+/**
+ * fetch() with an abort timeout. Timeout aborts surface as
+ * "network request failed" so the wallet error mapper renders its
+ * network-error copy instead of a transaction-expiry one.
+ */
+async function fetchWithTimeout(
+    url: string,
+    init: RequestInit
+): Promise<Response> {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+    try {
+        return await getFetch()(url, { ...init, signal: controller.signal });
+    } catch (err) {
+        if (err instanceof Error && err.name === 'AbortError') {
+            throw new Error('network request failed: timed out');
+        }
+        throw err;
+    } finally {
+        clearTimeout(timer);
+    }
+}
+
 function apiKey(): string {
     const key = process.env.EXPO_PUBLIC_JUPITER_API_KEY;
     if (!key) {
@@ -152,7 +182,7 @@ function errorMessage(status: number, body: unknown): string {
 }
 
 async function rawPost(path: string, body: unknown): Promise<unknown> {
-    const res = await getFetch()(BASE_URL + path, {
+    const res = await fetchWithTimeout(BASE_URL + path, {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
@@ -239,7 +269,7 @@ async function authedRequest({
 }): Promise<AuthedResponse> {
     let token = await getAuthToken({ walletPubkey, signMessage });
     for (let attempt = 0; attempt < 2; attempt++) {
-        const res = await getFetch()(BASE_URL + path, {
+        const res = await fetchWithTimeout(BASE_URL + path, {
             method,
             headers: {
                 'Content-Type': 'application/json',
@@ -286,7 +316,7 @@ const MIN_FEE_LAMPORTS = 2_000_000;
 
 async function rpcCall<T>(method: string, params: unknown[]): Promise<T | null> {
     try {
-        const res = await getFetch()(MAINNET_RPC, {
+        const res = await fetchWithTimeout(MAINNET_RPC, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }),
@@ -378,6 +408,22 @@ async function simulateSignedDeposit(base64Tx: string): Promise<void> {
 }
 
 /**
+ * Stages of the create/cancel flows, reported through the optional onStep
+ * callback so the UI can show WHERE a slow or stuck flow currently is
+ * (a hung wallet prompt otherwise looks exactly like a dead button).
+ */
+export type PlanOrderStep =
+    | 'check'
+    | 'auth'
+    | 'vault'
+    | 'craft'
+    | 'sign'
+    | 'simulate'
+    | 'submit';
+
+export type PlanOrderStepFn = (step: PlanOrderStep) => void;
+
+/**
  * Create a DCA order: vault (register on first use) → craft deposit → user
  * signs the deposit (it is NOT sent by us) → submit the order. The deposit
  * lands on-chain during the create call; a 200 means the order is live.
@@ -387,11 +433,13 @@ export async function createPlanOrder({
     signMessage,
     signTransaction,
     input,
+    onStep,
 }: {
     walletPubkey: string;
     signMessage: SignMessageFn;
     signTransaction: SignTransactionFn;
     input: CreatePlanOrderInput;
+    onStep?: PlanOrderStepFn;
 }): Promise<CreatedPlanOrder> {
     if (!tokenByMint(input.outputMint)) {
         throw new Error(
@@ -428,10 +476,15 @@ export async function createPlanOrder({
     const inputAmount = usdcBaseUnits(input.totalBudget);
     const auth = { walletPubkey, signMessage };
 
+    onStep?.('check');
     await preflightFunding(walletPubkey, input.totalBudget);
 
+    // The vault lookup is the first authed call — this is where the wallet's
+    // login-message prompt appears when the 24h JWT isn't cached.
+    onStep?.('auth');
     const vault = await authedRequest({ method: 'GET', path: '/vault', ...auth });
     if (vault.status === 404) {
+        onStep?.('vault');
         const registered = await authedRequest({
             method: 'GET',
             path: '/vault/register',
@@ -453,6 +506,7 @@ export async function createPlanOrder({
      * with a fresh craft instead of failing the whole order.
      */
     const attemptCreate = async (): Promise<CreatedPlanOrder> => {
+        onStep?.('craft');
         const craft = await authedRequest({
             method: 'POST',
             path: '/deposit/craft',
@@ -470,9 +524,12 @@ export async function createPlanOrder({
             throw new Error(`dca: deposit craft failed: ${errorMessage(craft.status, craft.data)}`);
         }
 
+        onStep?.('sign');
         const depositSignedTx = await signTransaction(craftData.transaction);
+        onStep?.('simulate');
         await simulateSignedDeposit(depositSignedTx);
 
+        onStep?.('submit');
         const order = await authedRequest({
             method: 'POST',
             path: '/orders/dca',
@@ -526,14 +583,17 @@ export async function cancelPlanOrder({
     orderId,
     signMessage,
     signTransaction,
+    onStep,
 }: {
     walletPubkey: string;
     orderId: string;
     signMessage: SignMessageFn;
     signTransaction: SignTransactionFn;
+    onStep?: PlanOrderStepFn;
 }): Promise<{ txSignature: string }> {
     const auth = { walletPubkey, signMessage };
 
+    onStep?.('auth');
     const cancel = await authedRequest({
         method: 'POST',
         path: `/orders/dca/cancel/${orderId}`,
@@ -559,8 +619,10 @@ export async function cancelPlanOrder({
         throw new Error(`dca: cancel failed: ${raw}`);
     }
 
+    onStep?.('sign');
     const signedTransaction = await signTransaction(cancelData.transaction);
 
+    onStep?.('submit');
     const confirm = await authedRequest({
         method: 'POST',
         path: `/orders/dca/confirm-cancel/${orderId}`,

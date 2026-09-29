@@ -11,7 +11,7 @@ function todayKey() {
     )}-${String(date.getDate()).padStart(2, '0')}`;
 }
 
-export type WalletConnectionType = 'dynamic' | 'mwa' | null;
+export type WalletConnectionType = 'dynamic' | 'mwa' | 'external' | null;
 
 export type WalletSession = {
     authToken: string | null;
@@ -21,12 +21,18 @@ export type WalletSession = {
 type WalletState = {
     address: string | null;
     session: WalletSession;
+    /**
+     * True when the signed-in Dynamic user is a Test Account (App Store
+     * review). Payment-gated actions (mint, revive) skip the SOL charge.
+     */
+    demoAccount: boolean;
     transactionsToday: number;
     transactionsResetAt: string | null;
     passkeyRegistrationPrompted: boolean;
 
     connect: (address: string, connectionType: WalletConnectionType) => boolean;
     setSession: (session: Partial<WalletSession>) => void;
+    setDemoAccount: (demoAccount: boolean) => void;
     setPasskeyRegistrationPrompted: (prompted: boolean) => void;
     recordTransaction: () => void;
     resetTransactionsIfNeeded: () => void;
@@ -43,6 +49,7 @@ export const useWalletStore = create<WalletState>()(
         (set, get) => ({
             address: null,
             session: defaultSession,
+            demoAccount: false,
             transactionsToday: 0,
             transactionsResetAt: null,
             passkeyRegistrationPrompted: false,
@@ -78,6 +85,10 @@ export const useWalletStore = create<WalletState>()(
                 set({ passkeyRegistrationPrompted: prompted });
             },
 
+            setDemoAccount: (demoAccount) => {
+                set({ demoAccount });
+            },
+
             recordTransaction: () => {
                 get().resetTransactionsIfNeeded();
                 set((state) => ({
@@ -96,6 +107,7 @@ export const useWalletStore = create<WalletState>()(
                 set({
                     address: null,
                     session: defaultSession,
+                    demoAccount: false,
                     transactionsToday: 0,
                     transactionsResetAt: null,
                 });

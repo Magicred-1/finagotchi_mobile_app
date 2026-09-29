@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Alert, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { ActivityIndicator } from 'react-native';
-import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import Svg, { Circle } from 'react-native-svg';
 import * as Haptics from 'expo-haptics';
@@ -183,9 +182,11 @@ function NextExecutionTicker({ plan }: { plan: DcaPlan }) {
 
 type Props = {
     planId: string;
+    /** Closes the hosting sheet (missing plan, or after a recreate). */
+    onClose: () => void;
 };
 
-export function DCADetail({ planId }: Props) {
+export function DCADetail({ planId, onClose }: Props) {
     const wallet = useWallet();
     const plan = usePlanStore((state) =>
         state.plans.find((p) => p.id === planId)
@@ -278,7 +279,7 @@ export function DCADetail({ planId }: Props) {
         return (
             <View style={styles.missing}>
                 <Text style={styles.missingText}>Plan not found</Text>
-                <Button title="Go back" onPress={() => router.back()} />
+                <Button title="Go back" onPress={onClose} />
             </View>
         );
     }
@@ -439,7 +440,7 @@ export function DCADetail({ planId }: Props) {
                 onClose={() => setEditOpen(false)}
                 prefillTicker={plan.ticker}
                 pauseId={plan.id}
-                onSuccess={() => router.dismissTo('/')}
+                onSuccess={onClose}
             />
         </View>
     );

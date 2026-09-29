@@ -38,10 +38,13 @@ const queryClient = new QueryClient();
 export default function RootLayout() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
-      {/* Dynamic's SDK requires its WebView mounted at the root, even for
-          headless flows — auth silently fails without it. */}
-      <dynamicClient.reactNative.WebView />
       <AppContent />
+      {/* Dynamic's SDK requires its WebView mounted at the root, even for
+          headless flows — auth silently fails without it. Rendered LAST so
+          its prompt UI (zIndex 10000 while visible) draws above screens and
+          portal sheets; hidden it is opacity 0 + zIndex -10000 and never
+          intercepts touches. */}
+      <dynamicClient.reactNative.WebView />
     </GestureHandlerRootView>
   );
 }
@@ -133,17 +136,6 @@ function AppContent() {
           headerShown: false,
         }}
       />
-      <Stack.Screen
-        name="dca/[id]"
-        options={{
-          headerShown: false,
-          // Rendered as a bottom sheet over the home screen; BottomSheet
-          // drives the motion, so the stack itself stays transparent/still.
-          presentation: 'transparentModal',
-          animation: 'none',
-          contentStyle: { backgroundColor: 'transparent' },
-        }}
-      />
       <Stack.Screen name="hardware/binding" options={{ headerShown: false }} />
     </Stack>
   );
@@ -152,8 +144,8 @@ function AppContent() {
     <>
       {content}
       {/* Sheets render here (in-tree, above screens) instead of RN Modals so
-          Dynamic's native overlay — signature prompts, key export — always
-          draws above them. */}
+          Dynamic's WebView — mounted last, at the root — can still draw its
+          signature/export prompts above them when it becomes visible. */}
       <SheetPortalHost />
     </>
   );
