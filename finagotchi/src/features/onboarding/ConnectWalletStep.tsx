@@ -16,6 +16,7 @@ import { Button } from '../../components/Button';
 import { IconButton } from '../../components/IconButton';
 import { PressableScale } from '../../components/PressableScale';
 import { RadialPet } from '../../components/RadialPet';
+import { useWalletStore } from '../wallet/store';
 import { colors, radius, spacing, typography } from '../../theme/tokens';
 
 type Props = {
@@ -55,6 +56,11 @@ export default function ConnectWalletStep({
 }: Props) {
     const [activeMethod, setActiveMethod] = useState<AuthMethod | null>(null);
     const [error, setError] = useState<string | null>(null);
+    // Embedded-wallet creation runs in the background after Dynamic sign-in;
+    // surface its failures here too (set by useWallet's creation effect).
+    const embeddedWalletError = useWalletStore(
+        (state) => state.embeddedWalletError
+    );
     const [showEmail, setShowEmail] = useState(false);
     const [email, setEmail] = useState('');
     const [otp, setOtp] = useState('');
@@ -392,6 +398,11 @@ export default function ConnectWalletStep({
 
                             {error ? (
                                 <Text style={styles.error}>{error}</Text>
+                            ) : null}
+                            {embeddedWalletError ? (
+                                <Text style={styles.error}>
+                                    {embeddedWalletError}
+                                </Text>
                             ) : null}
                         </View>
                     </View>
