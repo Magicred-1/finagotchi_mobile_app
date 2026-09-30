@@ -11,5 +11,17 @@ export {
     FINAGOTCHI_CHARACTERISTIC_UUID,
     FINAGOTCHI_DEVICE_NAME,
     FINAGOTCHI_SERVICE_UUID,
+    PROVISIONING_CHAR_UUID,
 } from './types';
 export type { BleStatus, FinagotchiBle, FinagotchiState } from './types';
+export {
+    getWifiCredentials,
+    listSavedSsids,
+    removeWifiCredentials,
+    saveWifiCredentials,
+} from './wifiCredentials';
+export {
+    autoSyncWifiToDevice,
+    useWifiAutoSyncStore,
+    type WifiAutoSyncResult,
+} from './wifiAutoSync';

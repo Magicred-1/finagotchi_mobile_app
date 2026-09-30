@@ -22,7 +22,8 @@
         "webcredentials:www.finagotchi.app"
       ],
       "infoPlist": {
-        "ITSAppUsesNonExemptEncryption": false
+        "ITSAppUsesNonExemptEncryption": false,
+        "NSLocationWhenInUseUsageDescription": "Finagotchi uses your location to detect the current Wi-Fi network and share it with your hardware device."
       }
     },
     "android": {
@@ -57,7 +58,9 @@
       "permissions": [
         "android.permission.BLUETOOTH",
         "android.permission.BLUETOOTH_ADMIN",
-        "android.permission.BLUETOOTH_CONNECT"
+        "android.permission.BLUETOOTH_CONNECT",
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.ACCESS_WIFI_STATE"
       ],
       "runtimeVersion": {
         "policy": "appVersion"
