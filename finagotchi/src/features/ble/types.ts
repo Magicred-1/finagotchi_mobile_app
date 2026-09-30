@@ -4,6 +4,8 @@ import type { Device } from 'react-native-ble-plx';
 export const FINAGOTCHI_DEVICE_NAME = 'Finagotchi';
 export const FINAGOTCHI_SERVICE_UUID = '0000f1a0-0000-1000-8000-00805f9b34fb';
 export const FINAGOTCHI_CHARACTERISTIC_UUID = '0000f1a1-0000-1000-8000-00805f9b34fb';
+/** Provisioning characteristic (contract §1); encrypted writes only. */
+export const PROVISIONING_CHAR_UUID = '0000f1a2-0000-1000-8000-00805f9b34fb';
 
 export type BleStatus =
     | 'idle'

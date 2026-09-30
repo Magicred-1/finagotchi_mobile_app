@@ -11,6 +11,7 @@ import {
     type FinagotchiBle,
     type FinagotchiState,
 } from './types';
+import { autoSyncWifiToDevice } from './wifiAutoSync';
 
 export {
     FINAGOTCHI_CHARACTERISTIC_UUID,
@@ -235,6 +236,9 @@ export function useFinagotchiBle(): FinagotchiBle {    const [status, setStatus]
                 connectedDeviceRef.current = device;
                 setConnectedDevice(device);
                 setStatus('connected');
+                // Push saved Wi-Fi credentials for the phone's current network
+                // (best effort, deduped across hook instances).
+                void autoSyncWifiToDevice(device).catch(() => {});
                 return true;
             } catch (e) {
                 console.warn('[BLE] connection setup failed:', e);

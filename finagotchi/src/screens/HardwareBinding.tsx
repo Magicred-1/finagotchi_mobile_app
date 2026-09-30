@@ -5,25 +5,31 @@ import {
     SafeAreaView,
     ScrollView,
     StyleSheet,
+    Switch,
     Text,
     TextInput,
     View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import NetInfo from '@react-native-community/netinfo';
 import { Buffer } from 'buffer';
 
 import { Button } from '../components/Button';
 import { PressableScale } from '../components/PressableScale';
 import { SearchingRadar } from '../components/SearchingRadar';
 import { colors, radius, spacing, typography } from '../theme/tokens';
-import { FINAGOTCHI_SERVICE_UUID, useFinagotchiDevice } from '../features/ble';
+import {
+    FINAGOTCHI_SERVICE_UUID,
+    PROVISIONING_CHAR_UUID,
+    listSavedSsids,
+    saveWifiCredentials,
+    useFinagotchiDevice,
+    useWifiAutoSyncStore,
+} from '../features/ble';
 import { useDcaSyncEngine } from '../services/ble/SyncEngine';
 import { requestDeviceToken } from '../features/dbs/client';
 import { useWalletStore } from '../features/wallet/store';
 import { useOnboardingStore } from '../features/onboarding/store';
-
-/** Provisioning characteristic (contract §1); encrypted writes only. */
-const PROVISIONING_CHAR_UUID = '0000f1a2-0000-1000-8000-00805f9b34fb';
 
 const KEYBOARD_BEHAVIOR = Platform.OS === 'ios' ? 'padding' : 'height';
 
@@ -47,9 +53,12 @@ export default function HardwareBinding() {
     const [pairCode, setPairCode] = useState('');
     const [ssid, setSsid] = useState('');
     const [password, setPassword] = useState('');
+    const [rememberNetwork, setRememberNetwork] = useState(true);
     const [provisioning, setProvisioning] = useState(false);
     const [provisionError, setProvisionError] = useState<string | null>(null);
     const [cloudLinked, setCloudLinked] = useState(false);
+
+    const autoSync = useWifiAutoSyncStore();
 
     const scanning = status === 'scanning';
     const connecting = status === 'connecting';
@@ -65,6 +74,61 @@ export default function HardwareBinding() {
             setStep('scan');
         }
     }, [connectedDevice, step]);
+
+    // Auto-sync reads the current Wi-Fi name, which requires location
+    // permission on both platforms. Ask for it up front only when there is at
+    // least one remembered network worth syncing.
+    useEffect(() => {
+        let cancelled = false;
+        (async () => {
+            const saved = await listSavedSsids();
+            if (cancelled || saved.length === 0) return;
+            try {
+                // Lazy import: older dev clients lack the ExpoLocation native
+                // module — a static import would crash bundle evaluation.
+                const Location = await import('expo-location');
+                await Location.requestForegroundPermissionsAsync();
+            } catch {
+                // Best effort — auto-sync records 'no-permission' otherwise.
+            }
+        })();
+        return () => {
+            cancelled = true;
+        };
+    }, []);
+
+    // Pre-fill the SSID with the current network when permitted.
+    useEffect(() => {
+        let cancelled = false;
+        (async () => {
+            try {
+                const Location = await import('expo-location');
+                const permission = await Location.getForegroundPermissionsAsync();
+                if (!permission.granted) return;
+                const state = await NetInfo.fetch();
+                const current = state.type === 'wifi' ? state.details?.ssid : null;
+                if (!cancelled && current && current !== '<unknown ssid>') {
+                    setSsid((existing) => (existing ? existing : current));
+                }
+            } catch {
+                // Location/NetInfo unavailable — leave the field empty.
+            }
+        })();
+        return () => {
+            cancelled = true;
+        };
+    }, []);
+
+    function handleRememberToggle(value: boolean) {
+        setRememberNetwork(value);
+        if (value) {
+            // Needed to detect the current Wi-Fi name for auto-sync. Lazy
+            // import — older dev clients lack the ExpoLocation native module.
+            void import('expo-location')
+                .then((Location) => Location.requestForegroundPermissionsAsync())
+                .catch(() => {});
+        }
+    }
 
     async function handleProvision() {
         if (!connectedDevice) return;
@@ -99,6 +163,9 @@ export default function HardwareBinding() {
             );
 
             setCloudLinked(deviceToken !== null);
+            if (rememberNetwork) {
+                await saveWifiCredentials(ssid, password);
+            }
             setStep('done');
         } catch (e) {
             setProvisionError(
@@ -261,6 +328,50 @@ export default function HardwareBinding() {
                                     {provisionError}
                                 </Text>
                             )}
+                            <View style={styles.rememberRow}>
+                                <View style={styles.rememberInfo}>
+                                    <Text style={styles.rememberLabel}>
+                                        Remember network for auto-sync
+                                    </Text>
+                                    <Text style={styles.rememberHint}>
+                                        Sends these credentials automatically
+                                        on future connects. Location permission
+                                        is used to detect the Wi-Fi name.
+                                    </Text>
+                                </View>
+                                <Switch
+                                    value={rememberNetwork}
+                                    onValueChange={handleRememberToggle}
+                                    trackColor={{
+                                        false: colors.border,
+                                        true: colors.primary,
+                                    }}
+                                />
+                            </View>
+                            {autoSync.lastResult === 'synced' && (
+                                <Text style={styles.syncLabel}>
+                                    Auto-sync: pushed '{autoSync.lastSsid}' on
+                                    connect
+                                </Text>
+                            )}
+                            {autoSync.lastResult === 'unknown-network' && (
+                                <Text style={styles.syncLabel}>
+                                    '{autoSync.lastSsid}' not known yet —
+                                    provision once to remember it
+                                </Text>
+                            )}
+                            {autoSync.lastResult === 'no-permission' && (
+                                <Text style={styles.syncLabel}>
+                                    Auto-sync needs location permission to
+                                    detect the Wi-Fi name
+                                </Text>
+                            )}
+                            {autoSync.lastResult === 'write-failed' && (
+                                <Text style={styles.syncLabel}>
+                                    Auto-sync of '{autoSync.lastSsid}' failed —
+                                    will retry on next connect
+                                </Text>
+                            )}
                             <Button
                                 title="Provision Wi-Fi"
                                 loading={provisioning}
@@ -382,6 +493,31 @@ const styles = StyleSheet.create({
         color: colors.danger,
         fontSize: typography.small,
         fontFamily: 'Poppins_600SemiBold',
+    },
+    rememberRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: spacing.md,
+        padding: spacing.md,
+        borderRadius: radius.md,
+        backgroundColor: colors.surfaceLight,
+        borderWidth: 1,
+        borderColor: colors.border,
+    },
+    rememberInfo: {
+        flex: 1,
+        gap: spacing.xs,
+    },
+    rememberLabel: {
+        color: colors.text,
+        fontSize: typography.small,
+        fontFamily: 'Poppins_600SemiBold',
+    },
+    rememberHint: {
+        color: colors.textMuted,
+        fontSize: typography.small,
+        fontFamily: 'Poppins_400Regular',
+        lineHeight: 18,
     },
     deviceRow: {
         flexDirection: 'row',
