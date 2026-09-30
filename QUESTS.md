@@ -106,9 +106,9 @@ auth.
 ## App binding (`finagotchi/src/features/quest-engine/`)
 
 - **Base URL:** `extra.questServerUrl` in `app.json` (read via
-  `Constants.expoConfig?.extra`), defaulting to `http://localhost:3000` for
-  dev. Production must use an HTTPS URL — signatures and the optional bearer
-  ride TLS only.
+  `Constants.expoConfig?.extra`), defaulting to `http://localhost:8080` for
+  dev (the server's default `PORT`). Production must use an HTTPS URL —
+  signatures and the optional bearer ride TLS only.
 - **Wallet-signed auth (the real gate):** `/backfill` and `/verify` always
   require challenge–response auth. The client does the full dance per call,
   automatically: `POST /auth/challenge {wallet}` → `{message, nonce,
@@ -148,19 +148,29 @@ auth.
 ## Claim queue behavior
 
 `claimQueue.ts` persists `{wallet, day, questId, signature?, programId?, kind?}`
-entries in AsyncStorage and flushes them sequentially:
+plus local retry metadata (`attempts`, `firstSeenAt`, `nextAttemptAt`) in
+AsyncStorage and flushes due claims sequentially (claims inside their backoff
+window are skipped):
 
 - **Credited** → removed; `programId`/`kind`/`day` are recorded into the local
   quest history so the next day's generation dedupes exactly like the server.
-  `programId`/`kind` are local bookkeeping only and are stripped from the wire
-  body, which stays `{wallet, day, questId, signature?}`.
-- **Definitive rejection** (`unknown_quest`, `conditions_not_met`) → removed and
-  recorded in a `failed` list with the reason. Auth-impossible states land
-  there too: `bad_signature`, `wallet_mismatch`, `malformed` (signer/config
-  bugs no retry can fix — the client already retried `expired`/`unknown_nonce`
-  once internally), and a bare 401 from the optional bearer gate.
-- **Kept queued (retry next flush):** network error, timeout, 5xx, transient
-  rejections (e.g. `signature_not_found` while ingest catches up), nonce
+  `programId`/`kind` and the retry metadata are local bookkeeping only and are
+  stripped from the wire body, which stays `{wallet, day, questId, signature?}`.
+- **Definitive rejection** → removed and recorded in a `failed` list with the
+  reason. That covers auth-impossible states: `bad_signature`,
+  `wallet_mismatch`, `malformed` (signer/config bugs no retry can fix — the
+  client already retried `expired`/`unknown_nonce` once internally), and a
+  bare 401 from the optional bearer gate.
+- **Bounded retry** (`conditions_not_met`, `unknown_quest`,
+  `signature_not_found`, …): routinely transient — Helius webhook lag, the 6h
+  backfill staleness gate, or profile drift between generation and
+  verification. The claim stays pending; each rejection increments `attempts`
+  and schedules `nextAttemptAt` with exponential backoff (2^attempts minutes,
+  capped at 6h), and the flush stops there. After 20 attempts or 48 hours in
+  the queue the claim moves to `failed` with the reason. Failed claims are
+  surfaced in the quests sheet ("tap to retry") and are auto-requeued when a
+  later server backfill reports the quest complete.
+- **Kept queued (retry next flush):** network error, timeout, 5xx, nonce
   races that survive the built-in retry, and signing failures (`'signer'`
   errors — the user may have declined the prompt; they can approve next time).
   The flush stops and the next app-open/reconnect pass retries.

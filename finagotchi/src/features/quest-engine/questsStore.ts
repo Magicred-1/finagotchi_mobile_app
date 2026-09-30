@@ -171,6 +171,17 @@ export const useQuestsStore = create<QuestsState>()(
                                 (f) => f.wallet === wallet && f.questId === quest.id,
                             )
                         ) {
+                            // A failed claim normally suppresses re-enqueue —
+                            // but when the server's own backfill now reports
+                            // this quest complete, the rejection was transient
+                            // (ingest lag, profile drift): put it back in the
+                            // queue with a fresh retry budget.
+                            const serverComplete = serverQuests?.some(
+                                (sq) => sq.id === quest.id && sq.complete,
+                            );
+                            if (serverComplete) {
+                                useClaimQueue.getState().retryFailed(wallet, quest.id);
+                            }
                             continue;
                         }
                         useClaimQueue.getState().enqueue({
@@ -217,7 +228,10 @@ export const useQuestsStore = create<QuestsState>()(
                                 wallet: tx.wallet,
                                 day: quest.day,
                                 questId: quest.id,
-                                signature: tx.signature,
+                                // Some sources (e.g. Jupiter's hosted DCA API)
+                                // can't always name the tx signature — don't
+                                // send an empty string as evidence.
+                                ...(tx.signature ? { signature: tx.signature } : {}),
                                 programId: quest.programId,
                                 kind: quest.kind,
                             });

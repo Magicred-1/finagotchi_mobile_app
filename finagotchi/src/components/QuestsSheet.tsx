@@ -66,6 +66,10 @@ export default function QuestsSheet({
     const progressByKey = useQuestsStore((state) => state.progressByKey);
     const credited = useProfileStore((state) => state.credited);
     const pendingClaims = useClaimQueue((state) => state.pending);
+    const failedClaims = useClaimQueue((state) => state.failed);
+    const failedForWallet = walletAddress
+        ? failedClaims.filter((f) => f.wallet === walletAddress)
+        : [];
 
     // Opening the sheet refreshes today's list and retries pending claims.
     useEffect(() => {
@@ -243,6 +247,31 @@ export default function QuestsSheet({
                             </Text>
                         </View>
                     </View>
+                ) : null}
+
+                {failedForWallet.length > 0 ? (
+                    <PressableScale
+                        onPress={() => {
+                            if (!walletAddress) return;
+                            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                            // Fresh retry budget for every failed claim, then
+                            // try to cash them right away.
+                            useClaimQueue.getState().retryFailed(walletAddress);
+                            void useClaimQueue.getState().flush();
+                        }}
+                        style={styles.failedBanner}
+                    >
+                        <Ionicons
+                            name="alert-circle-outline"
+                            size={20}
+                            color={colors.warning}
+                        />
+                        <Text style={styles.failedBannerText}>
+                            {failedForWallet.length} reward
+                            {failedForWallet.length === 1 ? '' : 's'} failed to
+                            verify — tap to retry
+                        </Text>
+                    </PressableScale>
                 ) : null}
 
                 {/* FILTERS */}
@@ -544,6 +573,24 @@ const styles = StyleSheet.create({
     deathText: {
         flex: 1,
         gap: 2,
+    },
+    failedBanner: {
+        marginTop: spacing.md,
+        padding: spacing.md,
+        borderRadius: radius.md,
+        backgroundColor: 'rgba(255,209,102,0.10)',
+        borderWidth: 1,
+        borderColor: 'rgba(255,209,102,0.25)',
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: spacing.sm,
+    },
+    failedBannerText: {
+        flex: 1,
+        color: colors.warning,
+        fontSize: typography.small,
+        lineHeight: 18,
+        fontFamily: 'Poppins_600SemiBold',
     },
     deathTitle: {
         color: colors.text,

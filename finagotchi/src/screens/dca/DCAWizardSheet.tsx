@@ -36,6 +36,7 @@ import {
     type CadenceId,
     type PlanOrderStep,
 } from '../../services/dca';
+import { useClaimQueue, useQuestsStore } from '../../features/quest-engine';
 import { useWallet } from '../../wallet/useWallet';
 import {
     colors,
@@ -61,6 +62,9 @@ const PERCENT_PRESETS = [5, 10, 25, 50];
 
 /** Jupiter enforces a $10 minimum per executed round. */
 const MIN_ROUND_USD = 10;
+
+/** Jupiter DCA program — the starter quest "Plant a Seed" watches it. */
+const JUPITER_DCA_PROGRAM_ID = 'DCA265Vj8a9CEuX1eb1LWRnDT7uK6q1xMipnNyatn23M';
 
 const CADENCE_CAPTIONS: Record<CadenceId, string> = {
     daily: 'A buy every day',
@@ -354,7 +358,7 @@ export function DCAWizardSheet({
                 }
             }
 
-            const { orderId } = await createPlanOrder({
+            const { orderId, txSignature } = await createPlanOrder({
                 ...auth,
                 input: {
                     outputMint: token.mint,
@@ -381,6 +385,20 @@ export function DCAWizardSheet({
                 missedCount: 0,
                 createdAt: new Date().toISOString(),
             });
+
+            // Feed the quest engine: Jupiter's hosted API posts the deposit
+            // tx itself, so useWallet.signAndSendTransaction (and thus
+            // observeOutgoingTx) never fires for a DCA plan creation.
+            useQuestsStore.getState().recordTx({
+                signature: txSignature,
+                slot: 0,
+                blockTime: Date.now(),
+                wallet: walletPubkey,
+                programId: JUPITER_DCA_PROGRAM_ID,
+                instruction: 'app_dca',
+            });
+            // recordTx enqueues a claim when a quest completes — cash it now.
+            void useClaimQueue.getState().flush();
 
             Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
             useDcaUiStore.getState().requestReaction('dance');

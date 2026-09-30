@@ -14,28 +14,61 @@ import { usePetStore } from '../pet/store';
 export interface QueuedClaim extends VerifyClaimRequest {
     programId?: string;
     kind?: QuestKind;
+    /** Transient-rejection retries so far; reset when a failed claim is retried. */
+    attempts: number;
+    /** Epoch ms the claim first entered the queue. */
+    firstSeenAt: number;
+    /** Earliest epoch ms the next verify attempt may run (exponential backoff). */
+    nextAttemptAt?: number;
 }
+
+/** enqueue input: retry metadata is stamped queue-side, callers may omit it. */
+export type NewClaim = Omit<QueuedClaim, 'attempts' | 'firstSeenAt'> &
+    Partial<Pick<QueuedClaim, 'attempts' | 'firstSeenAt' | 'nextAttemptAt'>>;
 
 export interface FailedClaim extends QueuedClaim {
     reason: string;
     failedAt: number;
 }
 
-/** Rejection reasons the server will never flip on retry. */
-const DEFINITIVE_REJECTIONS = new Set(['unknown_quest', 'conditions_not_met']);
+/**
+ * Rejection reasons the server will never flip on retry. Currently empty:
+ * `conditions_not_met` and `unknown_quest` are routinely transient (Helius
+ * webhook ingest lag, the 6h backfill staleness gate, profile drift between
+ * generation and verification) and resolve on retry, so they ride the
+ * bounded-retry path in flush(). Add genuinely permanent reasons here.
+ */
+const DEFINITIVE_REJECTIONS = new Set<string>();
+
+/** Give up on a transient rejection after this many attempts... */
+const MAX_ATTEMPTS = 20;
+/** ...or once the claim has been queued longer than this. */
+const MAX_AGE_MS = 48 * 3_600_000;
+/** Backoff between retries: 2^attempts minutes, never more than this. */
+const MAX_BACKOFF_MS = 6 * 3_600_000;
 
 type ClaimQueueState = {
     pending: QueuedClaim[];
     failed: FailedClaim[];
 
-    enqueue: (claim: QueuedClaim) => void;
+    enqueue: (claim: NewClaim) => void;
     /**
-     * Send pending claims sequentially. Removes a claim on credit, on a
-     * definitive server rejection (recorded under `failed`), or on an
-     * auth-impossible state (bad_signature / wallet_mismatch / malformed,
-     * or a bare 401 from the optional bearer gate). Keeps it on network,
-     * timeout, 5xx, nonce races that survive the client's built-in retry,
-     * and signing failures (user can approve next flush).
+     * Move failed claims back to pending with a fresh retry budget — all of
+     * a wallet's, or just one quest's. Returns the number requeued.
+     */
+    retryFailed: (wallet: string, questId?: string) => number;
+    /**
+     * Send due pending claims sequentially (claims inside their backoff
+     * window are skipped). Removes a claim on credit, on a definitive server
+     * rejection, or on an auth-impossible state (bad_signature /
+     * wallet_mismatch / malformed, or a bare 401 from the optional bearer
+     * gate) — all recorded under `failed`. Transient rejections
+     * (conditions_not_met, unknown_quest, signature_not_found) stay queued
+     * with an incremented attempt counter and exponential backoff, and move
+     * to `failed` only after MAX_ATTEMPTS tries or MAX_AGE_MS in the queue.
+     * Network, timeout, 5xx, nonce races that survive the client's built-in
+     * retry, and signing failures keep the claim queued with no attempt
+     * consumed (user can approve next flush).
      */
     flush: () => Promise<{ credited: number; failed: number; remaining: number }>;
     pendingCount: () => number;
@@ -54,7 +87,40 @@ export const useClaimQueue = create<ClaimQueueState>()(
                     (c) => c.wallet === claim.wallet && c.questId === claim.questId,
                 );
                 if (dup) return;
-                set({ pending: [...get().pending, claim] });
+                set({
+                    pending: [
+                        ...get().pending,
+                        {
+                            ...claim,
+                            attempts: claim.attempts ?? 0,
+                            firstSeenAt: claim.firstSeenAt ?? Date.now(),
+                        },
+                    ],
+                });
+            },
+
+            retryFailed: (wallet, questId) => {
+                const retrying = get().failed.filter(
+                    (f) =>
+                        f.wallet === wallet &&
+                        (questId === undefined || f.questId === questId),
+                );
+                if (retrying.length === 0) return 0;
+                set({
+                    failed: get().failed.filter((f) => !retrying.includes(f)),
+                });
+                for (const {
+                    reason: _r,
+                    failedAt: _f,
+                    attempts: _a,
+                    firstSeenAt: _fs,
+                    nextAttemptAt: _n,
+                    ...claim
+                } of retrying) {
+                    // Fresh retry budget: enqueue re-stamps firstSeenAt.
+                    get().enqueue({ ...claim, attempts: 0 });
+                }
+                return retrying.length;
             },
 
             flush: async () => {
@@ -65,9 +131,13 @@ export const useClaimQueue = create<ClaimQueueState>()(
                 let credited = 0;
                 let failedCount = 0;
                 try {
-                    // Drain a snapshot; anything still in `pending` stays queued.
-                    while (get().pending.length > 0) {
-                        const claim = get().pending[0];
+                    // Drain due claims; anything still in `pending` stays queued.
+                    for (;;) {
+                        const now = Date.now();
+                        const claim = get().pending.find(
+                            (c) => (c.nextAttemptAt ?? 0) <= now,
+                        );
+                        if (!claim) break;
                         const drop = () =>
                             set({ pending: get().pending.filter((c) => c !== claim) });
                         const fail = (reason: string) => {
@@ -83,7 +153,14 @@ export const useClaimQueue = create<ClaimQueueState>()(
 
                         let res;
                         try {
-                            const { programId: _p, kind: _k, ...wire } = claim;
+                            const {
+                                programId: _p,
+                                kind: _k,
+                                attempts: _a,
+                                firstSeenAt: _f,
+                                nextAttemptAt: _n,
+                                ...wire
+                            } = claim;
                             res = await verifyClaim(wire);
                         } catch (err) {
                             if (err instanceof QuestClientError) {
@@ -150,8 +227,31 @@ export const useClaimQueue = create<ClaimQueueState>()(
                         } else if (DEFINITIVE_REJECTIONS.has(res.reason)) {
                             fail(res.reason);
                         } else {
-                            // Transient server-side rejections (e.g. signature_not_found
-                            // before ingest catches up) stay queued for the next flush.
+                            // Transient server-side rejections: conditions_not_met
+                            // while ingest catches up, unknown_quest before the
+                            // server backfills, signature_not_found, etc. Retry
+                            // with backoff until the attempt/age budget runs out.
+                            const attempts = claim.attempts + 1;
+                            if (
+                                attempts >= MAX_ATTEMPTS ||
+                                now - claim.firstSeenAt > MAX_AGE_MS
+                            ) {
+                                fail(res.reason);
+                                continue;
+                            }
+                            const backoff = Math.min(
+                                2 ** attempts * 60_000,
+                                MAX_BACKOFF_MS,
+                            );
+                            set({
+                                pending: get().pending.map((c) =>
+                                    c === claim
+                                        ? { ...c, attempts, nextAttemptAt: now + backoff }
+                                        : c,
+                                ),
+                            });
+                            // Stop this flush; a later app-open/reconnect/tap
+                            // pass retries once the backoff window elapses.
                             break;
                         }
                     }
@@ -168,6 +268,23 @@ export const useClaimQueue = create<ClaimQueueState>()(
             storage: createJSONStorage(() => AsyncStorage),
             // Transient flush guard is module-level, not persisted.
             partialize: (state) => ({ pending: state.pending, failed: state.failed }),
+            // Entries persisted before the retry fields existed get defaults
+            // on rehydrate instead of crashing flush.
+            merge: (persisted, current) => {
+                const state = persisted as
+                    | Partial<Pick<ClaimQueueState, 'pending' | 'failed'>>
+                    | undefined;
+                const normalize = <T extends QueuedClaim>(claim: T): T => ({
+                    ...claim,
+                    attempts: claim.attempts ?? 0,
+                    firstSeenAt: claim.firstSeenAt ?? Date.now(),
+                });
+                return {
+                    ...current,
+                    pending: (state?.pending ?? []).map(normalize),
+                    failed: (state?.failed ?? []).map(normalize),
+                };
+            },
         },
     ),
 );

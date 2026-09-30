@@ -15,7 +15,7 @@ const REQUEST_TIMEOUT_MS = 10_000;
 /** Re-login when the stored token has less than this much life left. */
 const TOKEN_EXPIRY_SKEW_MS = 60_000;
 /** Dev default only — production builds must set an HTTPS questServerUrl extra. */
-const DEFAULT_BASE_URL = 'http://localhost:3000';
+const DEFAULT_BASE_URL = 'http://localhost:8080';
 
 export interface AuthChallenge {
     message: string;
