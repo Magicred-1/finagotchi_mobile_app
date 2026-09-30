@@ -29,11 +29,18 @@ type WalletState = {
     transactionsToday: number;
     transactionsResetAt: string | null;
     passkeyRegistrationPrompted: boolean;
+    /**
+     * Last embedded-wallet creation failure (Dynamic sign-in path), already
+     * mapped to human-readable copy. Null when creation succeeded or a Sol
+     * wallet exists.
+     */
+    embeddedWalletError: string | null;
 
     connect: (address: string, connectionType: WalletConnectionType) => boolean;
     setSession: (session: Partial<WalletSession>) => void;
     setDemoAccount: (demoAccount: boolean) => void;
     setPasskeyRegistrationPrompted: (prompted: boolean) => void;
+    setEmbeddedWalletError: (message: string | null) => void;
     recordTransaction: () => void;
     resetTransactionsIfNeeded: () => void;
     disconnect: () => void;
@@ -53,6 +60,7 @@ export const useWalletStore = create<WalletState>()(
             transactionsToday: 0,
             transactionsResetAt: null,
             passkeyRegistrationPrompted: false,
+            embeddedWalletError: null,
 
             connect: (address, connectionType) => {
                 try {
@@ -89,6 +97,10 @@ export const useWalletStore = create<WalletState>()(
                 set({ demoAccount });
             },
 
+            setEmbeddedWalletError: (message) => {
+                set({ embeddedWalletError: message });
+            },
+
             recordTransaction: () => {
                 get().resetTransactionsIfNeeded();
                 set((state) => ({
@@ -110,6 +122,7 @@ export const useWalletStore = create<WalletState>()(
                     demoAccount: false,
                     transactionsToday: 0,
                     transactionsResetAt: null,
+                    embeddedWalletError: null,
                 });
             },
         }),

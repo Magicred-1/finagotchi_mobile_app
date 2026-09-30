@@ -4,6 +4,12 @@ import type { Web3MobileWallet } from '@solana-mobile/mobile-wallet-adapter-prot
 import type { Wallet as DynamicWallet } from '@dynamic-labs/legacy-client';
 
 import { dynamicClient } from '../../wallet/dynamicClient';
+import {
+    WALLET_SIGNING_TIMEOUT_MS,
+    ensureDynamicSignerReady,
+    withTimeout,
+} from '../../wallet/dynamicTransport';
+import { toHumanReadableWalletError } from '../../wallet/walletErrors';
 import { normalizeSignatureBytes } from './signatureBytes';
 import type { AuthSigner } from './client';
 
@@ -71,18 +77,30 @@ function findSolanaWallet(wallets: DynamicWallet[]): DynamicWallet | undefined {
  */
 export function createDynamicAuthSigner(): AuthSigner {
     return async (message, walletAddress) => {
-        const primary = dynamicClient.wallets.primary;
-        const solWallet =
-            primary && primary.chain?.toUpperCase() === 'SOL'
-                ? primary
-                : findSolanaWallet(dynamicClient.wallets.userWallets);
-        if (!solWallet || solWallet.address !== walletAddress) {
-            throw new Error('No Dynamic Solana wallet matches the connected address');
-        }
+        try {
+            // The hosted signing page can fail to load, in which case
+            // signMessage never settles — gate on transport readiness and
+            // bound the signing wait so quest-engine auth fails fast.
+            await ensureDynamicSignerReady();
+            const primary = dynamicClient.wallets.primary;
+            const solWallet =
+                primary && primary.chain?.toUpperCase() === 'SOL'
+                    ? primary
+                    : findSolanaWallet(dynamicClient.wallets.userWallets);
+            if (!solWallet || solWallet.address !== walletAddress) {
+                throw new Error('No Dynamic Solana wallet matches the connected address');
+            }
 
-        const signer = dynamicClient.solana.getSigner({ wallet: solWallet });
-        const { signature } = await signer.signMessage(message);
-        return normalizeSignatureBytes(signature, 'Dynamic');
+            const signer = dynamicClient.solana.getSigner({ wallet: solWallet });
+            const { signature } = await withTimeout(
+                signer.signMessage(message),
+                WALLET_SIGNING_TIMEOUT_MS,
+                'The wallet never answered the signature request — please try again.'
+            );
+            return normalizeSignatureBytes(signature, 'Dynamic');
+        } catch (error) {
+            throw toHumanReadableWalletError(error);
+        }
     };
 }
 

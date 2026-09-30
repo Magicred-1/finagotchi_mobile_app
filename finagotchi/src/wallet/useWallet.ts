@@ -21,6 +21,16 @@ import bs58 from 'bs58';
 import { generateDemoMintAddress } from '../utils/generateDemoMintAddress';
 
 import { dynamicClient } from './dynamicClient';
+import {
+    DYNAMIC_TRANSPORT_READY_TIMEOUT_MS,
+    WALLET_SIGNING_TIMEOUT_MS,
+    ensureDynamicSignerReady,
+    withTimeout,
+} from './dynamicTransport';
+import {
+    toHumanReadableWalletError,
+    withHumanReadableErrors,
+} from './walletErrors';
 import { getWalletOptions, type WalletOption as DynamicWalletOption } from './dynamicWalletPicker';
 import {
     disconnectExternalWallet,
@@ -116,128 +126,10 @@ function normalizeMwaAddress(address: string): string {
     }
 }
 
-/**
- * Maps raw wallet/chain errors (MWA Java exceptions, Dynamic SDK errors, RPC
- * failures) to messages a human can act on. Unknown errors pass through
- * unchanged so genuinely new failures aren't hidden behind a generic string.
- */
-export function toHumanReadableWalletError(error: unknown): Error {
-    const raw =
-        error instanceof Error
-            ? error.message
-            : String(error ?? 'Unknown error');
-    const normalized = raw.toLowerCase();
-    const friendly = (message: string) => new Error(message);
-
-    // User dismissed the wallet sheet/prompt (MWA surfaces this on Android as
-    // "java.util.concurrent.CancellationException").
-    if (
-        /cancellationexception|cancelled|canceled|user rejected|rejected by (the )?user|user declined|user denied/.test(
-            normalized
-        )
-    ) {
-        return friendly('Cancelled in your wallet.');
-    }
-    if (
-        /authorization request failed|reauthoriz|not authorized|not signed in|session expired|chain not supported/.test(
-            normalized
-        )
-    ) {
-        return friendly(
-            'Wallet authorization failed — please reconnect your wallet.'
-        );
-    }
-    if (
-        /insufficient funds|insufficient lamports|insufficient balance|attempt to debit|exceeds balance/.test(
-            normalized
-        )
-    ) {
-        return friendly(
-            'Not enough SOL to cover this transaction and its network fee.'
-        );
-    }
-    if (/blockhash|block height exceeded|transaction expired|timed? out/.test(normalized)) {
-        return friendly(
-            'The transaction expired before it could confirm — please try again.'
-        );
-    }
-    if (
-        /network request failed|failed to fetch|fetch failed|econn|enotfound|etimedout|socket hang up/.test(
-            normalized
-        )
-    ) {
-        return friendly('Network error — check your connection and try again.');
-    }
-    if (/\botp\b|one.?time|verification code/.test(normalized)) {
-        return friendly("That code doesn't look right — try again.");
-    }
-    if (
-        /unexpected account address format|no wallet account returned|invalid wallet address/.test(
-            normalized
-        )
-    ) {
-        return friendly(
-            "Your wallet returned an account we couldn't read — try reconnecting."
-        );
-    }
-    if (
-        /no dynamic solana wallet available|no active wallet connection|wallet not connected/.test(
-            normalized
-        )
-    ) {
-        return friendly('Wallet not connected — reconnect and try again.');
-    }
-    if (/transaction simulation failed|custom program error|instructionerror/.test(normalized)) {
-        return friendly('Solana rejected the transaction — please try again.');
-    }
-    if (/missing signature|signature verification failed/.test(normalized)) {
-        return friendly(
-            "Your wallet's signature didn't make it onto the transaction — please try again."
-        );
-    }
-    // A JSON-RPC 403 from the wallet's RPC endpoint (e.g. a Helius key whose
-    // origin allowlist doesn't cover Dynamic's webview origin). Checked BEFORE
-    // the export branch: "access forbidden" is not a key-export failure.
-    if (/access forbidden|"code":\s*403|\b403\b/.test(normalized)) {
-        return friendly(
-            'The wallet RPC refused the request (403) — the RPC API key likely has an origin restriction. Remove it or allow the wallet origin, then try again.'
-        );
-    }
-    // Dynamic rejects key export with WalletApiError: Forbidden when the
-    // dashboard's "Private Key Exports" toggle is off. Only reachable from
-    // the export flow — a bare "forbidden" elsewhere is NOT this (see 403 above).
-    if (/export (private )?keys? (is )?(disabled|not allowed)|revealembeddedwalletkey|wallet:export/.test(normalized)) {
-        return friendly("Key export isn't available for this wallet right now.");
-    }
-    if (/invalid deposit transaction|accounts modified/.test(normalized)) {
-        return friendly(
-            "This wallet can't sign Jupiter DCA deposits — it alters the transaction before signing. Try Phantom, or connect with email/passkey instead."
-        );
-    }
-    if (/not properly formed|cannot be signed|can't be signed|rewrote the deposit/.test(normalized)) {
-        return friendly(
-            "This wallet can't sign Jupiter DCA deposits — it rewrites transactions before signing. Try Phantom, or connect with email/passkey instead."
-        );
-    }
-
-    return error instanceof Error ? error : new Error(raw);
-}
-
-/**
- * Re-throws any error from `fn` as a human-readable wallet error, so every
- * screen that surfaces `error.message` gets copy the user can act on.
- */
-function withHumanReadableErrors<A extends unknown[], R>(
-    fn: (...args: A) => Promise<R>
-): (...args: A) => Promise<R> {
-    return async (...args: A) => {
-        try {
-            return await fn(...args);
-        } catch (error) {
-            throw toHumanReadableWalletError(error);
-        }
-    };
-}
+// toHumanReadableWalletError / withHumanReadableErrors live in walletErrors.ts
+// (shared with quest-engine's authSigner); re-export so existing imports from
+// this module keep working.
+export { toHumanReadableWalletError } from './walletErrors';
 
 function isSolanaWallet(wallet: DynamicWallet): boolean {
     return wallet.chain?.toUpperCase() === 'SOL';
@@ -564,62 +456,6 @@ function diffWalletTx(
 }
 
 /**
- * Dynamic's signing transport lives in a hosted web page inside the native
- * overlay webview. When that page fails to load (offline at boot, ATS or a
- * bad hosted deploy), signing requests vanish into a dead channel and the
- * returned promise NEVER settles — from the user's side the app simply
- * ignores the tap. The client exposes the load lifecycle via `sdk.loadState`
- * plus a self-healing `sdk.retry()`, so gate every Dynamic signing request
- * on the transport being ready and fail fast with an actionable error.
- */
-const DYNAMIC_TRANSPORT_READY_TIMEOUT_MS = 30_000;
-/** A stuck prompt must not spin forever; 3 minutes covers slow biometrics. */
-const WALLET_SIGNING_TIMEOUT_MS = 3 * 60_000;
-
-function withTimeout<T>(
-    promise: Promise<T>,
-    ms: number,
-    message: string
-): Promise<T> {
-    return new Promise<T>((resolve, reject) => {
-        const timer = setTimeout(() => reject(new Error(message)), ms);
-        promise.then(
-            (value) => {
-                clearTimeout(timer);
-                resolve(value);
-            },
-            (error) => {
-                clearTimeout(timer);
-                reject(error);
-            }
-        );
-    });
-}
-
-async function ensureDynamicSignerReady(): Promise<void> {
-    const sdk = dynamicClient.sdk;
-    if (sdk.loadState.status === 'ready') return;
-
-    // Give an in-flight load a bounded window…
-    try {
-        await withTimeout(
-            sdk.waitForReady(),
-            DYNAMIC_TRANSPORT_READY_TIMEOUT_MS,
-            'wallet service load timed out'
-        );
-        return;
-    } catch {
-        // …then force one retry cycle (retry() resolves on the next
-        // ready/failed transition, or immediately with the current state).
-    }
-    const status = (await sdk.retry()).status;
-    if (status === 'ready') return;
-    throw new Error(
-        'The wallet service failed to start — check your connection, then force-close and reopen the app.'
-    );
-}
-
-/**
  * Signs an arbitrary UTF-8 message with the active wallet (Dynamic or MWA),
  * returning a bs58 ed25519 signature. Module-level (no hooks) so non-React
  * services such as the DCA fill watcher can use it for API auth challenges.
@@ -894,23 +730,40 @@ export const exportPrivateKeyWithWallet = withHumanReadableErrors(
         }
         // Ensure the embedded Solana wallet exists before opening the export UI.
         findDynamicSolanaWallet();
+        await ensureDynamicSignerReady();
 
         // A plain session token lacks the wallet:export scope and gets a
         // WalletApiError: Forbidden from the export API — elevate the session
         // with Dynamic's step-up prompt first when the SDK says it's required.
         if (
-            await dynamicClient.stepUpAuth.isStepUpRequired({
-                scope: WALLET_EXPORT_SCOPE,
-            })
+            await withTimeout(
+                dynamicClient.stepUpAuth.isStepUpRequired({
+                    scope: WALLET_EXPORT_SCOPE,
+                }),
+                DYNAMIC_TRANSPORT_READY_TIMEOUT_MS,
+                'The wallet never answered the export request — please try again.'
+            )
         ) {
-            await dynamicClient.stepUpAuth.promptStepUpAuth({
-                requestedScopes: [WALLET_EXPORT_SCOPE],
-            });
+            await withTimeout(
+                dynamicClient.stepUpAuth.promptStepUpAuth({
+                    requestedScopes: [WALLET_EXPORT_SCOPE],
+                }),
+                WALLET_SIGNING_TIMEOUT_MS,
+                'The wallet never answered the export request — please try again.'
+            );
         }
 
-        await dynamicClient.ui.wallets.revealEmbeddedWalletKey({
-            type: 'private-key',
-        });
+        await withTimeout(
+            // Typed `void` by the SDK but returns a promise at runtime;
+            // Promise.resolve adopts it so the timeout can bound the wait.
+            Promise.resolve(
+                dynamicClient.ui.wallets.revealEmbeddedWalletKey({
+                    type: 'private-key',
+                })
+            ),
+            WALLET_SIGNING_TIMEOUT_MS,
+            'The wallet never answered the export request — please try again.'
+        );
     } catch (error) {
         // Only this flow knows a "Forbidden" is about key export (dashboard's
         // "Private Key Exports" toggle off) — the global mapper can't tell it
@@ -1002,6 +855,7 @@ export function useWallet(): Wallet {
         const solWallet = findSolanaWallet(userWallets);
 
         if (solWallet?.address) {
+            useWalletStore.getState().setEmbeddedWalletError(null);
             if (!address) {
                 connectStore(solWallet.address, 'dynamic');
             }
@@ -1010,15 +864,33 @@ export function useWallet(): Wallet {
 
         if (walletCreationInFlight.current) return;
         walletCreationInFlight.current = true;
-        dynamicClient.wallets.embedded
-            .createWallet({ chains: ['Sol'] })
-            .catch(() => {
-                // Creation raced a wallet that already exists; userWallets
-                // will populate and the effect above picks it up.
-            })
-            .finally(() => {
+        void (async () => {
+            try {
+                await ensureDynamicSignerReady();
+                await withTimeout(
+                    dynamicClient.wallets.embedded.createWallet({
+                        chains: ['Sol'],
+                    }),
+                    DYNAMIC_TRANSPORT_READY_TIMEOUT_MS,
+                    'Embedded wallet creation did not complete — check your connection and try again.'
+                );
+                useWalletStore.getState().setEmbeddedWalletError(null);
+            } catch (error) {
+                if (findSolanaWallet(dynamicClient.wallets.userWallets)) {
+                    // Genuine "already exists" race — userWallets populated
+                    // during creation; the effect above picks it up.
+                    useWalletStore.getState().setEmbeddedWalletError(null);
+                } else {
+                    useWalletStore
+                        .getState()
+                        .setEmbeddedWalletError(
+                            toHumanReadableWalletError(error).message
+                        );
+                }
+            } finally {
                 walletCreationInFlight.current = false;
-            });
+            }
+        })();
     }, [authenticatedUser, userWallets, address, connectStore]);
 
     // Offer passkey registration once after the first Dynamic sign-in, so the
@@ -1072,12 +944,25 @@ export function useWallet(): Wallet {
 
     const connectWithPasskey = useCallback(
         withHumanReadableErrors(async () => {
+            await ensureDynamicSignerReady();
             try {
-                await dynamicClient.auth.passkey.signIn();
-            } catch {
-                throw new Error(
-                    'No passkey found on this device — sign in with email or Google first'
+                await withTimeout(
+                    dynamicClient.auth.passkey.signIn(),
+                    WALLET_SIGNING_TIMEOUT_MS,
+                    'The wallet service is not responding — check your connection and try again.'
                 );
+            } catch (error) {
+                // Only a missing passkey or a user cancellation gets the
+                // friendly message — everything else (transport down, network
+                // failure) must reach withHumanReadableErrors untranslated.
+                const message =
+                    error instanceof Error ? error.message : String(error);
+                if (/passkey|not found|cancel/i.test(message)) {
+                    throw new Error(
+                        'No passkey found on this device — sign in with email or Google first'
+                    );
+                }
+                throw error;
             }
         }),
         []
@@ -1085,14 +970,24 @@ export function useWallet(): Wallet {
 
     const connectWithGoogle = useCallback(
         withHumanReadableErrors(async () => {
-            await dynamicClient.auth.social.connect({ provider: 'google' });
+            await ensureDynamicSignerReady();
+            await withTimeout(
+                dynamicClient.auth.social.connect({ provider: 'google' }),
+                WALLET_SIGNING_TIMEOUT_MS,
+                'The wallet service is not responding — check your connection and try again.'
+            );
         }),
         []
     );
 
     const connectWithApple = useCallback(
         withHumanReadableErrors(async () => {
-            await dynamicClient.auth.social.connect({ provider: 'apple' });
+            await ensureDynamicSignerReady();
+            await withTimeout(
+                dynamicClient.auth.social.connect({ provider: 'apple' }),
+                WALLET_SIGNING_TIMEOUT_MS,
+                'The wallet service is not responding — check your connection and try again.'
+            );
         }),
         []
     );
@@ -1107,20 +1002,31 @@ export function useWallet(): Wallet {
 
     const requestEmailOtp = useCallback(
         withHumanReadableErrors(async (email: string) => {
-            await dynamicClient.auth.email.sendOTP(email);
+            await ensureDynamicSignerReady();
+            await withTimeout(
+                dynamicClient.auth.email.sendOTP(email),
+                DYNAMIC_TRANSPORT_READY_TIMEOUT_MS,
+                'The wallet service is not responding — check your connection and try again.'
+            );
         }),
         []
     );
 
     const verifyEmailOtp = useCallback(
         withHumanReadableErrors(async (otp: string) => {
-            await dynamicClient.auth.email.verifyOTP(otp);
+            await ensureDynamicSignerReady();
+            await withTimeout(
+                dynamicClient.auth.email.verifyOTP(otp),
+                DYNAMIC_TRANSPORT_READY_TIMEOUT_MS,
+                'The wallet service is not responding — check your connection and try again.'
+            );
         }),
         []
     );
 
     const signAndSendWithDynamic = useCallback(
         async (transaction: Transaction): Promise<string> => {
+            await ensureDynamicSignerReady();
             const primary = dynamicClient.wallets.primary;
             const solWallet =
                 primary && isSolanaWallet(primary)
@@ -1140,10 +1046,14 @@ export function useWallet(): Wallet {
             // The Solana extension bundles its own @solana/web3.js copy, so
             // the Transaction types are structurally identical but not
             // nominally assignable. Runtime interop is fine.
-            const signed = await signer.signTransaction(
-                transaction as unknown as Parameters<
-                    typeof signer.signTransaction
-                >[0]
+            const signed = await withTimeout(
+                signer.signTransaction(
+                    transaction as unknown as Parameters<
+                        typeof signer.signTransaction
+                    >[0]
+                ),
+                WALLET_SIGNING_TIMEOUT_MS,
+                'The wallet never answered the signature request — please try again.'
             );
             const connection = new Connection(SOLANA_RPC, 'confirmed');
             const signature = await connection.sendRawTransaction(
