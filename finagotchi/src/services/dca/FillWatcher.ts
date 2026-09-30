@@ -11,6 +11,7 @@
 import { useEffect } from 'react';
 
 import { usePlanStore } from './PlanStore';
+import { DcaReauthRequiredError } from './JupiterDcaClient';
 import type { PlanOrderSnapshot } from './JupiterDcaClient';
 import { tokenByMint, type DcaPlan, type DcaPlanStatus } from './types';
 
@@ -133,6 +134,10 @@ const defaultFetchAccount: FetchAccount = async (plan) => {
         walletPubkey,
         orderId: plan.dcaAccountPubkey,
         signMessage: signMessageWithWallet,
+        // Background polling must never pop a wallet signature sheet out of
+        // context; an expired Jupiter JWT surfaces as a poll miss (backoff)
+        // and the next wizard open re-authenticates normally.
+        allowSignaturePrompt: false,
     });
 };
 
@@ -185,8 +190,15 @@ export function createFillWatcher(deps: FillWatcherDeps = {}): FillWatcher {
         let order: PlanOrderSnapshot | null;
         try {
             order = await fetchAccount(plan);
-        } catch {
-            // Network/auth failure: never changes plan status, just backs off.
+        } catch (err) {
+            if (err instanceof DcaReauthRequiredError) {
+                // Sign-in expired while prompts are suppressed: back off
+                // without growing missedCount — the plan isn't overdue, just
+                // unreadable until the user re-authenticates in the wizard.
+                retryAtByPlan.set(plan.id, now() + MISS_BACKOFF_MS[0]);
+                return;
+            }
+            // Network failure: never changes plan status, just backs off.
             registerMiss(plan);
             return;
         }

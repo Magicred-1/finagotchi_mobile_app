@@ -1,5 +1,6 @@
 /**
- * Non-custodial Jupiter DCA client — Trigger API v2 (REST).
+ * Non-custodial Jupiter DCA client — Trigger API v2 (REST), reached through
+ * the API server's /jup proxy (the Jupiter API key lives server-side).
  *
  * This module NEVER holds keys. Auth is a wallet-signed challenge (24h JWT);
  * deposits and withdrawals are signed by the injected wallet callbacks. The
@@ -11,12 +12,69 @@
 
 import { SUPPORTED_TOKENS, USDC_DECIMALS, USDC_MINT, tokenByMint } from './types';
 
-const BASE_URL = 'https://api.jup.ag/trigger/v2';
+/**
+ * Header carrying the Jupiter Trigger JWT through the server proxy. Our
+ * session JWT rides `Authorization` (same as every quest-engine call); the
+ * proxy strips both, injects the Jupiter API key server-side, and forwards
+ * this JWT to api.jup.ag.
+ */
+export const JUPITER_AUTH_HEADER = 'X-Jupiter-Authorization';
+
+/**
+ * Lazy: the quest-engine client pulls in expo-constants and the onboarding
+ * store, so it must not load at bundle evaluation (same services→features
+ * lazy-import precedent as FillWatcher).
+ */
+async function questEngineClient() {
+    return import('../../features/quest-engine/client');
+}
+
+/**
+ * Every Trigger API call goes through the API server's /jup proxy, which
+ * injects the Jupiter API key server-side — no key is bundled in the app.
+ */
+async function jupBaseUrl(): Promise<string> {
+    const { getQuestServerBaseUrl } = await questEngineClient();
+    return `${getQuestServerBaseUrl()}/jup`;
+}
+
+/**
+ * The proxy's requireWalletAccess middleware demands a wallet=<address> query
+ * param on EVERY /jup/* request and checks it against the session JWT's sub
+ * (mismatch → 401). The proxy strips it before forwarding, so it never
+ * reaches Jupiter; any query params already on the path are preserved.
+ */
+function withWalletParam(url: string, walletPubkey: string): string {
+    const separator = url.includes('?') ? '&' : '?';
+    return `${url}${separator}wallet=${encodeURIComponent(walletPubkey)}`;
+}
+
+/**
+ * Session JWT for the API server (the same one the quest engine gets from
+ * /auth/login). There is no bundled-key fallback: without server sign-in
+ * consent there is no session, and the proxy rejects the call.
+ */
+async function serverSessionToken(walletPubkey: string): Promise<string> {
+    const { ensureAuthToken, QuestClientError } = await questEngineClient();
+    try {
+        return await ensureAuthToken(walletPubkey);
+    } catch (err) {
+        if (err instanceof QuestClientError && err.code === 'signer') {
+            throw new Error(
+                'dca: server sign-in required — complete the server sign-in step ' +
+                    '(onboarding) to use DCA; Jupiter calls are proxied through our server'
+            );
+        }
+        throw err;
+    }
+}
 
 const JWT_TTL_MS = 24 * 60 * 60 * 1000;
 /** Refresh the 24h JWT an hour early so it never expires mid-request. */
 const JWT_TTL_MARGIN_MS = 60 * 60 * 1000;
 const JWT_STORAGE_PREFIX = 'finagotchi-dca-jwt:';
+/** SecureStore keys allow only alphanumerics plus ".-_", hence a new prefix. */
+const JWT_SECURE_STORE_PREFIX = 'finagotchi_dca_jwt_';
 
 /** Jupiter's per-round minimum, in USD (input is USDC, so USD == USDC). */
 export const MIN_ROUND_USD = 10;
@@ -117,17 +175,6 @@ async function fetchWithTimeout(
     }
 }
 
-function apiKey(): string {
-    const key = process.env.EXPO_PUBLIC_JUPITER_API_KEY;
-    if (!key) {
-        throw new Error(
-            'dca: Jupiter API key missing — set EXPO_PUBLIC_JUPITER_API_KEY in your .env ' +
-                '(the Jupiter Trigger API requires an x-api-key header on every request)'
-        );
-    }
-    return key;
-}
-
 interface CachedJwt {
     token: string;
     /** ms epoch at which the token should be considered expired. */
@@ -137,6 +184,24 @@ interface CachedJwt {
 const jwtCache = new Map<string, CachedJwt>();
 
 async function readStoredJwt(walletPubkey: string): Promise<CachedJwt | null> {
+    // Lazy imports: a dev client built without a native module must degrade
+    // to "no cached token" instead of crashing at bundle evaluation.
+    try {
+        const SecureStore = await import('expo-secure-store');
+        const raw = await SecureStore.getItemAsync(
+            JWT_SECURE_STORE_PREFIX + walletPubkey
+        );
+        if (raw) {
+            const parsed = JSON.parse(raw) as CachedJwt;
+            if (typeof parsed.token === 'string' && typeof parsed.expiresAt === 'number') {
+                return parsed;
+            }
+            return null;
+        }
+    } catch {
+        // SecureStore unavailable or corrupt entry — try the legacy store.
+    }
+    // One-time migration from the legacy AsyncStorage entry.
     try {
         const { default: AsyncStorage } = await import(
             '@react-native-async-storage/async-storage'
@@ -147,6 +212,10 @@ async function readStoredJwt(walletPubkey: string): Promise<CachedJwt | null> {
         if (typeof parsed.token !== 'string' || typeof parsed.expiresAt !== 'number') {
             return null;
         }
+        void storeJwt(walletPubkey, parsed);
+        void AsyncStorage.removeItem(JWT_STORAGE_PREFIX + walletPubkey).catch(
+            () => {}
+        );
         return parsed;
     } catch {
         return null;
@@ -155,10 +224,11 @@ async function readStoredJwt(walletPubkey: string): Promise<CachedJwt | null> {
 
 async function storeJwt(walletPubkey: string, jwt: CachedJwt): Promise<void> {
     try {
-        const { default: AsyncStorage } = await import(
-            '@react-native-async-storage/async-storage'
+        const SecureStore = await import('expo-secure-store');
+        await SecureStore.setItemAsync(
+            JWT_SECURE_STORE_PREFIX + walletPubkey,
+            JSON.stringify(jwt)
         );
-        await AsyncStorage.setItem(JWT_STORAGE_PREFIX + walletPubkey, JSON.stringify(jwt));
     } catch {
         // Persistence is best-effort; the in-memory cache still applies.
     }
@@ -181,12 +251,13 @@ function errorMessage(status: number, body: unknown): string {
     return `HTTP ${status}`;
 }
 
-async function rawPost(path: string, body: unknown): Promise<unknown> {
-    const res = await fetchWithTimeout(BASE_URL + path, {
+async function rawPost(path: string, body: unknown, walletPubkey: string): Promise<unknown> {
+    const sessionToken = await serverSessionToken(walletPubkey);
+    const res = await fetchWithTimeout(withWalletParam((await jupBaseUrl()) + path, walletPubkey), {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
-            'x-api-key': apiKey(),
+            Authorization: `Bearer ${sessionToken}`,
         },
         body: JSON.stringify(body),
     });
@@ -197,55 +268,109 @@ async function rawPost(path: string, body: unknown): Promise<unknown> {
     return data;
 }
 
+/** Thrown when a JWT is needed but the caller may not prompt for a signature. */
+export class DcaReauthRequiredError extends Error {
+    constructor() {
+        super('dca: Jupiter sign-in expired — open the DCA screen to re-authenticate');
+        this.name = 'DcaReauthRequiredError';
+    }
+}
+
 /**
- * Get a 24h JWT for the wallet, cached in memory and AsyncStorage
- * (`finagotchi-dca-jwt:<wallet>`). The wallet signs a server challenge via
- * the injected signMessage — no keys here. forceRefresh skips the cache
- * (used for the single 401 retry).
+ * Concurrent JWT acquisitions per wallet. Without this, an expired token plus
+ * two parallel authed calls (background fill poll + wizard open) prompts the
+ * user to sign the same challenge twice.
+ */
+const jwtInFlight = new Map<string, Promise<string>>();
+
+/**
+ * Get a 24h JWT for the wallet, cached in memory and expo-secure-store
+ * (legacy AsyncStorage entries are migrated on read). The wallet signs a
+ * server challenge via the injected signMessage — no keys here. forceRefresh
+ * skips the cache (used for the single 401 retry). allowSignaturePrompt=false
+ * (background polling) never asks the wallet to sign: an expired token throws
+ * DcaReauthRequiredError instead.
  */
 export async function getAuthToken({
     walletPubkey,
     signMessage,
     forceRefresh = false,
+    allowSignaturePrompt = true,
 }: {
     walletPubkey: string;
     signMessage: SignMessageFn;
     forceRefresh?: boolean;
+    allowSignaturePrompt?: boolean;
 }): Promise<string> {
+    // Fast path: warm in-memory cache, no promise machinery.
     if (!forceRefresh) {
-        const cached = jwtCache.get(walletPubkey) ?? (await readStoredJwt(walletPubkey));
+        const cached = jwtCache.get(walletPubkey);
         if (cached && cached.expiresAt > Date.now()) {
-            jwtCache.set(walletPubkey, cached);
             return cached.token;
         }
     }
 
-    const challenge = (await rawPost('/auth/challenge', {
-        walletPubkey,
-        type: 'message',
-    })) as { challenge?: string };
-    if (!challenge.challenge) {
-        throw new Error('dca: auth challenge returned no challenge');
+    // A fresh token being minted right now is newer than anything forceRefresh
+    // would replace — join it instead of prompting again. The whole
+    // acquisition (persistent-cache read included) is deduped: two callers
+    // arriving together must share one challenge round-trip and one prompt.
+    const pending = jwtInFlight.get(walletPubkey);
+    if (pending) return pending;
+
+    const task = (async () => {
+        if (!forceRefresh) {
+            const stored = await readStoredJwt(walletPubkey);
+            if (stored && stored.expiresAt > Date.now()) {
+                jwtCache.set(walletPubkey, stored);
+                return stored.token;
+            }
+        }
+
+        if (!allowSignaturePrompt) {
+            throw new DcaReauthRequiredError();
+        }
+
+        const challenge = (await rawPost(
+            '/auth/challenge',
+            {
+                walletPubkey,
+                type: 'message',
+            },
+            walletPubkey
+        )) as { challenge?: string };
+        if (!challenge.challenge) {
+            throw new Error('dca: auth challenge returned no challenge');
+        }
+
+        const signature = await signMessage(challenge.challenge);
+
+        const verified = (await rawPost(
+            '/auth/verify',
+            {
+                type: 'message',
+                walletPubkey,
+                signature,
+            },
+            walletPubkey
+        )) as { token?: string };
+        if (!verified.token) {
+            throw new Error('dca: auth verify returned no token');
+        }
+
+        const jwt: CachedJwt = {
+            token: verified.token,
+            expiresAt: Date.now() + JWT_TTL_MS - JWT_TTL_MARGIN_MS,
+        };
+        jwtCache.set(walletPubkey, jwt);
+        await storeJwt(walletPubkey, jwt);
+        return jwt.token;
+    })();
+    jwtInFlight.set(walletPubkey, task);
+    try {
+        return await task;
+    } finally {
+        jwtInFlight.delete(walletPubkey);
     }
-
-    const signature = await signMessage(challenge.challenge);
-
-    const verified = (await rawPost('/auth/verify', {
-        type: 'message',
-        walletPubkey,
-        signature,
-    })) as { token?: string };
-    if (!verified.token) {
-        throw new Error('dca: auth verify returned no token');
-    }
-
-    const jwt: CachedJwt = {
-        token: verified.token,
-        expiresAt: Date.now() + JWT_TTL_MS - JWT_TTL_MARGIN_MS,
-    };
-    jwtCache.set(walletPubkey, jwt);
-    await storeJwt(walletPubkey, jwt);
-    return jwt.token;
 }
 
 interface AuthedResponse {
@@ -253,32 +378,41 @@ interface AuthedResponse {
     data: unknown;
 }
 
-/** Authenticated request; on 401 the JWT is refreshed once and retried. */
+/** Authenticated request; on 401 both JWTs are refreshed once and retried. */
 async function authedRequest({
     method,
     path,
     body,
     walletPubkey,
     signMessage,
+    allowSignaturePrompt = true,
 }: {
     method: 'GET' | 'POST';
     path: string;
     body?: unknown;
     walletPubkey: string;
     signMessage: SignMessageFn;
+    allowSignaturePrompt?: boolean;
 }): Promise<AuthedResponse> {
-    let token = await getAuthToken({ walletPubkey, signMessage });
+    let token = await getAuthToken({ walletPubkey, signMessage, allowSignaturePrompt });
+    let sessionToken = await serverSessionToken(walletPubkey);
+    const baseUrl = await jupBaseUrl();
     for (let attempt = 0; attempt < 2; attempt++) {
-        const res = await fetchWithTimeout(BASE_URL + path, {
+        const res = await fetchWithTimeout(withWalletParam(baseUrl + path, walletPubkey), {
             method,
             headers: {
                 'Content-Type': 'application/json',
-                'x-api-key': apiKey(),
-                Authorization: `Bearer ${token}`,
+                Authorization: `Bearer ${sessionToken}`,
+                [JUPITER_AUTH_HEADER]: `Bearer ${token}`,
             },
             body: body === undefined ? undefined : JSON.stringify(body),
         });
         if (res.status === 401 && attempt === 0) {
+            // The 401 could be either JWT: drop the cached server session so
+            // ensureAuthToken re-logs-in, and force a fresh Jupiter JWT.
+            const { clearAuthSession } = await questEngineClient();
+            await clearAuthSession();
+            sessionToken = await serverSessionToken(walletPubkey);
             token = await getAuthToken({ walletPubkey, signMessage, forceRefresh: true });
             continue;
         }
@@ -647,16 +781,21 @@ export async function fetchPlanOrder({
     walletPubkey,
     orderId,
     signMessage,
+    allowSignaturePrompt = true,
 }: {
     walletPubkey: string;
     orderId: string;
     signMessage: SignMessageFn;
+    /** False for background polling: an expired JWT throws
+     * DcaReauthRequiredError instead of prompting the wallet out of context. */
+    allowSignaturePrompt?: boolean;
 }): Promise<PlanOrderSnapshot | null> {
     const res = await authedRequest({
         method: 'GET',
         path: `/orders/history/dca/${orderId}`,
         walletPubkey,
         signMessage,
+        allowSignaturePrompt,
     });
     if (res.status === 404) return null;
     if (res.status !== 200) {
