@@ -11,6 +11,48 @@ export function toHumanReadableWalletError(error: unknown): Error {
     const normalized = raw.toLowerCase();
     const friendly = (message: string) => new Error(message);
 
+    // Typed errors from the new Dynamic SDK (@dynamic-labs-sdk/client and
+    // /wallet-connect). instanceof is unreliable across the SDK's dual
+    // ESM/CJS boundary (two copies of the class can exist), so match on the
+    // error's `name`/`code` — verified against the installed 1.33.4 dist.
+    const errorName = (
+        typeof (error as { name?: unknown })?.name === 'string'
+            ? ((error as { name: string }).name)
+            : ''
+    ).toLowerCase();
+    const errorCode = (
+        typeof (error as { code?: unknown })?.code === 'string'
+            ? ((error as { code: string }).code)
+            : ''
+    ).toLowerCase();
+
+    // UserRejectedError: user declined the connect/sign prompt in their wallet.
+    if (errorName === 'userrejectederror' || errorCode === 'user_rejected') {
+        return friendly('Cancelled in your wallet.');
+    }
+    // SessionClosedUnexpectedlyError: the WalletConnect session died mid-flow.
+    if (
+        errorName === 'sessionclosedunexpectedlyerror' ||
+        errorCode === 'session_closed_unexpectedly_error'
+    ) {
+        return friendly(
+            'The wallet session expired — reconnect your wallet.'
+        );
+    }
+    // ValueMustBeDefinedError (name is 'ValueMustBeDefined' — no 'Error'
+    // suffix): getSignClient throws this when the WalletConnect project ID or
+    // app display name is unset in the Dynamic dashboard. App-side
+    // misconfiguration, not something the user did.
+    if (
+        errorName === 'valuemustbedefined' ||
+        errorName === 'valuemustbedefinederror' ||
+        errorCode === 'value_must_be_defined_error'
+    ) {
+        return friendly(
+            "The wallet connection isn't fully configured yet — please try again later."
+        );
+    }
+
     // User dismissed the wallet sheet/prompt (MWA surfaces this on Android as
     // "java.util.concurrent.CancellationException").
     if (

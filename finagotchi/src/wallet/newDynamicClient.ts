@@ -30,6 +30,18 @@ const newDynamicClient = createDynamicClient({
     },
 });
 
+// Extension registration stays at module level per Dynamic's docs
+// (javascript/reference/solana/adding-solana-extensions).
+// - addSolanaExtension() bundles the wallet-standard + WaaS extensions. The
+//   wallet-standard part calls @wallet-standard/app getWallets(), which is
+//   browser-oriented — harmless on RN now that src/polyfills.ts installs
+//   window/Event shims (verified: no injected wallets exist on RN, so
+//   registration is a silent no-op).
+// - initializeClient() is intentionally NOT called: createDynamicClient
+//   defaults `autoInitialize: true` and only skips auto-init when SSR is
+//   detected (`typeof window === 'undefined'` — false on RN). Callers await
+//   waitForClientInitialized() instead; calling initializeClient() here would
+//   throw ClientAlreadyInitializedError.
 addSolanaExtension();
 addPhantomRedirectSolanaExtension({
     onCloseTab: () => {},
