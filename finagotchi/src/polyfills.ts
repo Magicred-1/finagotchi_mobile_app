@@ -8,6 +8,12 @@ import '@react-native-anywhere/polyfill-base64';
 import 'react-native-get-random-values';
 import 'react-native-url-polyfill/auto';
 import { Buffer } from 'buffer';
+import { installWebGlobals } from './webGlobals';
+
+// window/Event/EventTarget shims for browser-oriented wallet SDK code
+// (wallet-standard registration in @dynamic-labs-sdk/solana). Must run before
+// any @dynamic-labs-sdk module is evaluated; see webGlobals.ts for details.
+installWebGlobals();
 
 if (typeof (globalThis as any).Buffer === 'undefined') {
     (globalThis as any).Buffer = Buffer;
@@ -21,51 +27,30 @@ if (typeof globalThis.crypto !== 'object' || globalThis.crypto === null) {
     (globalThis as any).crypto = {} as Crypto;
 }
 
-function installCryptoGetRandomValues() {
-    const original = (globalThis as any).crypto.getRandomValues;
-    if (typeof original === 'function') {
-        return;
-    }
-
-    (globalThis as any).crypto.getRandomValues = (
-        array: Uint8Array | ArrayBufferView
-    ): Uint8Array | ArrayBufferView => {
-        // Prefer the native implementation if it has become available.
-        if (typeof original === 'function') {
-            return original.call((globalThis as any).crypto, array);
-        }
-
-        const view =
-            array instanceof ArrayBuffer
-                ? new Uint8Array(array)
-                : (array as Uint8Array);
-        for (let i = 0; i < view.length; i++) {
-            view[i] = Math.floor(Math.random() * 256);
-        }
-        return array;
+if (typeof (globalThis as any).crypto.getRandomValues !== 'function') {
+    // react-native-get-random-values installs crypto.getRandomValues on import
+    // (it prefers ExpoCrypto when linked, else its own RNGetRandomValues
+    // native module). Reaching this branch means neither path installed it —
+    // a broken build. Fail LOUDLY at call time: a Math.random()-based fallback
+    // would silently weaken wallet keys and signatures, which is worse than a
+    // crash.
+    (globalThis as any).crypto.getRandomValues = (): never => {
+        throw new Error(
+            '[finagotchi] crypto.getRandomValues is unavailable: ' +
+                'react-native-get-random-values did not install it (its ' +
+                'RNGetRandomValues native module is missing from this build). ' +
+                'Rebuild the dev client / EAS build so secure randomness is ' +
+                'linked. No insecure fallback is provided on purpose.'
+        );
     };
 }
 
-installCryptoGetRandomValues();
-
 // Also expose a minimal randomBytes for libraries that check Node's crypto.
+// Backed by crypto.getRandomValues — never Math.random (see above).
 if (typeof (globalThis as any).crypto.randomBytes !== 'function') {
     (globalThis as any).crypto.randomBytes = (size: number) => {
         const bytes = new Uint8Array(size);
-        for (let i = 0; i < size; i++) {
-            bytes[i] = Math.floor(Math.random() * 256);
-        }
+        (globalThis as any).crypto.getRandomValues(bytes);
         return Buffer.from(bytes);
     };
-}
-
-// Polyfill for Event constructor used by @dynamic-labs-sdk/client in React Native.
-if (typeof (globalThis as any).Event !== 'function') {
-    class EventPolyfill {
-        type: string;
-        constructor(type: string) {
-            this.type = type;
-        }
-    }
-    (globalThis as any).Event = EventPolyfill as any;
 }
