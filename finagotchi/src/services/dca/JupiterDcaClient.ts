@@ -455,8 +455,14 @@ function isoToUnixSeconds(value: unknown): number | null {
  */
 const MAINNET_RPC =
     process.env.EXPO_PUBLIC_JUPITER_RPC ?? 'https://api.mainnet-beta.solana.com';
-/** Rough fee headroom for the deposit transaction, in lamports. */
-const MIN_FEE_LAMPORTS = 2_000_000;
+/**
+ * Worst-case deposit cost, in lamports: two rent-exempt token accounts
+ * (~0.00204 SOL each) plus base + priority fees, with margin. Measured
+ * against a real crafted deposit (7 instructions incl. 2 ATA creates) —
+ * the previous ~0.002 floor passed wallets whose deposits then failed
+ * on-chain and read as "Transaction expired without landing".
+ */
+const MIN_FEE_LAMPORTS = 6_000_000;
 
 async function rpcCall<T>(method: string, params: unknown[]): Promise<T | null> {
     try {
@@ -520,7 +526,9 @@ export async function preflightFunding(
     const lamports = balance?.value ?? null;
     if (lamports !== null && lamports < MIN_FEE_LAMPORTS) {
         throw new Error(
-            'Your wallet needs a little mainnet SOL (~0.002) to cover the deposit network fee.'
+            `Your wallet needs a little more mainnet SOL (~0.006) — Solana charges ` +
+                `one-time rent for the token accounts the deposit creates, plus network fees. ` +
+                `You have ~${(lamports / 1e9).toFixed(4)} SOL.`
         );
     }
 }
@@ -649,8 +657,7 @@ export async function createPlanOrder({
      * sheet) sits between craft and submission, so an expiry is retried once
      * with a fresh craft instead of failing the whole order.
      */
-    const attemptCreate = async (): Promise<CreatedPlanOrder> => {
-        onStep?.('craft');
+    const attemptCreate = async (): Promise<CreatedPlanOrder> => {        onStep?.('craft');
         const craft = await authedRequest({
             method: 'POST',
             path: '/deposit/craft',
@@ -698,6 +705,36 @@ export async function createPlanOrder({
         return { orderId: orderData.id, txSignature: orderData.txSignature ?? '' };
     };
 
+    const startedAt = Date.now();
+
+    /**
+     * Jupiter reports ANY landing failure as "Transaction expired without
+     * landing" — including a tx that actually landed late. Before telling
+     * the user it failed, check the order history for a matching order
+     * created since this flow started.
+     */
+    const findLandedOrder = async (): Promise<CreatedPlanOrder | null> => {
+        const res = await authedRequest({
+            method: 'GET',
+            path: `/orders/history/dca?userPubkey=${encodeURIComponent(walletPubkey)}`,
+            ...auth,
+        });
+        if (res.status !== 200) return null;
+        const orders = (res.data as { orders?: Record<string, unknown>[] }).orders ?? [];
+        const match = orders.find((order) => {
+            if (order.outputMint !== input.outputMint) return false;
+            if (order.state === 'deposit_failed') return false;
+            const created = Date.parse(String(order.createdAt ?? ''));
+            return !Number.isNaN(created) && created >= startedAt - 30_000;
+        });
+        if (!match?.id) return null;
+        const events = Array.isArray(match.events) ? match.events : [];
+        const deposit = events.find(
+            (e: Record<string, unknown>) => e?.type === 'deposit' && e?.txSignature
+        ) as { txSignature?: string } | undefined;
+        return { orderId: String(match.id), txSignature: deposit?.txSignature ?? '' };
+    };
+
     for (let attempt = 0; ; attempt++) {
         try {
             return await attemptCreate();
@@ -706,8 +743,12 @@ export async function createPlanOrder({
             const expired = /expired|without landing|blockhash|block height/i.test(message);
             if (!expired || attempt >= 1) {
                 if (expired) {
+                    const landed = await findLandedOrder().catch(() => null);
+                    if (landed) return landed;
                     throw new Error(
-                        'The deposit expired before it could land — approve promptly in your wallet and try again.'
+                        "The deposit couldn't be confirmed on-chain in time — most often " +
+                            'too little SOL for account rent and fees, or network congestion. ' +
+                            'Nothing left your wallet; top up a little SOL and try again.'
                     );
                 }
                 throw err;
