@@ -7,11 +7,24 @@ import {
     StyleSheet,
     Text,
     View,
+    type ImageSourcePropType,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import Animated, { useSharedValue, withSpring } from 'react-native-reanimated';
 
 import { colors, radius, spacing, typography } from '../theme/tokens';
+
+/**
+ * Bundled logos for the wallets the picker offers (the Dynamic catalogue only
+ * provides sprite sheets, so remote iconUrl is unreliable). Official App
+ * Store icons; keyed by the catalogue's wallet key.
+ */
+const LOCAL_WALLET_ICONS: Record<string, ImageSourcePropType> = {
+    phantom: require('../../assets/wallets/phantom.jpg'),
+    metamask: require('../../assets/wallets/metamask.jpg'),
+    backpack: require('../../assets/wallets/backpack.jpg'),
+    solflare: require('../../assets/wallets/solflare.jpg'),
+};
 
 export type WalletOption = {
     key: string;
@@ -27,8 +40,13 @@ type Props = {
     loading?: boolean;
 };
 
-function WalletIcon({ iconUrl, name }: { iconUrl?: string; name: string }) {
+function WalletIcon({ walletKey, iconUrl, name }: { walletKey: string; iconUrl?: string; name: string }) {
     const [failed, setFailed] = useState(false);
+
+    const local = LOCAL_WALLET_ICONS[walletKey];
+    if (local) {
+        return <Image source={local} style={styles.icon} resizeMode="cover" />;
+    }
 
     if (iconUrl && !failed) {
         return (
@@ -91,7 +109,7 @@ export function WalletPickerSheet({
                                 disabled={loading}
                             >
                                 <View style={styles.iconWrapper}>
-                                    <WalletIcon iconUrl={item.iconUrl} name={item.name} />
+                                    <WalletIcon walletKey={item.key} iconUrl={item.iconUrl} name={item.name} />
                                 </View>
                                 <Text style={styles.walletName} numberOfLines={1}>
                                     {item.name}
