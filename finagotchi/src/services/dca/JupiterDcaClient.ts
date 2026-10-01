@@ -149,8 +149,11 @@ function getFetch(): FetchImpl {
  * Hard cap on every outbound call. Without it a black-holed endpoint
  * (connection accepted, response never sent) hangs the create flow before
  * any wallet prompt — looking exactly like a dead "Confirm" button.
+ * Must EXCEED the server proxy's upstream timeout (60s default): Jupiter's
+ * order submit waits for the deposit to land, and the client should receive
+ * the server's real error rather than aborting first.
  */
-const FETCH_TIMEOUT_MS = 20_000;
+const FETCH_TIMEOUT_MS = 75_000;
 
 /**
  * fetch() with an abort timeout. Timeout aborts surface as
@@ -408,12 +411,19 @@ async function authedRequest({
             body: body === undefined ? undefined : JSON.stringify(body),
         });
         if (res.status === 401 && attempt === 0) {
-            // The 401 could be either JWT: drop the cached server session so
-            // ensureAuthToken re-logs-in, and force a fresh Jupiter JWT.
-            const { clearAuthSession } = await questEngineClient();
-            await clearAuthSession();
-            sessionToken = await serverSessionToken(walletPubkey);
-            token = await getAuthToken({ walletPubkey, signMessage, forceRefresh: true });
+            // Two 401 sources look alike but cost differently to fix: our
+            // proxy gate returns {error:'unauthorized', reason} (lowercase),
+            // Jupiter returns {error:'Unauthorized'} / {code:401}. Refresh
+            // ONLY the failed token — re-signing both messages on every 401
+            // buried the user in wallet prompts.
+            const body = (await readBody(res)) as { error?: unknown } | null;
+            if (body?.error === 'unauthorized') {
+                const { clearAuthSession } = await questEngineClient();
+                await clearAuthSession();
+                sessionToken = await serverSessionToken(walletPubkey);
+            } else {
+                token = await getAuthToken({ walletPubkey, signMessage, forceRefresh: true });
+            }
             continue;
         }
         return { status: res.status, data: await readBody(res) };
