@@ -27,9 +27,9 @@
 export type ShimEventListener = (event: unknown) => void;
 
 export class EventShim {
-    // `declare` emits no field initializer; the constructor defines the
-    // property directly on the instance (see below) instead of assigning it.
-    declare type: string;
+    // `type` is declared via interface merging below (a `declare` class
+    // field is rejected by Metro's Babel); the constructor defines the
+    // property directly on the instance instead of assigning it.
     bubbles: boolean;
     cancelable: boolean;
     composed: boolean;
@@ -79,8 +79,6 @@ export class EventShim {
 }
 
 export class CustomEventShim extends EventShim {
-    declare detail: unknown;
-
     constructor(
         type: string,
         options: { bubbles?: boolean; cancelable?: boolean; composed?: boolean; detail?: unknown } = {}
@@ -93,6 +91,15 @@ export class CustomEventShim extends EventShim {
             configurable: true,
         });
     }
+}
+
+// Property types for fields the constructors define via Object.defineProperty
+// (interface merging emits nothing, so Metro's Babel strips it cleanly).
+export interface EventShim {
+    type: string;
+}
+export interface CustomEventShim {
+    detail: unknown;
 }
 
 export class EventTargetShim {
