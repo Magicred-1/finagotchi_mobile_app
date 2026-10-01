@@ -3,7 +3,7 @@
     "name": "finagotchi",
     "slug": "finagotchi",
     "scheme": "finagotchi",
-    "version": "1.2.5",
+    "version": "1.2.6",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "splash": {
@@ -39,6 +39,7 @@
       "intentFilters": [
         {
           "action": "VIEW",
+          "autoVerify": true,
           "category": [
             "BROWSABLE",
             "DEFAULT"
