@@ -1,7 +1,7 @@
 {
   "name": "finagotchi",
   "version": "0.1.0",
-  "main": "expo-router/entry",
+  "main": "index.ts",
   "private": true,
   "license": "GPL-3.0-only",
   "packageManager": "pnpm@9.0.0",
