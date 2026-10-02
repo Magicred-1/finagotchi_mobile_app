@@ -111,6 +111,11 @@ export function toHumanReadableWalletError(error: unknown): Error {
     ) {
         return friendly('Wallet not connected — reconnect and try again.');
     }
+    if (/wallet_creation_failed|multiple wallets per chain/.test(normalized)) {
+        return friendly(
+            'Your account already has a wallet — sign out and back in to reload it.'
+        );
+    }
     if (/transaction simulation failed|custom program error|instructionerror/.test(normalized)) {
         return friendly('Solana rejected the transaction — please try again.');
     }
