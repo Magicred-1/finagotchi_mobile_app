@@ -16,6 +16,7 @@ import type { Web3MobileWallet } from '@solana-mobile/mobile-wallet-adapter-prot
 import type { Base64EncodedAddress } from '@solana-mobile/mobile-wallet-adapter-protocol';
 import type { Wallet as DynamicWallet } from '@dynamic-labs/legacy-client';
 import { useReactiveClient } from '@dynamic-labs/legacy-react-hooks';
+import { useLogout } from '@dynamic-labs-sdk/react-hooks';
 import nacl from 'tweetnacl';
 import bs58 from 'bs58';
 import { generateDemoMintAddress } from '../utils/generateDemoMintAddress';
@@ -1248,6 +1249,10 @@ export function useWallet(): Wallet {
         [buildPaymentTransaction, signAndSendTransaction]
     );
 
+    // Dynamic's logout hook (new SDK): tears down the WalletConnect session
+    // and any new-SDK auth state through the official mutation.
+    const { mutateAsync: logoutDynamicSdk } = useLogout();
+
     const disconnect = useCallback(async () => {
         if (connectionType === 'mwa' && authToken) {
             try {
@@ -1261,7 +1266,20 @@ export function useWallet(): Wallet {
             }
         }
 
-        if (connectionType === 'dynamic') {
+        if (connectionType === 'external' && publicKey) {
+            await disconnectExternalWallet(publicKey.toBase58());
+        }
+
+        // Log out of BOTH Dynamic clients no matter which flow connected:
+        // a session left alive on the other client makes the sign-in effect
+        // above resurrect the wallet right after disconnect — the "must
+        // press the button twice" bug.
+        try {
+            await logoutDynamicSdk();
+        } catch {
+            // No new-SDK session — clear local state anyway.
+        }
+        if (authenticatedUser) {
             try {
                 await dynamicClient.auth.logout();
             } catch {
@@ -1269,12 +1287,15 @@ export function useWallet(): Wallet {
             }
         }
 
-        if (connectionType === 'external' && publicKey) {
-            await disconnectExternalWallet(publicKey.toBase58());
-        }
-
         disconnectStore();
-    }, [connectionType, authToken, publicKey, disconnectStore]);
+    }, [
+        connectionType,
+        authToken,
+        publicKey,
+        authenticatedUser,
+        logoutDynamicSdk,
+        disconnectStore,
+    ]);
 
     return useMemo(
         () => ({

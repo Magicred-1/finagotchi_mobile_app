@@ -38,7 +38,11 @@ const queryClient = new QueryClient();
 export default function RootLayout() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
-      <AppContent />
+      <QueryClientProvider client={queryClient}>
+        <DynamicProvider client={newDynamicClient}>
+          <AppContent />
+        </DynamicProvider>
+      </QueryClientProvider>
       {/* Dynamic's SDK requires its WebView mounted at the root, even for
           headless flows — auth silently fails without it. Rendered LAST so
           its prompt UI (zIndex 10000 while visible) draws above screens and
