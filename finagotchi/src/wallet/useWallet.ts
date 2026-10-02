@@ -862,11 +862,42 @@ export function useWallet(): Wallet {
             return;
         }
 
+        // An address is already connected (external wallet, MWA, or an
+        // adopted embedded wallet whose userWallets entry never hydrated) —
+        // nothing to create, and creating would wrongly add a second wallet.
+        if (address) return;
+
         if (walletCreationInFlight.current) return;
         walletCreationInFlight.current = true;
         void (async () => {
+            const adoptExistingWallet = (wallet: {
+                address?: string;
+                chain?: string;
+            } | null): boolean => {
+                if (
+                    !wallet?.address ||
+                    wallet.chain?.toUpperCase() !== 'SOL'
+                ) {
+                    return false;
+                }
+                if (!address) {
+                    connectStore(wallet.address, 'dynamic');
+                }
+                useWalletStore.getState().setEmbeddedWalletError(null);
+                return true;
+            };
             try {
                 await ensureDynamicSignerReady();
+                // userWallets hydrates asynchronously after sign-in — pull
+                // the wallet state directly before creating, because the
+                // environment forbids a second wallet per chain and
+                // createWallet rejects loudly when one already exists.
+                const existing = await withTimeout(
+                    dynamicClient.wallets.embedded.getWallet(),
+                    DYNAMIC_TRANSPORT_READY_TIMEOUT_MS,
+                    'Embedded wallet lookup did not complete — check your connection and try again.'
+                );
+                if (adoptExistingWallet(existing)) return;
                 await withTimeout(
                     dynamicClient.wallets.embedded.createWallet({
                         chains: ['Sol'],
@@ -876,6 +907,16 @@ export function useWallet(): Wallet {
                 );
                 useWalletStore.getState().setEmbeddedWalletError(null);
             } catch (error) {
+                // "Multiple wallets per chain not allowed": the wallet exists
+                // server-side but wasn't visible locally — pull and adopt it
+                // instead of surfacing an error.
+                try {
+                    const recovered =
+                        await dynamicClient.wallets.embedded.getWallet();
+                    if (adoptExistingWallet(recovered)) return;
+                } catch {
+                    // Fall through to the error states below.
+                }
                 if (findSolanaWallet(dynamicClient.wallets.userWallets)) {
                     // Genuine "already exists" race — userWallets populated
                     // during creation; the effect above picks it up.
