@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { parseStateString } from '../../../features/ble/types';
+import { parseDeviceRequest, parseStateString } from '../../../features/ble/types';
 import {
     buildDcaHit,
     buildDcaPlan,
@@ -8,6 +8,7 @@ import {
     buildPlanPush,
     buildSnapshot,
     buildSnapshotWrites,
+    buildSolUsd,
     formatAmount,
     parseDcaHitLine,
     parseDcaPlanLine,
@@ -32,6 +33,7 @@ const PLANS: DcaPlanSnapshot[] = [
         buys: 3,
         holdings: 1.5,
         enabled: true,
+        priceUsd: 685.5,
     },
     {
         ticker: 'QQQX',
@@ -40,6 +42,7 @@ const PLANS: DcaPlanSnapshot[] = [
         buys: 0,
         holdings: 0,
         enabled: true,
+        priceUsd: 0,
     },
 ];
 
@@ -85,6 +88,30 @@ describe('dca:plan round-trip', () => {
         expect(parsed[0]).toEqual({ index: 0, plan: PLANS[0] });
         expect(parsed[1]).toEqual({ index: 1, plan: PLANS[1] });
     });
+
+    it('always sends the 8th price_usd field (0 when unknown)', () => {
+        expect(buildDcaPlan(0, PLANS[0])).toBe(
+            'dca:plan:0:1:1780086400:0.25:SPYX:3:1.5:685.5'
+        );
+        expect(buildDcaPlan(1, PLANS[1])).toBe(
+            'dca:plan:1:1:1780000000:10:QQQX:0:0:0'
+        );
+    });
+
+    it('parses legacy 8-field lines with priceUsd 0', () => {
+        expect(parseDcaPlanLine('dca:plan:0:1:1780086400:0.25:SPYX:3:1.5')).toEqual({
+            index: 0,
+            plan: { ...PLANS[0], priceUsd: 0 },
+        });
+    });
+});
+
+describe('solusd builder', () => {
+    it('renders the SOL/USD rate as a plain float', () => {
+        expect(buildSolUsd(212.74)).toBe('solusd:212.74');
+        expect(buildSolUsd(85)).toBe('solusd:85');
+        expect(() => buildSolUsd(-1)).toThrow();
+    });
 });
 
 describe('edge validation', () => {
@@ -121,5 +148,30 @@ describe('dca:hit round-trip', () => {
         });
         expect(buildDcaHit(3, 'SPYX')).toBe('dca:hit:3:SPYX');
         expect(parseDcaHitLine('dca:plan:0:1:2:3:SPYX:4:5')).toBeNull();
+    });
+});
+
+describe('device request parser (BLE notify)', () => {
+    it('parses <name>:req exactly, and dca:pause/dca:new with args', () => {
+        expect(parseDeviceRequest('sync:req')).toEqual({ command: 'sync', args: [] });
+        expect(parseDeviceRequest('feed:req')).toEqual({ command: 'feed', args: [] });
+        expect(parseDeviceRequest('dca:req')).toEqual({ command: 'dca', args: [] });
+        expect(parseDeviceRequest('dca:pause:2')).toEqual({
+            command: 'dca:pause',
+            args: ['2'],
+        });
+        expect(parseDeviceRequest('dca:new:SPYX:0.5:86400')).toEqual({
+            command: 'dca:new',
+            args: ['SPYX', '0.5', '86400'],
+        });
+    });
+
+    it('leaves state snapshots and app→device commands to the state parser', () => {
+        expect(parseDeviceRequest('coinling:3:1:2:12500:87')).toBeNull();
+        expect(parseDeviceRequest('dca:count:2')).toBeNull();
+        expect(
+            parseDeviceRequest('dca:plan:0:1:1780086400:0.25:SPYX:3:1.5:685.5')
+        ).toBeNull();
+        expect(parseDeviceRequest('sync:request')).toBeNull();
     });
 });

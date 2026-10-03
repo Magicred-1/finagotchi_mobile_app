@@ -26,6 +26,7 @@ import {
     buildPlanPush,
     buildSnapshot,
     buildSnapshotWrites,
+    buildSolUsd,
     planPushHash,
     type DcaPlanSnapshot,
     type PetSnapshot,
@@ -34,6 +35,9 @@ import {
 const KEY_PLAN_PUSH_HASH = 'finagotchi-dca-sync:plan-push-hash';
 const KEY_PENDING_FILLS = 'finagotchi-dca-sync:pending-fills';
 const KEY_LAST_SYNCED_AT = 'finagotchi-dca-sync:last-synced-at';
+
+/** Minimum interval between price-driven plan-table rewrites while connected. */
+const PRICE_REFRESH_MS = 60_000;
 
 export interface SyncStorage {
     getItem: (key: string) => Promise<string | null>;
@@ -254,7 +258,7 @@ export function createSyncEngine(deps: SyncEngineDeps): SyncEngine {
 }
 
 /** App plan → contract snapshot. Paused plans push nextExecutionAt ?? 0. */
-export function planToSnapshot(plan: DcaPlan): DcaPlanSnapshot {
+export function planToSnapshot(plan: DcaPlan, priceUsd = 0): DcaPlanSnapshot {
     return {
         ticker: plan.ticker,
         amount: plan.amountPerTick,
@@ -262,20 +266,30 @@ export function planToSnapshot(plan: DcaPlan): DcaPlanSnapshot {
         buys: plan.buys,
         holdings: plan.holdingsHeld,
         enabled: plan.status === 'active',
+        priceUsd,
     };
 }
 
-/** Only live plans are pushed; the device wipes its table on dca:count. */
-export function plansToSnapshots(plans: DcaPlan[]): DcaPlanSnapshot[] {
+/**
+ * Only live plans are pushed; the device wipes its table on dca:count.
+ * `prices` maps ticker → USD unit price; unknown tickers push 0. The filter
+ * order is the device slot order — `dca:pause:<i>` indexes into exactly this.
+ */
+export function plansToSnapshots(
+    plans: DcaPlan[],
+    prices?: Record<string, number>
+): DcaPlanSnapshot[] {
     return plans
         .filter((plan) => plan.status === 'active' || plan.status === 'paused')
-        .map(planToSnapshot);
+        .map((plan) => planToSnapshot(plan, prices?.[plan.ticker] ?? 0));
 }
 
 /**
  * Wires the core to the app: contract MTU re-negotiation on connect, pet/plan
- * store mapping, plan-change rewrites, dcaHit toasts, and device-state
- * reconciliation. Returns the engine's sync status for UI.
+ * store mapping, plan-change rewrites, dcaHit toasts, device-state
+ * reconciliation, and the price feed — every plan rewrite carries the 8th
+ * price_usd field, `solusd:` follows the SOL price, and a 60 s poll rewrites
+ * the table when a price moves. Returns the engine's sync status for UI.
  */
 export function useDcaSyncEngine(ble: FinagotchiBle): DcaSyncStatus {
     const [engine, setEngine] = useState<SyncEngine | null>(null);
@@ -292,6 +306,57 @@ export function useDcaSyncEngine(ble: FinagotchiBle): DcaSyncStatus {
         const current = engineRef.current;
         if (current) setStatus(current.getSyncStatus());
     }, []);
+
+    // Ticker → USD unit price cache (plus 'SOL' for the solusd: rate). The
+    // device can't price positions without Wi-Fi, so every plan-table
+    // rewrite carries the cached price and a 60 s poll keeps it fresh.
+    const pricesRef = useRef<Record<string, number>>({});
+    const lastSentSolUsdRef = useRef<number | null>(null);
+
+    // Fetch USD prices for the given tickers + SOL and merge into the cache.
+    // Throws on network failure; callers decide (price 0 is always legal).
+    const refreshPrices = useCallback(async (tickers: string[]) => {
+        const { fetchJupiterPrices } = await import(
+            '../../features/wallet/jupiterPrices'
+        );
+        const fetched = await fetchJupiterPrices([
+            ...new Set([...tickers, 'SOL']),
+        ]);
+        pricesRef.current = { ...pricesRef.current, ...fetched };
+    }, []);
+
+    // Push solusd:<rate> once the SOL price is known and whenever it changes.
+    const pushSolUsd = useCallback(() => {
+        const rate = pricesRef.current.SOL;
+        if (!rate || rate === lastSentSolUsdRef.current) return;
+        try {
+            sendCommandRef.current(buildSolUsd(rate));
+            lastSentSolUsdRef.current = rate;
+        } catch (e) {
+            console.warn('[SyncEngine] solusd write skipped:', e);
+        }
+    }, []);
+
+    // Full plan-table rewrite with fresh prices (plus solusd:). Plan changes
+    // and sync:req go through here so every rewrite carries the 8th
+    // price_usd field.
+    const pushPlansWithPrices = useCallback(
+        async (plans: DcaPlan[]) => {
+            const current = engineRef.current;
+            if (!current) return;
+            try {
+                await refreshPrices(plans.map((plan) => plan.ticker));
+            } catch {
+                // Price feed down: push with cached/zero prices anyway.
+            }
+            pushSolUsd();
+            await current.onPlansChanged(
+                plansToSnapshots(plans, pricesRef.current)
+            );
+            refresh();
+        },
+        [refreshPrices, pushSolUsd, refresh]
+    );
 
     useEffect(() => {
         let cancelled = false;
@@ -372,20 +437,29 @@ export function useDcaSyncEngine(ble: FinagotchiBle): DcaSyncStatus {
                 happy: Math.round(pet.happiness),
                 subStage: pet.stage,
             };
-            const plans = plansToSnapshots(
-                planStore.usePlanStore.getState().plans
-            );
+            const plans = planStore.usePlanStore.getState().plans;
+            try {
+                await refreshPrices(plans.map((plan) => plan.ticker));
+            } catch {
+                // Prices are best-effort; 0 means "unknown" on the device.
+            }
+            if (cancelled) return;
 
-            await engine.onConnect({ pet: snapshot, plans, mtuPayload });
+            await engine.onConnect({
+                pet: snapshot,
+                plans: plansToSnapshots(plans, pricesRef.current),
+                mtuPayload,
+            });
+            pushSolUsd();
             if (!cancelled) refresh();
         })();
 
         return () => {
             cancelled = true;
         };
-    }, [engine, connectedDevice, refresh]);
+    }, [engine, connectedDevice, refresh, refreshPrices, pushSolUsd]);
 
-    // Any plan change → full rewrite while connected.
+    // Any plan change → full rewrite while connected (fresh prices included).
     useEffect(() => {
         let cancelled = false;
         let unsubscribe: (() => void) | null = null;
@@ -393,18 +467,14 @@ export function useDcaSyncEngine(ble: FinagotchiBle): DcaSyncStatus {
             if (cancelled) return;
             unsubscribe = usePlanStore.subscribe((state, prev) => {
                 if (state.plans === prev.plans) return;
-                const current = engineRef.current;
-                if (!current) return;
-                void current
-                    .onPlansChanged(plansToSnapshots(state.plans))
-                    .then(refresh);
+                void pushPlansWithPrices(state.plans);
             });
         });
         return () => {
             cancelled = true;
             unsubscribe?.();
         };
-    }, [refresh]);
+    }, [pushPlansWithPrices]);
 
     // Fill toasts: immediate while connected, queued while offline.
     useEffect(() => {
@@ -443,19 +513,57 @@ export function useDcaSyncEngine(ble: FinagotchiBle): DcaSyncStatus {
     useEffect(() => {
         if (!deviceRequest || deviceRequest.command !== 'sync') return;
         if (!connectedDevice) return;
-        const current = engineRef.current;
-        if (!current) return;
         let cancelled = false;
         void import('../dca/PlanStore').then(({ usePlanStore }) => {
             if (cancelled) return;
-            void current
-                .onPlansChanged(plansToSnapshots(usePlanStore.getState().plans))
-                .then(refresh);
+            void pushPlansWithPrices(usePlanStore.getState().plans);
         });
         return () => {
             cancelled = true;
         };
-    }, [deviceRequest, connectedDevice, refresh]);
+    }, [deviceRequest, connectedDevice, pushPlansWithPrices]);
+
+    // While connected, re-price the plan table every PRICE_REFRESH_MS and
+    // rewrite it (plus solusd:) only when a price actually moved.
+    useEffect(() => {
+        if (!engine || !connectedDevice) return;
+        let cancelled = false;
+        const timer = setInterval(() => {
+            void (async () => {
+                const previous = pricesRef.current;
+                try {
+                    const { usePlanStore } = await import('../dca/PlanStore');
+                    const plans = usePlanStore
+                        .getState()
+                        .plans.filter(
+                            (plan) =>
+                                plan.status === 'active' ||
+                                plan.status === 'paused'
+                        );
+                    await refreshPrices(plans.map((plan) => plan.ticker));
+                    if (cancelled) return;
+                    const next = pricesRef.current;
+                    const tickers = new Set([
+                        ...plans.map((plan) => plan.ticker),
+                        'SOL',
+                    ]);
+                    const changed = [...tickers].some(
+                        (ticker) => previous[ticker] !== next[ticker]
+                    );
+                    if (!changed) return;
+                    pushSolUsd();
+                    await engine.onPlansChanged(plansToSnapshots(plans, next));
+                    refresh();
+                } catch {
+                    // Feed unreachable; retry next interval.
+                }
+            })();
+        }, PRICE_REFRESH_MS);
+        return () => {
+            cancelled = true;
+            clearInterval(timer);
+        };
+    }, [engine, connectedDevice, refreshPrices, pushSolUsd, refresh]);
 
     return status;
 }

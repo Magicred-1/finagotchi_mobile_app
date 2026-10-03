@@ -46,6 +46,8 @@ export interface DcaPlanSnapshot {
     /** Output tokens held, plain float. */
     holdings: number;
     enabled: boolean;
+    /** Token unit price in USD; 0 when unknown (drives the device's valuation). */
+    priceUsd: number;
 }
 
 function utf8Length(value: string): number {
@@ -137,7 +139,9 @@ export function buildDcaCount(count: number): string {
 }
 
 /**
- * "dca:plan:<i>:<enabled>:<next_buy_epoch>:<amount>:<TICKER>:<buys>:<holdings>"
+ * "dca:plan:<i>:<enabled>:<next_buy_epoch>:<amount>:<TICKER>:<buys>:<holdings>:<price_usd>"
+ * The trailing price_usd field is always sent (0 when unknown) so the device
+ * can value positions without Wi-Fi.
  */
 export function buildDcaPlan(index: number, plan: DcaPlanSnapshot): string {
     assertUint('index', index, 0xff);
@@ -146,7 +150,13 @@ export function buildDcaPlan(index: number, plan: DcaPlanSnapshot): string {
     assertUint('buys', plan.buys);
     const amount = formatAmount(plan.amount);
     const holdings = formatAmount(plan.holdings);
-    return `dca:plan:${index}:${plan.enabled ? 1 : 0}:${plan.nextBuyEpoch}:${amount}:${plan.ticker}:${plan.buys}:${holdings}`;
+    const priceUsd = formatAmount(plan.priceUsd);
+    return `dca:plan:${index}:${plan.enabled ? 1 : 0}:${plan.nextBuyEpoch}:${amount}:${plan.ticker}:${plan.buys}:${holdings}:${priceUsd}`;
+}
+
+/** SOL/USD rate: "solusd:<rate>" — drives the device's USD⇄SOL amount toggle. */
+export function buildSolUsd(rate: number): string {
+    return `solusd:${formatAmount(rate)}`;
 }
 
 /** Fill toast: "dca:hit:<n>:<TICKER>" where n = total buys after the fill. */
@@ -177,11 +187,17 @@ export function planPushHash(lines: string[]): string {
     return hash.toString(36);
 }
 
-/** Parse a "dca:plan:<i>:<enabled>:<epoch>:<amount>:<TICKER>:<buys>:<holdings>" line. */
+/** Parse a "dca:plan:<i>:<enabled>:<epoch>:<amount>:<TICKER>:<buys>:<holdings>[:<price_usd>]" line. Lines without the optional price field parse with priceUsd 0. */
 export function parseDcaPlanLine(line: string): { index: number; plan: DcaPlanSnapshot } | null {
     const parts = line.trim().split(':');
-    if (parts.length !== 9 || parts[0] !== 'dca' || parts[1] !== 'plan') return null;
-    const [, , index, enabled, nextEpoch, amount, ticker, buys, holdings] = parts;
+    if (
+        (parts.length !== 9 && parts.length !== 10) ||
+        parts[0] !== 'dca' ||
+        parts[1] !== 'plan'
+    ) {
+        return null;
+    }
+    const [, , index, enabled, nextEpoch, amount, ticker, buys, holdings, priceUsd] = parts;
     return {
         index: Number(index),
         plan: {
@@ -191,6 +207,7 @@ export function parseDcaPlanLine(line: string): { index: number; plan: DcaPlanSn
             ticker,
             buys: Number(buys),
             holdings: Number(holdings),
+            priceUsd: priceUsd !== undefined ? Number(priceUsd) : 0,
         },
     };
 }

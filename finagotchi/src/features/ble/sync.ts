@@ -12,6 +12,8 @@ import {
     type PetStage,
 } from '../pet/store';
 import { useDcaUiStore } from '../../services/dca/uiStore';
+import { usePlanStore } from '../../services/dca/PlanStore';
+import { assertTicker } from '../../services/ble/protocol';
 import type { FinagotchiBle } from './types';
 
 /** App lifecycle stage → firmware stage name (matches PetCanvas mapping). */
@@ -70,6 +72,9 @@ export function accessoryIndex(accessory: PetAccessory): number {
 export function accessoryByIndex(index: number): PetAccessory | null {
     return ACCESSORIES[index] ?? null;
 }
+
+/** Cadences the device may request in `dca:new` (daily / weekly / monthly). */
+const DCA_NEW_FREQ_SEC = new Set([86_400, 604_800, 2_592_000]);
 
 /** Debounce window for points:/happy:/streak: pushes after local changes. */
 const STATS_PUSH_DEBOUNCE_MS = 500;
@@ -142,12 +147,16 @@ export const useDeviceControlStore = create<{
  *   the local engine only when the device genuinely initiated the change —
  *   never within the post-connect/post-snapshot echo grace window, and never
  *   for echoes of our own pushes.
- * - On device `<name>:req` notification (a menu action on the device):
- *   `sync:req` re-pushes the full snapshot, `feed:req` runs the feed flow
- *   (the resulting `happy:` re-push rides the normal debounced stats path,
- *   plus a `react:` so the device celebrates), `dca:req` asks the DCA UI to
- *   open the wizard sheet. Requests are never echoes of app writes, so the
- *   grace window does not apply to them.
+ * - On device request notification (a menu action on the device): `sync:req`
+ *   re-pushes the full snapshot, `feed:req` runs the feed flow (the
+ *   resulting `happy:` re-push rides the normal debounced stats path, plus
+ *   a `react:` so the device celebrates), `dca:req` asks the DCA UI to open
+ *   the wizard sheet, `dca:pause:<i>` routes plan slot i to the confirming
+ *   UI (active → plan detail for the real on-chain cancel, paused → recreate
+ *   wizard), and `dca:new:<TICKER>:<amountSol>:<freqSec>` opens the wizard
+ *   prefilled.
+ *   Requests are never echoes of app writes, so the grace window does not
+ *   apply to them.
  *
  * `currentMood` is the app's current engine mood; `reaction`/`reactionKey`
  * are the PetCanvas reaction currently playing.
@@ -466,6 +475,70 @@ export function useDeviceSync(
             case 'dca':
                 useDcaUiStore.getState().requestWizardOpen();
                 break;
+            case 'dca:pause': {
+                // Slot index into the last pushed table = plansToSnapshots
+                // order (active+paused, app order). Pause/resume both need a
+                // wallet signature, so this only routes to the confirming UI —
+                // the device observes the table rewrite once the user acts.
+                const index = Number(request.args[0]);
+                if (
+                    request.args.length !== 1 ||
+                    !Number.isInteger(index) ||
+                    index < 0
+                ) {
+                    console.warn('[BLE] invalid dca:pause, ignored:', request.args);
+                    return;
+                }
+                const plan = usePlanStore
+                    .getState()
+                    .plans.filter(
+                        (p) => p.status === 'active' || p.status === 'paused'
+                    )[index];
+                if (!plan) {
+                    console.warn('[BLE] dca:pause slot out of range:', index);
+                    return;
+                }
+                if (plan.status === 'active') {
+                    // Pause = on-chain Jupiter cancel + wallet signature, so
+                    // never flip status silently: land the user on the plan
+                    // detail where the real pause flow is confirmed.
+                    useDcaUiStore.getState().requestDetailOpen(plan.id);
+                } else {
+                    // Resume = recreate: open the wizard in recreate mode
+                    // (same prefillTicker + pauseId shape as DCADetail's edit
+                    // flow) — one review + signature.
+                    useDcaUiStore.getState().requestWizardOpen({
+                        recreate: { ticker: plan.ticker, pauseId: plan.id },
+                    });
+                }
+                break;
+            }
+            case 'dca:new': {
+                // dca:new:<TICKER>:<amountSol>:<freqSec> → wizard, prefilled.
+                const [tickerRaw, amountRaw, freqRaw] = request.args;
+                const ticker = (tickerRaw ?? '').toUpperCase();
+                const amountSol = Number(amountRaw);
+                const freqSec = Number(freqRaw);
+                const valid =
+                    request.args.length === 3 &&
+                    Number.isFinite(amountSol) &&
+                    amountSol > 0 &&
+                    DCA_NEW_FREQ_SEC.has(freqSec);
+                try {
+                    assertTicker(ticker);
+                } catch {
+                    console.warn('[BLE] invalid dca:new ticker, ignored:', tickerRaw);
+                    return;
+                }
+                if (!valid) {
+                    console.warn('[BLE] invalid dca:new payload, ignored:', request.args);
+                    return;
+                }
+                useDcaUiStore.getState().requestWizardOpen({
+                    prefill: { ticker, amountSol, freqSec },
+                });
+                break;
+            }
         }
     }, [connected, ble.deviceRequest, pushSnapshot]);
 }

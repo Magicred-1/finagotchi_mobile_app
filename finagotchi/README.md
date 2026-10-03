@@ -66,12 +66,23 @@ Android — requested at runtime).
   balance/happiness/streak change, and applies device notifications back
   into the local engine. Notifications inside a short grace window after
   connect/snapshot are ignored: they carry the firmware's pre-push state or
-  echoes of our own writes, not device-initiated changes. Device `<name>:req`
+  echoes of our own writes, not device-initiated changes. Device request
   notifications (menu actions on the device) are handled separately, outside
   the grace window: `sync:req` re-pushes the snapshot (plus the DCA plan
   table via `useDcaSyncEngine`), `feed:req` runs the feed flow and answers
-  with the debounced `happy:` push plus `react:glow`, and `dca:req` opens
-  the DCA wizard through the DCA UI store.
+  with the debounced `happy:` push plus `react:glow`, `dca:req` opens the
+  DCA wizard through the DCA UI store, `dca:pause:<i>` routes plan slot i
+  (slot order = the pushed table order) to the confirming UI — pause and
+  resume both need a wallet signature, so an active plan opens its detail
+  sheet (real on-chain cancel) and a paused plan opens the recreate wizard;
+  the device observes the table rewrite once the user acts — and
+  `dca:new:<TICKER>:<amountSol>:<freqSec>` opens the wizard prefilled.
+- `../services/ble/SyncEngine.ts` — DCA contract sync (`useDcaSyncEngine`):
+  connect snapshot + `epoch:` + plan table (`dca:count:`/`dca:plan:` with the
+  8th price_usd field always sent, 0 when unknown) + missed-fill replay.
+  Plan changes rewrite the full table; a 60 s poll refreshes token prices
+  while connected and rewrites the table only when a price moved; `solusd:`
+  follows the SOL/USD rate from the same Jupiter price feed.
 
 ## Interactions
 

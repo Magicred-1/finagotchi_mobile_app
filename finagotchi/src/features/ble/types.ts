@@ -27,25 +27,49 @@ export type FinagotchiState = {
 };
 
 /**
- * Device-initiated request (`<name>:req` notification instead of a state
- * snapshot): the user picked an action in the on-device menu. Known names:
- * `sync` (resend the full snapshot), `feed` (run the feed flow), `dca`
- * (open the DCA wizard). Unknown names are surfaced too — consumers ignore
- * what they don't handle.
+ * Device-initiated request notification (instead of a state snapshot): the
+ * user picked an action in the on-device menu. Known commands:
+ * `sync` / `feed` / `dca` (from `<name>:req`), `dca:pause` (args: slot
+ * index), `dca:new` (args: ticker, amountSol, freqSec). Unknown names are
+ * surfaced too — consumers ignore what they don't handle.
  */
 export type DeviceRequest = {
-    /** Request name, e.g. 'sync' | 'feed' | 'dca'. */
+    /** Request name, e.g. 'sync' | 'feed' | 'dca' | 'dca:pause' | 'dca:new'. */
     command: string;
+    /** Arguments after the command (['2'] for "dca:pause:2"); empty for `<name>:req`. */
+    args: string[];
     /** Monotonic id so repeated identical requests retrigger effects. */
     seq: number;
 };
 
-/** Matches a `<name>:req` notification; a state snapshot never does (`req` is not numeric). */
+/** Matches the exact `<name>:req` form; a state snapshot never does (`req` is not numeric). */
 const DEVICE_REQUEST_RE = /^([a-z]+):req$/;
+/** `dca:<verb>:<args...>` menu actions (dca:pause:<i>, dca:new:<ticker>:<amt>:<freq>). */
+const DCA_ACTION_VERBS = new Set(['pause', 'new']);
 
-/** Returns the request name if `raw` is a `<name>:req` notification, else null. */
-export function parseDeviceRequest(raw: string): string | null {
-    return DEVICE_REQUEST_RE.exec(raw.trim())?.[1] ?? null;
+/**
+ * Parses a device-request notification into command + args, or returns null
+ * when `raw` is a state snapshot (or anything else) and should go to the
+ * state parser. Argument-carrying commands are matched here so they never
+ * reach `parseStateString`.
+ */
+export function parseDeviceRequest(
+    raw: string
+): { command: string; args: string[] } | null {
+    const trimmed = raw.trim();
+    const reqMatch = DEVICE_REQUEST_RE.exec(trimmed);
+    if (reqMatch) {
+        return { command: reqMatch[1], args: [] };
+    }
+    const parts = trimmed.split(':');
+    if (
+        parts.length >= 3 &&
+        parts[0] === 'dca' &&
+        DCA_ACTION_VERBS.has(parts[1])
+    ) {
+        return { command: `dca:${parts[1]}`, args: parts.slice(2) };
+    }
+    return null;
 }
 
 /**
