@@ -6,10 +6,12 @@ import { EXPRESSIONS, type PetMood } from '../../engine/expressions';
 import type { PetReaction } from '../../components/PetCanvas';
 import { useCheckinStore } from '../checkin/store';
 import {
+    feedPet,
     usePetStore,
     type PetAccessory,
     type PetStage,
 } from '../pet/store';
+import { useDcaUiStore } from '../../services/dca/uiStore';
 import type { FinagotchiBle } from './types';
 
 /** App lifecycle stage → firmware stage name (matches PetCanvas mapping). */
@@ -140,6 +142,12 @@ export const useDeviceControlStore = create<{
  *   the local engine only when the device genuinely initiated the change —
  *   never within the post-connect/post-snapshot echo grace window, and never
  *   for echoes of our own pushes.
+ * - On device `<name>:req` notification (a menu action on the device):
+ *   `sync:req` re-pushes the full snapshot, `feed:req` runs the feed flow
+ *   (the resulting `happy:` re-push rides the normal debounced stats path,
+ *   plus a `react:` so the device celebrates), `dca:req` asks the DCA UI to
+ *   open the wizard sheet. Requests are never echoes of app writes, so the
+ *   grace window does not apply to them.
  *
  * `currentMood` is the app's current engine mood; `reaction`/`reactionKey`
  * are the PetCanvas reaction currently playing.
@@ -222,6 +230,38 @@ export function useDeviceSync(
         []
     );
 
+    // Full app→device snapshot: on connect, and again whenever the device
+    // asks for a resync (`sync:req`). Recording lastSent* before the write
+    // keeps the snapshot's own echoes from being applied back.
+    const pushSnapshot = useCallback(() => {
+        if (!connectedRef.current) return;
+
+        const pet = usePetStore.getState();
+        const mood = moodIndex(currentMoodRef.current);
+        const item = accessoryIndex(pet.accessory);
+        const points = Math.round(pet.balance);
+        const happy = Math.round(pet.happiness);
+        const streak = useCheckinStore.getState().streak;
+
+        // The snapshot's own echoes trail the serialized writes; keep
+        // ignoring notifications so they are never applied back.
+        ignoreRemoteUntil.current = Date.now() + REMOTE_ECHO_GRACE_MS;
+        useDeviceControlStore.setState({
+            lastSentStage: pet.stage,
+            lastSentMood: mood,
+            lastSentItem: item,
+            lastSentPoints: points,
+            lastSentHappy: happy,
+            lastSentStreak: streak,
+        });
+        // Happiness is RAM-only on the device and points drive its stats
+        // bar, so stats are part of every snapshot. The sub-stage
+        // badge (1-12) is sent alongside the base 4-state stage.
+        sendCommandRef.current(
+            `stage:${pet.stage};substage:${pet.stage};mood:${mood};item:${item};points:${points};happy:${happy};streak:${streak}`
+        );
+    }, []);
+
     // On connect: push app state to the device once the persisted stores are
     // hydrated. On disconnect: reset.
     useEffect(() => {
@@ -250,46 +290,20 @@ export function useDeviceSync(
         let pushed = false;
         let unHydrate: (() => void) | null = null;
 
-        const pushSnapshot = () => {
-            if (pushed || cancelled || !connectedRef.current) return;
+        const pushSnapshotOnce = () => {
+            if (pushed || cancelled || !petStoresHydrated()) return;
             pushed = true;
-
-            const pet = usePetStore.getState();
-            const mood = moodIndex(currentMoodRef.current);
-            const item = accessoryIndex(pet.accessory);
-            const points = Math.round(pet.balance);
-            const happy = Math.round(pet.happiness);
-            const streak = useCheckinStore.getState().streak;
-
-            // The snapshot's own echoes trail the serialized writes; keep
-            // ignoring notifications so they are never applied back.
-            ignoreRemoteUntil.current = Date.now() + REMOTE_ECHO_GRACE_MS;
-            useDeviceControlStore.setState({
-                lastSentStage: pet.stage,
-                lastSentMood: mood,
-                lastSentItem: item,
-                lastSentPoints: points,
-                lastSentHappy: happy,
-                lastSentStreak: streak,
-            });
-            // Happiness is RAM-only on the device and points drive its stats
-            // bar, so stats are part of every connect snapshot. The sub-stage
-            // badge (1-12) is sent alongside the base 4-state stage.
-            sendCommandRef.current(
-                `stage:${pet.stage};substage:${pet.stage};mood:${mood};item:${item};points:${points};happy:${happy};streak:${streak}`
-            );
+            pushSnapshot();
         };
 
         if (petStoresHydrated()) {
-            pushSnapshot();
+            pushSnapshotOnce();
         } else {
             // Stores still loading from AsyncStorage: defer the snapshot
             // until both finish so it never serializes default values.
-            const tryPush = () => {
-                if (petStoresHydrated()) pushSnapshot();
-            };
-            const unPet = usePetStore.persist.onFinishHydration(tryPush);
-            const unCheckin = useCheckinStore.persist.onFinishHydration(tryPush);
+            const unPet = usePetStore.persist.onFinishHydration(pushSnapshotOnce);
+            const unCheckin =
+                useCheckinStore.persist.onFinishHydration(pushSnapshotOnce);
             unHydrate = () => {
                 unPet();
                 unCheckin();
@@ -300,7 +314,7 @@ export function useDeviceSync(
             cancelled = true;
             unHydrate?.();
         };
-    }, [connected]);
+    }, [connected, pushSnapshot]);
 
     // Local stage changes → write stage:<n> to the device.
     useEffect(
@@ -426,4 +440,32 @@ export function useDeviceSync(
             applyingRemote.current = false;
         }
     }, [connected, ble.deviceState]);
+
+    // Device `<name>:req` notifications: explicit menu actions on the device.
+    // They are never echoes of our own writes, so the echo grace window and
+    // the applyingRemote guard do not apply.
+    useEffect(() => {
+        const request = ble.deviceRequest;
+        if (!connected || !request) return;
+
+        switch (request.command) {
+            case 'sync':
+                // BTN1 on the device: resend the full snapshot, same as on
+                // connect. DCA plan lines are re-pushed by useDcaSyncEngine.
+                pushSnapshot();
+                break;
+            case 'feed':
+                // A dead pet can't eat; leave state and device untouched.
+                if (usePetStore.getState().isDead) return;
+                feedPet();
+                // The happiness change re-pushes `happy:` through the
+                // debounced stats push above; `react:` lets the device
+                // celebrate immediately.
+                sendCommandRef.current('react:glow');
+                break;
+            case 'dca':
+                useDcaUiStore.getState().requestWizardOpen();
+                break;
+        }
+    }, [connected, ble.deviceRequest, pushSnapshot]);
 }

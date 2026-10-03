@@ -66,7 +66,12 @@ Android — requested at runtime).
   balance/happiness/streak change, and applies device notifications back
   into the local engine. Notifications inside a short grace window after
   connect/snapshot are ignored: they carry the firmware's pre-push state or
-  echoes of our own writes, not device-initiated changes.
+  echoes of our own writes, not device-initiated changes. Device `<name>:req`
+  notifications (menu actions on the device) are handled separately, outside
+  the grace window: `sync:req` re-pushes the snapshot (plus the DCA plan
+  table via `useDcaSyncEngine`), `feed:req` runs the feed flow and answers
+  with the debounced `happy:` push plus `react:glow`, and `dca:req` opens
+  the DCA wizard through the DCA UI store.
 
 ## Interactions
 

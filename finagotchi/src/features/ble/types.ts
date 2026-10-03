@@ -27,6 +27,28 @@ export type FinagotchiState = {
 };
 
 /**
+ * Device-initiated request (`<name>:req` notification instead of a state
+ * snapshot): the user picked an action in the on-device menu. Known names:
+ * `sync` (resend the full snapshot), `feed` (run the feed flow), `dca`
+ * (open the DCA wizard). Unknown names are surfaced too — consumers ignore
+ * what they don't handle.
+ */
+export type DeviceRequest = {
+    /** Request name, e.g. 'sync' | 'feed' | 'dca'. */
+    command: string;
+    /** Monotonic id so repeated identical requests retrigger effects. */
+    seq: number;
+};
+
+/** Matches a `<name>:req` notification; a state snapshot never does (`req` is not numeric). */
+const DEVICE_REQUEST_RE = /^([a-z]+):req$/;
+
+/** Returns the request name if `raw` is a `<name>:req` notification, else null. */
+export function parseDeviceRequest(raw: string): string | null {
+    return DEVICE_REQUEST_RE.exec(raw.trim())?.[1] ?? null;
+}
+
+/**
  * Public surface of the BLE hook (react-native-ble-plx implementation).
  */
 export interface FinagotchiBle {
@@ -34,6 +56,8 @@ export interface FinagotchiBle {
     devices: Device[];
     connectedDevice: Device | null;
     deviceState: FinagotchiState | null;
+    /** Last `<name>:req` notification (sync/feed/dca), or null since connect. */
+    deviceRequest: DeviceRequest | null;
     error: string | null;
     startScan: () => void;
     stopScan: () => void;
