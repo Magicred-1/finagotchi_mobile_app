@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
     AccessibilityInfo,
     ScrollView,
@@ -20,11 +20,14 @@ import Animated, {
 } from 'react-native-reanimated';
 
 import {
+    CADENCE_OPTIONS,
     isOverdue,
     useDcaUiStore,
     usePlanStore,
     SUPPORTED_TOKENS,
+    type CadenceId,
     type DcaPlan,
+    type DcaWizardRecreate,
 } from '../../services/dca';
 import { BottomSheet } from '../../components/BottomSheet';
 import { PressableScale } from '../../components/PressableScale';
@@ -153,32 +156,102 @@ export function DCAHome() {
     const [wizardOpen, setWizardOpen] = useState(false);
     const [openPlanId, setOpenPlanId] = useState<string | null>(null);
 
-    // `dca:req` from the device menu lands in the DCA UI store (set by
-    // useDeviceSync); consume it here: open the wizard with a toast.
+    // `dca:req`/`dca:new`/`dca:pause` from the device menu land in the DCA UI
+    // store (set by useDeviceSync); consume them here: open the wizard or the
+    // plan detail, with a toast naming what the hardware asked for.
     const wizardOpenRequested = useDcaUiStore(
         (state) => state.wizardOpenRequested
     );
+    const detailOpenRequested = useDcaUiStore(
+        (state) => state.detailOpenRequested
+    );
+    const [wizardPrefill, setWizardPrefill] = useState<{
+        ticker: string;
+        cadenceId: CadenceId;
+        amountUsd?: number;
+    } | null>(null);
+    const [wizardRecreate, setWizardRecreate] =
+        useState<DcaWizardRecreate | null>(null);
     const [deviceToastVisible, setDeviceToastVisible] = useState(false);
+    const [deviceToastText, setDeviceToastText] = useState('');
     const deviceToastOpacity = useSharedValue(0);
     const deviceToastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+    const showDeviceToast = useCallback(
+        (text: string) => {
+            setDeviceToastText(text);
+            setDeviceToastVisible(true);
+            deviceToastOpacity.value = withTiming(1, { duration: 200 });
+            if (deviceToastTimer.current) clearTimeout(deviceToastTimer.current);
+            deviceToastTimer.current = setTimeout(() => {
+                deviceToastOpacity.value = withTiming(0, { duration: 200 }, (finished) => {
+                    if (finished) {
+                        runOnJS(setDeviceToastVisible)(false);
+                    }
+                });
+            }, 2000);
+        },
+        [deviceToastOpacity]
+    );
+
     useEffect(() => {
         if (!wizardOpenRequested) return;
-        useDcaUiStore.getState().consumeWizardOpen();
+        const request = useDcaUiStore.getState().consumeWizardOpen();
+        if (!request) return;
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-        setWizardOpen(true);
 
-        setDeviceToastVisible(true);
-        deviceToastOpacity.value = withTiming(1, { duration: 200 });
-        if (deviceToastTimer.current) clearTimeout(deviceToastTimer.current);
-        deviceToastTimer.current = setTimeout(() => {
-            deviceToastOpacity.value = withTiming(0, { duration: 200 }, (finished) => {
-                if (finished) {
-                    runOnJS(setDeviceToastVisible)(false);
-                }
-            });
-        }, 2000);
-    }, [wizardOpenRequested, deviceToastOpacity]);
+        // `dca:pause` on a paused plan: resume = recreate (review + sign).
+        if (request.recreate) {
+            showDeviceToast('Device asked to resume a plan');
+            setWizardPrefill(null);
+            setWizardRecreate(request.recreate);
+            setWizardOpen(true);
+            return;
+        }
+
+        showDeviceToast('Device requested DCA');
+        const prefill = request.prefill;
+        if (!prefill) {
+            setWizardRecreate(null);
+            setWizardPrefill(null);
+            setWizardOpen(true);
+            return;
+        }
+
+        // `dca:new` carries an amount in SOL but the wizard works in USDC —
+        // convert with the live SOL price. When the feed is down the amount
+        // falls back to the wizard defaults; ticker and cadence still apply.
+        void (async () => {
+            let amountUsd: number | undefined;
+            try {
+                const { fetchJupiterPrices } = await import(
+                    '../../features/wallet/jupiterPrices'
+                );
+                const solUsd = (await fetchJupiterPrices(['SOL'])).SOL;
+                if (solUsd) amountUsd = prefill.amountSol * solUsd;
+            } catch {
+                // Amount stays at the wizard default.
+            }
+            const cadenceId =
+                CADENCE_OPTIONS.find(
+                    (option) => option.intervalSec === prefill.freqSec
+                )?.id ?? 'weekly';
+            setWizardRecreate(null);
+            setWizardPrefill({ ticker: prefill.ticker, cadenceId, amountUsd });
+            setWizardOpen(true);
+        })();
+    }, [wizardOpenRequested, showDeviceToast]);
+
+    // `dca:pause` on an active plan: pause is a real on-chain cancel that
+    // needs a wallet signature, so land on the plan detail to confirm it.
+    useEffect(() => {
+        if (!detailOpenRequested) return;
+        const request = useDcaUiStore.getState().consumeDetailOpen();
+        if (!request) return;
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        showDeviceToast('Confirm the pause on your plan');
+        setOpenPlanId(request.planId);
+    }, [detailOpenRequested, showDeviceToast]);
 
     useEffect(
         () => () => {
@@ -212,7 +285,7 @@ export function DCAHome() {
                         color={colors.text}
                     />
                     <Text style={styles.deviceToastText}>
-                        Device requested DCA
+                        {deviceToastText}
                     </Text>
                 </Animated.View>
             )}
@@ -287,7 +360,15 @@ export function DCAHome() {
 
             <DCAWizardSheet
                 visible={wizardOpen}
-                onClose={() => setWizardOpen(false)}
+                onClose={() => {
+                    setWizardOpen(false);
+                    setWizardPrefill(null);
+                    setWizardRecreate(null);
+                }}
+                prefillTicker={wizardRecreate?.ticker ?? wizardPrefill?.ticker}
+                prefillCadenceId={wizardPrefill?.cadenceId}
+                prefillAmountUsd={wizardPrefill?.amountUsd}
+                pauseId={wizardRecreate?.pauseId}
             />
 
             {/**

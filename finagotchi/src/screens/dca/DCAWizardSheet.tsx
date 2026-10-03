@@ -243,15 +243,45 @@ type Props = {
     visible: boolean;
     onClose: () => void;
     prefillTicker?: string;
+    /** Preselected cadence (device `dca:new` requests carry freqSec). */
+    prefillCadenceId?: CadenceId;
+    /**
+     * Target per-buy amount in USD (device `dca:new` requests carry SOL,
+     * converted by the caller). Fitted onto the budget × percent grid.
+     */
+    prefillAmountUsd?: number;
     pauseId?: string;
     /** Runs after the sheet closes on success (detail screen uses it to go home). */
     onSuccess?: () => void;
 };
 
+/**
+ * Fit a per-buy USD target onto the budget × percent grid (presets × 5–50%).
+ * Approximate by construction — the closest grid point wins.
+ */
+function fitAmountToGrid(amountUsd: number): { budget: number; percent: number } {
+    let best = { budget: 50, percent: 20 };
+    let bestError = Number.POSITIVE_INFINITY;
+    for (const budget of BUDGET_OPTIONS) {
+        const percent = Math.min(
+            PERCENT_MAX,
+            Math.max(PERCENT_MIN, Math.round((100 * amountUsd) / budget))
+        );
+        const error = Math.abs((budget * percent) / 100 - amountUsd);
+        if (error < bestError) {
+            best = { budget, percent };
+            bestError = error;
+        }
+    }
+    return best;
+}
+
 export function DCAWizardSheet({
     visible,
     onClose,
     prefillTicker,
+    prefillCadenceId,
+    prefillAmountUsd,
     pauseId,
     onSuccess,
 }: Props) {
@@ -274,7 +304,8 @@ export function DCAWizardSheet({
 
     const contentAnim = useSharedValue(1);
 
-    // Fresh start every time the sheet opens; prefill applies in recreate mode.
+    // Fresh start every time the sheet opens; prefills (recreate mode or a
+    // device dca:new request) apply on top of the defaults.
     useEffect(() => {
         if (!visible) return;
         setStep(0);
@@ -283,6 +314,15 @@ export function DCAWizardSheet({
                 ? prefillTicker
                 : null
         );
+        setCadenceId(prefillCadenceId ?? 'weekly');
+        if (prefillAmountUsd && prefillAmountUsd > 0) {
+            const fit = fitAmountToGrid(prefillAmountUsd);
+            setBudget(fit.budget);
+            setPercent(fit.percent);
+        } else {
+            setBudget(50);
+            setPercent(20);
+        }
         setError(null);
         setProgressStep(null);
         contentAnim.value = 0;
@@ -290,7 +330,7 @@ export function DCAWizardSheet({
             ...STEP_IN,
             reduceMotion: ReduceMotion.System,
         });
-    }, [visible, prefillTicker, contentAnim]);
+    }, [visible, prefillTicker, prefillCadenceId, prefillAmountUsd, contentAnim]);
 
     const cadence = CADENCE_OPTIONS.find((c) => c.id === cadenceId)!;
     const intervalSec = cadence.intervalSec;

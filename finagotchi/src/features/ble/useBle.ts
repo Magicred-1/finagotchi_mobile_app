@@ -87,14 +87,15 @@ export function useFinagotchiBle(): FinagotchiBle {    const [status, setStatus]
     // Monotonic id so repeated identical <name>:req notifications retrigger effects.
     const requestSeq = useRef(0);
 
-    // Notifications are either a state snapshot or a `<name>:req` device
-    // request; the shapes never overlap, and a request must not reach the
-    // state parser (its numeric fields would parse as garbage zeros).
+    // Notifications are either a state snapshot or a device request
+    // (`<name>:req`, `dca:pause:<i>`, `dca:new:...`); the shapes never
+    // overlap, and a request must not reach the state parser (its numeric
+    // fields would parse as garbage zeros).
     const handleNotification = useCallback((raw: string) => {
         const request = parseDeviceRequest(raw);
         if (request) {
             requestSeq.current += 1;
-            setDeviceRequest({ command: request, seq: requestSeq.current });
+            setDeviceRequest({ ...request, seq: requestSeq.current });
             return;
         }
         setDeviceState(parseStateString(raw));

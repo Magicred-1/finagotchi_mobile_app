@@ -33,6 +33,7 @@ const PLANS: DcaPlanSnapshot[] = [
         buys: 3,
         holdings: 1.5,
         enabled: true,
+        priceUsd: 685.5,
     },
 ];
 
@@ -81,7 +82,7 @@ describe('onConnect write sequence', () => {
             'egg:5:2:0:750:100:1',
             'epoch:1780000000',
             'dca:count:1',
-            'dca:plan:0:1:1780086400:0.25:SPYX:3:1.5',
+            'dca:plan:0:1:1780086400:0.25:SPYX:3:1.5:685.5',
         ]);
     });
 
