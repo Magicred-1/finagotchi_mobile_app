@@ -6,8 +6,10 @@ import { Buffer } from 'buffer';
 import {
     FINAGOTCHI_CHARACTERISTIC_UUID,
     FINAGOTCHI_SERVICE_UUID,
+    parseDeviceRequest,
     parseStateString,
     type BleStatus,
+    type DeviceRequest,
     type FinagotchiBle,
     type FinagotchiState,
 } from './types';
@@ -18,7 +20,7 @@ export {
     FINAGOTCHI_DEVICE_NAME,
     FINAGOTCHI_SERVICE_UUID,
 } from './types';
-export type { BleStatus, FinagotchiBle, FinagotchiState } from './types';
+export type { BleStatus, DeviceRequest, FinagotchiBle, FinagotchiState } from './types';
 
 const SCAN_TIMEOUT_MS = 15000;
 /** Default ATT payload (MTU 23 minus 3 header bytes) before negotiation. */
@@ -68,6 +70,7 @@ export function useFinagotchiBle(): FinagotchiBle {    const [status, setStatus]
     const [devices, setDevices] = useState<Device[]>([]);
     const [connectedDevice, setConnectedDevice] = useState<Device | null>(null);
     const [deviceState, setDeviceState] = useState<FinagotchiState | null>(null);
+    const [deviceRequest, setDeviceRequest] = useState<DeviceRequest | null>(null);
     const [error, setError] = useState<string | null>(null);
 
     const monitorSub = useRef<Subscription | null>(null);
@@ -81,6 +84,21 @@ export function useFinagotchiBle(): FinagotchiBle {    const [status, setStatus]
     const writePayload = useRef(DEFAULT_WRITE_PAYLOAD);
     // Serializes characteristic writes: firmware must never see overlapping writes.
     const writeQueue = useRef<Promise<void>>(Promise.resolve());
+    // Monotonic id so repeated identical <name>:req notifications retrigger effects.
+    const requestSeq = useRef(0);
+
+    // Notifications are either a state snapshot or a `<name>:req` device
+    // request; the shapes never overlap, and a request must not reach the
+    // state parser (its numeric fields would parse as garbage zeros).
+    const handleNotification = useCallback((raw: string) => {
+        const request = parseDeviceRequest(raw);
+        if (request) {
+            requestSeq.current += 1;
+            setDeviceRequest({ command: request, seq: requestSeq.current });
+            return;
+        }
+        setDeviceState(parseStateString(raw));
+    }, []);
 
     // Bumped to re-run the auto-reconnect effect for the next attempt.
     const [reconnectTick, setReconnectTick] = useState(0);
@@ -109,6 +127,7 @@ export function useFinagotchiBle(): FinagotchiBle {    const [status, setStatus]
         connectedDeviceRef.current = null;
         setConnectedDevice(null);
         setDeviceState(null);
+        setDeviceRequest(null);
 
         if (intentionalDisconnect.current || !lastDeviceId.current) {
             setStatus('idle');
@@ -132,6 +151,7 @@ export function useFinagotchiBle(): FinagotchiBle {    const [status, setStatus]
         connectedDeviceRef.current = null;
         setConnectedDevice(null);
         setDeviceState(null);
+        setDeviceRequest(null);
         setStatus('off');
     }, [clearReconnectTimer]);
 
@@ -198,10 +218,8 @@ export function useFinagotchiBle(): FinagotchiBle {    const [status, setStatus]
                     FINAGOTCHI_CHARACTERISTIC_UUID
                 );
                 if (initial.value) {
-                    setDeviceState(
-                        parseStateString(
-                            Buffer.from(initial.value, 'base64').toString('utf8')
-                        )
+                    handleNotification(
+                        Buffer.from(initial.value, 'base64').toString('utf8')
                     );
                 }
 
@@ -215,11 +233,9 @@ export function useFinagotchiBle(): FinagotchiBle {    const [status, setStatus]
                             return;
                         }
                         if (characteristic?.value) {
-                            setDeviceState(
-                                parseStateString(
-                                    Buffer.from(characteristic.value, 'base64').toString(
-                                        'utf8'
-                                    )
+                            handleNotification(
+                                Buffer.from(characteristic.value, 'base64').toString(
+                                    'utf8'
                                 )
                             );
                         }
@@ -250,7 +266,7 @@ export function useFinagotchiBle(): FinagotchiBle {    const [status, setStatus]
                 return false;
             }
         },
-        [handleDisconnect]
+        [handleDisconnect, handleNotification]
     );
 
     const connect = useCallback(
@@ -388,6 +404,7 @@ export function useFinagotchiBle(): FinagotchiBle {    const [status, setStatus]
         }
         setConnectedDevice(null);
         setDeviceState(null);
+        setDeviceRequest(null);
         setStatus('idle');
     }, [clearReconnectTimer]);
 
@@ -440,6 +457,7 @@ export function useFinagotchiBle(): FinagotchiBle {    const [status, setStatus]
         devices,
         connectedDevice,
         deviceState,
+        deviceRequest,
         error,
         startScan,
         stopScan,

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
     AccessibilityInfo,
     ScrollView,
@@ -13,10 +13,15 @@ import Animated, {
     FadeInDown,
     FadeOut,
     ReduceMotion,
+    runOnJS,
+    useAnimatedStyle,
+    useSharedValue,
+    withTiming,
 } from 'react-native-reanimated';
 
 import {
     isOverdue,
+    useDcaUiStore,
     usePlanStore,
     SUPPORTED_TOKENS,
     type DcaPlan,
@@ -148,6 +153,44 @@ export function DCAHome() {
     const [wizardOpen, setWizardOpen] = useState(false);
     const [openPlanId, setOpenPlanId] = useState<string | null>(null);
 
+    // `dca:req` from the device menu lands in the DCA UI store (set by
+    // useDeviceSync); consume it here: open the wizard with a toast.
+    const wizardOpenRequested = useDcaUiStore(
+        (state) => state.wizardOpenRequested
+    );
+    const [deviceToastVisible, setDeviceToastVisible] = useState(false);
+    const deviceToastOpacity = useSharedValue(0);
+    const deviceToastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+    useEffect(() => {
+        if (!wizardOpenRequested) return;
+        useDcaUiStore.getState().consumeWizardOpen();
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        setWizardOpen(true);
+
+        setDeviceToastVisible(true);
+        deviceToastOpacity.value = withTiming(1, { duration: 200 });
+        if (deviceToastTimer.current) clearTimeout(deviceToastTimer.current);
+        deviceToastTimer.current = setTimeout(() => {
+            deviceToastOpacity.value = withTiming(0, { duration: 200 }, (finished) => {
+                if (finished) {
+                    runOnJS(setDeviceToastVisible)(false);
+                }
+            });
+        }, 2000);
+    }, [wizardOpenRequested, deviceToastOpacity]);
+
+    useEffect(
+        () => () => {
+            if (deviceToastTimer.current) clearTimeout(deviceToastTimer.current);
+        },
+        []
+    );
+
+    const deviceToastStyle = useAnimatedStyle(() => ({
+        opacity: deviceToastOpacity.value,
+    }));
+
     const activePlans = plans.filter((plan) => plan.status === 'active');
     const overdueCount = activePlans.filter(isOverdue).length;
 
@@ -158,6 +201,21 @@ export function DCAHome() {
 
     return (
         <View>
+            {deviceToastVisible && (
+                <Animated.View
+                    style={[styles.deviceToast, deviceToastStyle]}
+                    pointerEvents="none"
+                >
+                    <Ionicons
+                        name="hardware-chip-outline"
+                        size={12}
+                        color={colors.text}
+                    />
+                    <Text style={styles.deviceToastText}>
+                        Device requested DCA
+                    </Text>
+                </Animated.View>
+            )}
             {activePlans.length === 0 ? (
                 <PressableScale
                     onPress={openWizard}
@@ -254,6 +312,26 @@ export function DCAHome() {
 }
 
 const styles = StyleSheet.create({
+    deviceToast: {
+        position: 'absolute',
+        top: -34,
+        alignSelf: 'center',
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+        paddingVertical: spacing.xs,
+        paddingHorizontal: spacing.md,
+        borderRadius: radius.pill,
+        backgroundColor: 'rgba(14,27,46,0.92)',
+        borderWidth: 1,
+        borderColor: colors.border,
+        zIndex: 10,
+    },
+    deviceToastText: {
+        color: colors.text,
+        fontSize: typography.small,
+        fontFamily: 'Poppins_600SemiBold',
+    },
     banner: {
         flexDirection: 'row',
         alignItems: 'center',

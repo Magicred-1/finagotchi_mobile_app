@@ -435,5 +435,27 @@ export function useDcaSyncEngine(ble: FinagotchiBle): DcaSyncStatus {
         );
     }, [deviceState, connectedDevice]);
 
+    // `sync:req` (BTN1 on the device) → resend the full plan table too; the
+    // pet snapshot re-push is handled by useDeviceSync. Always a full rewrite
+    // (unlike the connect-time hash skip): the device asked because its table
+    // may be gone (NVS wipe, dca:clear).
+    const deviceRequest = ble.deviceRequest;
+    useEffect(() => {
+        if (!deviceRequest || deviceRequest.command !== 'sync') return;
+        if (!connectedDevice) return;
+        const current = engineRef.current;
+        if (!current) return;
+        let cancelled = false;
+        void import('../dca/PlanStore').then(({ usePlanStore }) => {
+            if (cancelled) return;
+            void current
+                .onPlansChanged(plansToSnapshots(usePlanStore.getState().plans))
+                .then(refresh);
+        });
+        return () => {
+            cancelled = true;
+        };
+    }, [deviceRequest, connectedDevice, refresh]);
+
     return status;
 }
