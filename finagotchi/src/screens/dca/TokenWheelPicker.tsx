@@ -22,8 +22,6 @@ import { TokenLogo } from './TokenLogo';
 /** Row height drives snapToInterval and the selection band — keep in sync. */
 const ROW_HEIGHT = 64;
 const VISIBLE_ROWS = 5;
-/** Extra rows of padding so the first/last token can reach the center. */
-const EDGE_PADDING = ROW_HEIGHT * Math.floor(VISIBLE_ROWS / 2);
 /**
  * Settle after a drag that produced no fling: if momentum begins within this
  * window the drag settle is cancelled (the fling's momentum-end wins).
@@ -40,6 +38,12 @@ type Props = {
     onSelect: (ticker: string) => void;
     /** The already-selected center row was tapped — confirm the pick. */
     onConfirm: (ticker: string) => void;
+    /**
+     * Explicit drum height (fills the wizard step). Defaults to
+     * ROW_HEIGHT × VISIBLE_ROWS. Edge padding is computed symmetrically from
+     * the height so the center row and selection band stay centered.
+     */
+    height?: number;
 };
 
 function indexForOffset(offsetY: number, count: number): number {
@@ -148,7 +152,12 @@ export function TokenWheelPicker({
     quotes,
     onSelect,
     onConfirm,
+    height,
 }: Props) {
+    const drumHeight = height ?? ROW_HEIGHT * VISIBLE_ROWS;
+    // Symmetric edge padding keeps the center row (and the selection band)
+    // vertically centered whatever the drum height.
+    const edgePadding = Math.max(0, (drumHeight - ROW_HEIGHT) / 2);
     const selectedIndex = Math.max(
         0,
         tokens.findIndex((token) => token.ticker === selectedTicker)
@@ -250,12 +259,15 @@ export function TokenWheelPicker({
     );
 
     return (
-        <View style={styles.container}>
-            <View style={styles.selectionBand} pointerEvents="none" />
+        <View style={[styles.container, { height: drumHeight }]}>
+            <View
+                style={[styles.selectionBand, { top: edgePadding }]}
+                pointerEvents="none"
+            />
             <Animated.ScrollView
                 ref={scrollRef}
                 style={styles.scroll}
-                contentContainerStyle={styles.scrollContent}
+                contentContainerStyle={{ paddingVertical: edgePadding }}
                 showsVerticalScrollIndicator={false}
                 snapToInterval={ROW_HEIGHT}
                 decelerationRate="fast"
@@ -282,7 +294,6 @@ export function TokenWheelPicker({
 
 const styles = StyleSheet.create({
     container: {
-        height: ROW_HEIGHT * VISIBLE_ROWS,
         borderRadius: radius.md,
         backgroundColor: colors.background,
         borderWidth: 1,
@@ -291,7 +302,6 @@ const styles = StyleSheet.create({
     },
     selectionBand: {
         position: 'absolute',
-        top: EDGE_PADDING,
         left: 0,
         right: 0,
         height: ROW_HEIGHT,
@@ -303,9 +313,6 @@ const styles = StyleSheet.create({
     },
     scroll: {
         flex: 1,
-    },
-    scrollContent: {
-        paddingVertical: EDGE_PADDING,
     },
     row: {
         height: ROW_HEIGHT,
