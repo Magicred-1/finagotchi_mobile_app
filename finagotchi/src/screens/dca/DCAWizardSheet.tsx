@@ -53,6 +53,13 @@ import { useTokenPrices } from './prices';
 
 const STEP_TITLES = ['Pick a stock', 'Amount & cadence', 'Review'] as const;
 
+/** Muted one-liner under the nav title; same chrome on every step. */
+const STEP_SUBTITLES = [
+    'Spin the drum — tap the centered stock to continue.',
+    'How much goes in, and how often it buys.',
+    'Check the details before you sign.',
+] as const;
+
 const BUDGET_OPTIONS = [20, 50, 100, 250];
 
 const PERCENT_MIN = 5;
@@ -102,24 +109,61 @@ const STEP_LABELS: Record<PlanOrderStep, string> = {
     submit: 'Creating your plan…',
 };
 
+/** Review-step fact rows (icon + copy), rendered as an inset-grouped card. */
+const FACTS = [
+    {
+        icon: 'sparkles-outline',
+        text: 'Every buy farms your pet: +25 points, +10 XP, happiness and a Care Clock refill.',
+    },
+    {
+        icon: 'flash-outline',
+        text: 'First buy executes right after deposit.',
+    },
+    {
+        icon: 'lock-closed-outline',
+        text: 'Budget lives in the on-chain Jupiter DCA account. Only you can withdraw (non-custodial).',
+    },
+    {
+        icon: 'wallet-outline',
+        text: 'Output tokens are sent to your wallet each cycle.',
+    },
+] as const;
+
 const SEGMENTED_PAD = 3;
 
+/** Cadence segments for the generic SegmentedControl. */
+const CADENCE_SEGMENTS = CADENCE_OPTIONS.map((option) => ({
+    id: option.id as string,
+    label: CADENCE_SHORT[option.id],
+}));
+
+/** Amount-per-buy preset segments (percent of budget). */
+const PERCENT_SEGMENTS = PERCENT_PRESETS.map((preset) => ({
+    id: String(preset),
+    label: `${preset}%`,
+}));
+
 /**
- * Four mutually exclusive cadences with short labels are a segmented control,
- * not a stack of radio cards: one row, a sliding indicator springing between
- * segments, and the selected caption read out underneath.
+ * iOS segmented control: mutually exclusive short options on one row, a
+ * sliding indicator springing between segments. One selection idiom for the
+ * whole wizard (cadence, amount presets); the drum wheel covers long lists.
  */
-function CadenceSegmented({
+function SegmentedControl({
+    options,
     value,
     onChange,
 }: {
-    value: CadenceId;
-    onChange: (id: CadenceId) => void;
+    options: readonly { id: string; label: string }[];
+    value: string;
+    onChange: (id: string) => void;
 }) {
     const [width, setWidth] = useState(0);
     const x = useSharedValue(0);
-    const index = CADENCE_OPTIONS.findIndex((option) => option.id === value);
-    const segWidth = (width - SEGMENTED_PAD * 2) / CADENCE_OPTIONS.length;
+    // A free-form value (slider-set percent) may match no segment: hide the
+    // indicator rather than highlighting the wrong one.
+    const selectedIndex = options.findIndex((option) => option.id === value);
+    const index = Math.max(0, selectedIndex);
+    const segWidth = (width - SEGMENTED_PAD * 2) / options.length;
 
     useEffect(() => {
         if (segWidth <= 0) return;
@@ -139,13 +183,12 @@ function CadenceSegmented({
                 // indicator never sweeps in from the left on open.
                 if (width === 0 && w > 0) {
                     x.value =
-                        index *
-                        ((w - SEGMENTED_PAD * 2) / CADENCE_OPTIONS.length);
+                        index * ((w - SEGMENTED_PAD * 2) / options.length);
                 }
                 setWidth(w);
             }}
         >
-            {segWidth > 0 ? (
+            {segWidth > 0 && selectedIndex >= 0 ? (
                 <Animated.View
                     style={[
                         styles.segmentIndicator,
@@ -154,15 +197,13 @@ function CadenceSegmented({
                     ]}
                 />
             ) : null}
-            {CADENCE_OPTIONS.map((option) => {
+            {options.map((option) => {
                 const selected = option.id === value;
                 return (
                     <PressableScale
                         key={option.id}
                         onPress={() => {
-                            Haptics.impactAsync(
-                                Haptics.ImpactFeedbackStyle.Light
-                            );
+                            Haptics.selectionAsync();
                             onChange(option.id);
                         }}
                         style={styles.segment}
@@ -173,7 +214,7 @@ function CadenceSegmented({
                                 selected && styles.segmentTextSelected,
                             ]}
                         >
-                            {CADENCE_SHORT[option.id]}
+                            {option.label}
                         </Text>
                     </PressableScale>
                 );
@@ -298,6 +339,8 @@ export function DCAWizardSheet({
     const [submitting, setSubmitting] = useState(false);
     const [progressStep, setProgressStep] = useState<PlanOrderStep | null>(null);
     const [error, setError] = useState<string | null>(null);
+    // Measured viewport of the step body: the step 0 drum sizes to fill it.
+    const [bodyHeight, setBodyHeight] = useState(0);
 
     // Informational quotes only — never blocks the flow.
     const prices = useTokenPrices(visible && step === 0);
@@ -494,6 +537,8 @@ export function DCAWizardSheet({
 
             <StepDots step={step} />
 
+            <Text style={styles.stepSubtitle}>{STEP_SUBTITLES[step]}</Text>
+
             <ScrollView
                 style={[
                     styles.body,
@@ -502,14 +547,24 @@ export function DCAWizardSheet({
                     { height: Math.min(windowHeight * 0.6, 520) },
                 ]}
                 showsVerticalScrollIndicator={false}
-                contentContainerStyle={styles.bodyContent}
+                contentContainerStyle={[
+                    styles.bodyContent,
+                    step === 0 && styles.bodyContentWheel,
+                ]}
+                // Step 0 is the full-height drum: it owns vertical scrolling,
+                // so the sheet scroll stands down and never fights it.
+                scrollEnabled={step !== 0}
+                onLayout={(event) =>
+                    setBodyHeight(event.nativeEvent.layout.height)
+                }
             >
                 <Animated.View style={contentStyle}>
-                    {step === 0 && (
+                    {step === 0 && bodyHeight > 0 && (
                         <TokenWheelPicker
                             tokens={SUPPORTED_TOKENS}
                             selectedTicker={ticker}
                             quotes={prices}
+                            height={bodyHeight}
                             onSelect={setTicker}
                             onConfirm={(chosen) => {
                                 // Pick = advance; no Continue button on this step.
@@ -524,41 +579,56 @@ export function DCAWizardSheet({
                             <Text style={styles.sectionLabel}>
                                 Total budget
                             </Text>
-                            <View style={styles.chipWrap}>
-                                {BUDGET_OPTIONS.map((option) => {
+                            <View style={styles.groupCard}>
+                                {BUDGET_OPTIONS.map((option, index) => {
                                     const selected = budget === option;
                                     const disabled =
                                         (option * percent) / 100 <
                                         MIN_ROUND_USD;
                                     return (
-                                        <PressableScale
-                                            key={option}
-                                            disabled={disabled}
-                                            onPress={() => {
-                                                Haptics.impactAsync(
-                                                    Haptics.ImpactFeedbackStyle.Light
-                                                );
-                                                setBudget(option);
-                                            }}
-                                            style={[
-                                                styles.optionChip,
-                                                styles.budgetChip,
-                                                selected &&
-                                                    styles.optionChipSelected,
-                                                disabled &&
-                                                    styles.optionChipDisabled,
-                                            ]}
-                                        >
-                                            <Text
+                                        <View key={option}>
+                                            {index > 0 && (
+                                                <View
+                                                    style={
+                                                        styles.groupSeparator
+                                                    }
+                                                />
+                                            )}
+                                            <PressableScale
+                                                disabled={disabled}
+                                                onPress={() => {
+                                                    Haptics.selectionAsync();
+                                                    setBudget(option);
+                                                }}
                                                 style={[
-                                                    styles.optionChipText,
-                                                    selected &&
-                                                        styles.optionChipTextSelected,
+                                                    styles.groupRow,
+                                                    disabled &&
+                                                        styles.groupRowDisabled,
                                                 ]}
+                                                accessibilityRole="button"
+                                                accessibilityState={{
+                                                    selected,
+                                                    disabled,
+                                                }}
                                             >
-                                                {option} USDC
-                                            </Text>
-                                        </PressableScale>
+                                                <Text
+                                                    style={[
+                                                        styles.groupRowLabel,
+                                                        selected &&
+                                                            styles.groupRowLabelSelected,
+                                                    ]}
+                                                >
+                                                    {option} USDC
+                                                </Text>
+                                                {selected && (
+                                                    <Ionicons
+                                                        name="checkmark"
+                                                        size={18}
+                                                        color={colors.primary}
+                                                    />
+                                                )}
+                                            </PressableScale>
+                                        </View>
                                     );
                                 })}
                             </View>
@@ -572,38 +642,11 @@ export function DCAWizardSheet({
                             <Text style={styles.amountCaption}>
                                 {percent}% of your budget each buy
                             </Text>
-                            <View style={styles.presetRow}>
-                                {PERCENT_PRESETS.map((preset) => {
-                                    const selected = percent === preset;
-                                    return (
-                                        <PressableScale
-                                            key={preset}
-                                            onPress={() => {
-                                                Haptics.impactAsync(
-                                                    Haptics.ImpactFeedbackStyle.Light
-                                                );
-                                                setPercent(preset);
-                                            }}
-                                            style={[
-                                                styles.optionChip,
-                                                styles.presetChip,
-                                                selected &&
-                                                    styles.optionChipSelected,
-                                            ]}
-                                        >
-                                            <Text
-                                                style={[
-                                                    styles.optionChipText,
-                                                    selected &&
-                                                        styles.optionChipTextSelected,
-                                                ]}
-                                            >
-                                                {preset}%
-                                            </Text>
-                                        </PressableScale>
-                                    );
-                                })}
-                            </View>
+                            <SegmentedControl
+                                options={PERCENT_SEGMENTS}
+                                value={String(percent)}
+                                onChange={(id) => setPercent(Number(id))}
+                            />
                             <AmountSlider
                                 min={PERCENT_MIN}
                                 max={PERCENT_MAX}
@@ -626,9 +669,12 @@ export function DCAWizardSheet({
                             )}
 
                             <Text style={styles.sectionLabel}>Cadence</Text>
-                            <CadenceSegmented
+                            <SegmentedControl
+                                options={CADENCE_SEGMENTS}
                                 value={cadenceId}
-                                onChange={setCadenceId}
+                                onChange={(id) =>
+                                    setCadenceId(id as CadenceId)
+                                }
                             />
                             <Text style={styles.cadenceCaptionLine}>
                                 {CADENCE_CAPTIONS[cadenceId]}
@@ -649,83 +695,98 @@ export function DCAWizardSheet({
 
                     {step === 2 && selectedToken && (
                         <View style={styles.section}>
-                            <View style={styles.receiptCard}>
-                                <View style={styles.receiptHead}>
+                            <View style={styles.groupCard}>
+                                <View style={styles.groupRow}>
                                     <TokenLogo
                                         ticker={selectedToken.ticker}
-                                        size={32}
+                                        size={28}
                                     />
-                                    <View style={styles.receiptHeadText}>
-                                        <Text style={styles.receiptTicker}>
+                                    <View style={styles.groupRowTextCol}>
+                                        <Text style={styles.summaryTicker}>
                                             {selectedToken.ticker}
                                         </Text>
-                                        <Text style={styles.receiptName}>
+                                        <Text style={styles.summaryName}>
                                             {selectedToken.name}
                                         </Text>
                                     </View>
                                 </View>
-                                <View style={styles.receiptDivider} />
-                                <ReviewSummary
-                                    ticker={selectedToken.ticker}
-                                    amountPerTick={amountPerTick}
-                                    cadenceWord={cadenceWord}
-                                    budget={budget}
-                                />
-                                {recreate && (
-                                    <Text style={styles.recreateText}>
-                                        Recreating a plan: confirming first
-                                        cancels your old plan (unspent USDC
-                                        returns to your wallet), then creates
-                                        this one. A login message signature if
-                                        needed, then a cancel signature and a
-                                        deposit signature.
+                                <View style={styles.groupSeparator} />
+                                <View style={styles.summaryRow}>
+                                    <Text style={styles.summaryLabel}>
+                                        Per buy
                                     </Text>
-                                )}
+                                    <Text style={styles.summaryValue}>
+                                        {formatUsdc(amountPerTick)} USDC
+                                    </Text>
+                                </View>
+                                <View style={styles.groupSeparator} />
+                                <View style={styles.summaryRow}>
+                                    <Text style={styles.summaryLabel}>
+                                        Cadence
+                                    </Text>
+                                    <Text style={styles.summaryValue}>
+                                        Every {CADENCE_NOUNS[cadenceId]}
+                                    </Text>
+                                </View>
+                                <View style={styles.groupSeparator} />
+                                <View style={styles.summaryRow}>
+                                    <Text style={styles.summaryLabel}>
+                                        Total budget
+                                    </Text>
+                                    <Text style={styles.summaryValue}>
+                                        {formatUsdc(budget)} USDC
+                                    </Text>
+                                </View>
+                                <View style={styles.groupSeparator} />
+                                <View style={styles.summaryRow}>
+                                    <Text style={styles.summaryLabel}>
+                                        Buys
+                                    </Text>
+                                    <Text style={styles.summaryValue}>
+                                        {buys} over{' '}
+                                        {humanDuration(buys * intervalSec)}
+                                    </Text>
+                                </View>
                             </View>
-                            <View style={styles.factRow}>
-                                <Ionicons
-                                    name="sparkles-outline"
-                                    size={16}
-                                    color={colors.primary}
-                                />
-                                <Text style={styles.factText}>
-                                    Every buy farms your pet: +25 points, +10
-                                    XP, happiness and a Care Clock refill.
+
+                            <ReviewSummary
+                                ticker={selectedToken.ticker}
+                                amountPerTick={amountPerTick}
+                                cadenceWord={cadenceWord}
+                                budget={budget}
+                            />
+                            {recreate && (
+                                <Text style={styles.recreateText}>
+                                    Recreating a plan: confirming first cancels
+                                    your old plan (unspent USDC returns to your
+                                    wallet), then creates this one. A login
+                                    message signature if needed, then a cancel
+                                    signature and a deposit signature.
                                 </Text>
+                            )}
+
+                            <View style={styles.groupCard}>
+                                {FACTS.map((fact, index) => (
+                                    <View key={fact.icon}>
+                                        {index > 0 && (
+                                            <View
+                                                style={styles.groupSeparator}
+                                            />
+                                        )}
+                                        <View style={styles.groupRow}>
+                                            <Ionicons
+                                                name={fact.icon}
+                                                size={16}
+                                                color={colors.primary}
+                                            />
+                                            <Text style={styles.factText}>
+                                                {fact.text}
+                                            </Text>
+                                        </View>
+                                    </View>
+                                ))}
                             </View>
-                            <View style={styles.factRow}>
-                                <Ionicons
-                                    name="flash-outline"
-                                    size={16}
-                                    color={colors.primary}
-                                />
-                                <Text style={styles.factText}>
-                                    First buy executes right after deposit.
-                                </Text>
-                            </View>
-                            <View style={styles.factRow}>
-                                <Ionicons
-                                    name="lock-closed-outline"
-                                    size={16}
-                                    color={colors.primary}
-                                />
-                                <Text style={styles.factText}>
-                                    Budget lives in the on-chain Jupiter DCA
-                                    account. Only you can withdraw
-                                    (non-custodial).
-                                </Text>
-                            </View>
-                            <View style={styles.factRow}>
-                                <Ionicons
-                                    name="wallet-outline"
-                                    size={16}
-                                    color={colors.primary}
-                                />
-                                <Text style={styles.factText}>
-                                    Output tokens are sent to your wallet each
-                                    cycle.
-                                </Text>
-                            </View>
+
                             {wallet.connected ? (
                                 <>
                                     <Text style={styles.approvalsText}>
@@ -757,15 +818,17 @@ export function DCAWizardSheet({
                                     )}
                                 </>
                             ) : (
-                                <View style={styles.receiptCard}>
-                                    <Ionicons
-                                        name="wallet-outline"
-                                        size={28}
-                                        color={colors.textMuted}
-                                    />
-                                    <Text style={styles.connectText}>
-                                        Connect wallet in onboarding first
-                                    </Text>
+                                <View style={styles.groupCard}>
+                                    <View style={styles.connectRow}>
+                                        <Ionicons
+                                            name="wallet-outline"
+                                            size={28}
+                                            color={colors.textMuted}
+                                        />
+                                        <Text style={styles.connectText}>
+                                            Connect wallet in onboarding first
+                                        </Text>
+                                    </View>
                                 </View>
                             )}
                         </View>
@@ -814,8 +877,9 @@ const styles = StyleSheet.create({
     },
     headerTitle: {
         color: colors.text,
-        fontSize: typography.body,
-        fontFamily: 'Poppins_600SemiBold',
+        fontSize: typography.heading,
+        fontFamily: 'Poppins_700Bold',
+        letterSpacing: tracking.heading * typography.heading,
     },
     dots: {
         flexDirection: 'row',
@@ -835,6 +899,17 @@ const styles = StyleSheet.create({
     bodyContent: {
         paddingBottom: spacing.md,
     },
+    bodyContentWheel: {
+        // The drum is measured to the exact body height; no trailing gap.
+        paddingBottom: 0,
+    },
+    stepSubtitle: {
+        color: colors.textMuted,
+        fontSize: typography.small,
+        fontFamily: 'Poppins_400Regular',
+        textAlign: 'center',
+        paddingBottom: spacing.sm,
+    },
     section: {
         gap: spacing.md,
     },
@@ -845,6 +920,74 @@ const styles = StyleSheet.create({
         textTransform: 'uppercase',
         letterSpacing: 1,
         marginTop: spacing.sm,
+    },
+    groupCard: {
+        backgroundColor: colors.surfaceLight,
+        borderRadius: radius.md,
+        borderWidth: 1,
+        borderColor: colors.border,
+        overflow: 'hidden',
+    },
+    groupRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: spacing.md,
+        paddingVertical: 12,
+        paddingHorizontal: spacing.md,
+        minHeight: 48,
+    },
+    groupRowDisabled: {
+        opacity: 0.4,
+    },
+    groupRowLabel: {
+        flex: 1,
+        color: colors.text,
+        fontSize: typography.body,
+        fontFamily: 'Poppins_500Medium',
+    },
+    groupRowLabelSelected: {
+        color: colors.primary,
+    },
+    groupRowTextCol: {
+        flex: 1,
+        gap: 1,
+    },
+    groupSeparator: {
+        height: StyleSheet.hairlineWidth,
+        backgroundColor: colors.border,
+        marginLeft: spacing.md,
+    },
+    summaryRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: spacing.md,
+        paddingVertical: 12,
+        paddingHorizontal: spacing.md,
+        minHeight: 44,
+    },
+    summaryLabel: {
+        color: colors.textMuted,
+        fontSize: typography.body,
+        fontFamily: 'Poppins_400Regular',
+    },
+    summaryValue: {
+        color: colors.text,
+        fontSize: typography.body,
+        fontFamily: 'Poppins_600SemiBold',
+        fontVariant: ['tabular-nums'],
+        flexShrink: 1,
+        textAlign: 'right',
+    },
+    summaryTicker: {
+        color: colors.text,
+        fontSize: typography.body,
+        fontFamily: 'Poppins_700Bold',
+    },
+    summaryName: {
+        color: colors.textMuted,
+        fontSize: typography.small,
+        fontFamily: 'Poppins_400Regular',
     },
     amountValue: {
         color: colors.text,
@@ -861,50 +1004,6 @@ const styles = StyleSheet.create({
         fontFamily: 'Poppins_500Medium',
         textAlign: 'center',
         marginTop: 2,
-    },
-    presetRow: {
-        flexDirection: 'row',
-        flexWrap: 'wrap',
-        gap: spacing.xs,
-        marginTop: spacing.sm,
-    },
-    budgetChip: {
-        flex: 1,
-        alignItems: 'center',
-    },
-    chipWrap: {
-        flexDirection: 'row',
-        flexWrap: 'wrap',
-        gap: spacing.sm,
-    },
-    optionChip: {
-        backgroundColor: colors.background,
-        borderRadius: radius.pill,
-        borderWidth: 1,
-        borderColor: colors.border,
-        paddingVertical: spacing.sm,
-        paddingHorizontal: spacing.md,
-    },
-    optionChipSelected: {
-        borderColor: colors.primary,
-        backgroundColor: colors.surfaceLight,
-    },
-    optionChipText: {
-        color: colors.textMuted,
-        fontSize: typography.small,
-        fontFamily: 'Poppins_500Medium',
-    },
-    optionChipTextSelected: {
-        color: colors.primary,
-    },
-    optionChipDisabled: {
-        opacity: 0.4,
-    },
-    presetChip: {
-        flex: 1,
-        alignItems: 'center',
-        paddingVertical: spacing.xs,
-        paddingHorizontal: spacing.xs,
     },
     segmented: {
         flexDirection: 'row',
@@ -962,36 +1061,6 @@ const styles = StyleSheet.create({
         fontFamily: 'Poppins_500Medium',
         fontVariant: ['tabular-nums'],
     },
-    receiptCard: {
-        backgroundColor: colors.background,
-        borderRadius: radius.md,
-        borderWidth: 1,
-        borderColor: colors.border,
-        padding: spacing.lg,
-        gap: spacing.md,
-    },
-    receiptHead: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: spacing.md,
-    },
-    receiptHeadText: {
-        gap: 2,
-    },
-    receiptTicker: {
-        color: colors.text,
-        fontSize: typography.body,
-        fontFamily: 'Poppins_700Bold',
-    },
-    receiptName: {
-        color: colors.textMuted,
-        fontSize: typography.small,
-        fontFamily: 'Poppins_400Regular',
-    },
-    receiptDivider: {
-        height: StyleSheet.hairlineWidth,
-        backgroundColor: colors.border,
-    },
     reviewText: {
         color: colors.textMuted,
         fontSize: typography.body,
@@ -1007,12 +1076,6 @@ const styles = StyleSheet.create({
         fontSize: typography.small,
         fontFamily: 'Poppins_500Medium',
         lineHeight: 20,
-    },
-    factRow: {
-        flexDirection: 'row',
-        alignItems: 'flex-start',
-        gap: spacing.sm,
-        paddingHorizontal: spacing.xs,
     },
     factText: {
         flex: 1,
@@ -1047,6 +1110,11 @@ const styles = StyleSheet.create({
         color: colors.textMuted,
         fontSize: typography.small,
         fontFamily: 'Poppins_400Regular',
+    },
+    connectRow: {
+        alignItems: 'center',
+        gap: spacing.sm,
+        padding: spacing.lg,
     },
     connectText: {
         color: colors.textMuted,
