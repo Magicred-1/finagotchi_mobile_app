@@ -923,7 +923,7 @@ const styles = StyleSheet.create({
     },
     groupCard: {
         backgroundColor: colors.surfaceLight,
-        borderRadius: radius.md,
+        borderRadius: radius.lg,
         borderWidth: 1,
         borderColor: colors.border,
         overflow: 'hidden',

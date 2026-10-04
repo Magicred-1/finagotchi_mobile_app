@@ -294,19 +294,20 @@ export function TokenWheelPicker({
 
 const styles = StyleSheet.create({
     container: {
+        // No fill/border: the drum floats on the sheet; overflow hidden still
+        // clips the scrolled rows to the drum's bounds.
         borderRadius: radius.md,
-        backgroundColor: colors.background,
-        borderWidth: 1,
-        borderColor: colors.border,
         overflow: 'hidden',
     },
     selectionBand: {
         position: 'absolute',
-        left: 0,
-        right: 0,
+        left: spacing.xs,
+        right: spacing.xs,
         height: ROW_HEIGHT,
-        borderTopWidth: 1,
-        borderBottomWidth: 1,
+        // Stands on its own now that there is no container box: fully rounded
+        // pill with the primary tint and cyan rule all around.
+        borderWidth: 1,
+        borderRadius: radius.pill,
         borderColor: colors.primary,
         backgroundColor: 'rgba(53,215,255,0.08)',
         zIndex: 1,
