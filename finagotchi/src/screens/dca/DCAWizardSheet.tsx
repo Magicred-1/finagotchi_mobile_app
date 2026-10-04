@@ -13,7 +13,6 @@ import * as Haptics from 'expo-haptics';
 import { ScrollView } from 'react-native-gesture-handler';
 import Animated, {
     Easing,
-    FadeInDown,
     ReduceMotion,
     runOnJS,
     useAnimatedStyle,
@@ -48,8 +47,9 @@ import {
 } from '../../theme/tokens';
 import { AmountSlider } from './AmountSlider';
 import { TokenLogo } from './TokenLogo';
+import { TokenWheelPicker } from './TokenWheelPicker';
 import { cadenceAdverb, formatUsdc, humanDuration } from './format';
-import { formatChange, formatPrice, useTokenPrices } from './prices';
+import { useTokenPrices } from './prices';
 
 const STEP_TITLES = ['Pick a stock', 'Amount & cadence', 'Review'] as const;
 
@@ -506,84 +506,17 @@ export function DCAWizardSheet({
             >
                 <Animated.View style={contentStyle}>
                     {step === 0 && (
-                        <View style={styles.tokenGrid}>
-                            {SUPPORTED_TOKENS.map((token, index) => {
-                                const selected = ticker === token.ticker;
-                                const quote = prices[token.mint];
-                                const changeUp = (quote?.change24h ?? 0) >= 0;
-                                return (
-                                    <Animated.View
-                                        key={token.mint}
-                                        style={styles.tokenCell}
-                                        entering={FadeInDown.withInitialValues({
-                                            opacity: 0,
-                                            transform: [{ translateY: 8 }],
-                                        })
-                                            .delay(index * 40)
-                                            .duration(220)
-                                            .reduceMotion(ReduceMotion.System)}
-                                    >
-                                        <PressableScale
-                                            onPress={() => {
-                                                Haptics.impactAsync(
-                                                    Haptics.ImpactFeedbackStyle.Light
-                                                );
-                                                // Pick = advance; no Continue
-                                                // button on this step.
-                                                setTicker(token.ticker);
-                                                goToStep(1);
-                                            }}
-                                            style={[
-                                                styles.tokenCard,
-                                                selected &&
-                                                    styles.tokenCardSelected,
-                                            ]}
-                                        >
-                                            <View style={styles.tokenHead}>
-                                                <TokenLogo
-                                                    ticker={token.ticker}
-                                                    size={28}
-                                                />
-                                                <Text
-                                                    style={[
-                                                        styles.tokenTicker,
-                                                        selected &&
-                                                            styles.tokenTickerSelected,
-                                                    ]}
-                                                >
-                                                    {token.ticker}
-                                                </Text>
-                                            </View>
-                                            <Text
-                                                style={styles.tokenName}
-                                                numberOfLines={1}
-                                            >
-                                                {token.name}
-                                            </Text>
-                                            <View style={styles.tokenQuoteRow}>
-                                                <Text style={styles.tokenPrice}>
-                                                    {quote
-                                                        ? formatPrice(quote.price)
-                                                        : '–'}
-                                                </Text>
-                                                {quote ? (
-                                                    <Text
-                                                        style={[
-                                                            styles.tokenChange,
-                                                            changeUp
-                                                                ? styles.tokenChangeUp
-                                                                : styles.tokenChangeDown,
-                                                        ]}
-                                                    >
-                                                        {formatChange(quote.change24h)}
-                                                    </Text>
-                                                ) : null}
-                                            </View>
-                                        </PressableScale>
-                                    </Animated.View>
-                                );
-                            })}
-                        </View>
+                        <TokenWheelPicker
+                            tokens={SUPPORTED_TOKENS}
+                            selectedTicker={ticker}
+                            quotes={prices}
+                            onSelect={setTicker}
+                            onConfirm={(chosen) => {
+                                // Pick = advance; no Continue button on this step.
+                                setTicker(chosen);
+                                goToStep(1);
+                            }}
+                        />
                     )}
 
                     {step === 1 && (
@@ -901,65 +834,6 @@ const styles = StyleSheet.create({
     },
     bodyContent: {
         paddingBottom: spacing.md,
-    },
-    tokenGrid: {
-        flexDirection: 'row',
-        flexWrap: 'wrap',
-        gap: spacing.sm,
-    },
-    tokenCell: {
-        width: '48%',
-        flexGrow: 1,
-    },
-    tokenCard: {
-        backgroundColor: colors.background,
-        borderRadius: radius.md,
-        borderWidth: 1,
-        borderColor: colors.border,
-        padding: spacing.md,
-        gap: spacing.xs,
-    },
-    tokenCardSelected: {
-        borderColor: colors.primary,
-        backgroundColor: colors.surfaceLight,
-    },
-    tokenHead: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: spacing.sm,
-    },
-    tokenTicker: {
-        color: colors.text,
-        fontSize: typography.body,
-        fontFamily: 'Poppins_700Bold',
-    },
-    tokenTickerSelected: {
-        color: colors.primary,
-    },
-    tokenName: {
-        color: colors.textMuted,
-        fontSize: typography.small,
-        fontFamily: 'Poppins_400Regular',
-    },
-    tokenPrice: {
-        color: colors.text,
-        fontSize: typography.small,
-        fontFamily: 'Poppins_500Medium',
-    },
-    tokenQuoteRow: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: spacing.xs,
-    },
-    tokenChange: {
-        fontSize: 11,
-        fontFamily: 'Poppins_600SemiBold',
-    },
-    tokenChangeUp: {
-        color: colors.success,
-    },
-    tokenChangeDown: {
-        color: colors.danger,
     },
     section: {
         gap: spacing.md,
