@@ -1,32 +1,9 @@
-import React, { useCallback, useEffect, useRef } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
-import * as Haptics from 'expo-haptics';
-import Animated, {
-    Extrapolation,
-    interpolate,
-    runOnJS,
-    scrollTo,
-    useAnimatedRef,
-    useAnimatedScrollHandler,
-    useAnimatedStyle,
-    useSharedValue,
-    type SharedValue,
-} from 'react-native-reanimated';
+import React, { useMemo } from 'react';
 
-import { PressableScale } from '../../components/PressableScale';
-import { colors, radius, spacing, typography } from '../../theme/tokens';
 import type { SupportedToken } from '../../services/dca';
+import { WheelPicker, type WheelItem } from './WheelPicker';
 import { formatChange, formatPrice, type TokenQuote } from './prices';
 import { TokenLogo } from './TokenLogo';
-
-/** Row height drives snapToInterval and the selection band — keep in sync. */
-const ROW_HEIGHT = 64;
-const VISIBLE_ROWS = 5;
-/**
- * Settle after a drag that produced no fling: if momentum begins within this
- * window the drag settle is cancelled (the fling's momentum-end wins).
- */
-const DRAG_SETTLE_MS = 80;
 
 type Props = {
     tokens: SupportedToken[];
@@ -39,112 +16,15 @@ type Props = {
     /** The already-selected center row was tapped — confirm the pick. */
     onConfirm: (ticker: string) => void;
     /**
-     * Explicit drum height (fills the wizard step). Defaults to
-     * ROW_HEIGHT × VISIBLE_ROWS. Edge padding is computed symmetrically from
-     * the height so the center row and selection band stay centered.
+     * Explicit drum height (fills the wizard step). Defaults to the 5-row
+     * window. See WheelPicker.
      */
     height?: number;
 };
 
-function indexForOffset(offsetY: number, count: number): number {
-    return Math.min(count - 1, Math.max(0, Math.round(offsetY / ROW_HEIGHT)));
-}
-
-function WheelRow({
-    token,
-    index,
-    quote,
-    selected,
-    scrollY,
-    onPress,
-}: {
-    token: SupportedToken;
-    index: number;
-    quote: TokenQuote | undefined;
-    selected: boolean;
-    scrollY: SharedValue<number>;
-    onPress: () => void;
-}) {
-    // Drum feel: rows fade and shrink as they leave the center band.
-    const animatedStyle = useAnimatedStyle(() => {
-        const distance = Math.abs(
-            (index * ROW_HEIGHT - scrollY.value) / ROW_HEIGHT
-        );
-        return {
-            opacity: interpolate(
-                distance,
-                [0, 1, 2.5],
-                [1, 0.5, 0.2],
-                Extrapolation.CLAMP
-            ),
-            transform: [
-                {
-                    scale: interpolate(
-                        distance,
-                        [0, 1, 2],
-                        [1, 0.94, 0.88],
-                        Extrapolation.CLAMP
-                    ),
-                },
-            ],
-        };
-    });
-
-    const changeUp = (quote?.change24h ?? 0) >= 0;
-
-    return (
-        <Animated.View style={[styles.row, animatedStyle]}>
-            <PressableScale
-                onPress={onPress}
-                style={styles.rowPressable}
-                accessibilityRole="button"
-                accessibilityLabel={`${token.ticker}, ${token.name}`}
-            >
-                <TokenLogo ticker={token.ticker} size={32} />
-                <View style={styles.rowTextCol}>
-                    <Text
-                        style={[
-                            styles.rowTicker,
-                            selected && styles.rowTickerSelected,
-                        ]}
-                    >
-                        {token.ticker}
-                    </Text>
-                    <Text style={styles.rowName} numberOfLines={1}>
-                        {token.name}
-                    </Text>
-                </View>
-                <View style={styles.rowQuoteCol}>
-                    <Text
-                        style={[
-                            styles.rowPrice,
-                            selected && styles.rowTickerSelected,
-                        ]}
-                    >
-                        {quote ? formatPrice(quote.price) : '–'}
-                    </Text>
-                    {quote ? (
-                        <Text
-                            style={[
-                                styles.rowChange,
-                                changeUp
-                                    ? styles.rowChangeUp
-                                    : styles.rowChangeDown,
-                            ]}
-                        >
-                            {formatChange(quote.change24h)}
-                        </Text>
-                    ) : null}
-                </View>
-            </PressableScale>
-        </Animated.View>
-    );
-}
-
 /**
- * iOS-style vertical drum picker for the DCA token. Hand-rolled on a
- * reanimated scroll view (snapToInterval + per-row distance interpolation)
- * so no new dependency — and no new native code — ships OTA.
+ * Token drum for the wizard's pick step: maps tokens + live quotes onto the
+ * generic WheelPicker (logo leading, price + 24h change trailing).
  */
 export function TokenWheelPicker({
     tokens,
@@ -154,212 +34,32 @@ export function TokenWheelPicker({
     onConfirm,
     height,
 }: Props) {
-    const drumHeight = height ?? ROW_HEIGHT * VISIBLE_ROWS;
-    // Symmetric edge padding keeps the center row (and the selection band)
-    // vertically centered whatever the drum height.
-    const edgePadding = Math.max(0, (drumHeight - ROW_HEIGHT) / 2);
-    const selectedIndex = Math.max(
-        0,
-        tokens.findIndex((token) => token.ticker === selectedTicker)
-    );
-
-    const scrollRef = useAnimatedRef<Animated.ScrollView>();
-    const scrollY = useSharedValue(selectedIndex * ROW_HEIGHT);
-    // Last index that produced a selection — dedupes haptics/callbacks across
-    // drag-end, momentum-end and tap paths.
-    const lastSettledIndex = useRef(selectedIndex);
-    const didInitScroll = useRef(false);
-    const dragSettleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-    const onSelectRef = useRef(onSelect);
-    onSelectRef.current = onSelect;
-    const onConfirmRef = useRef(onConfirm);
-    onConfirmRef.current = onConfirm;
-    const tokensRef = useRef(tokens);
-    tokensRef.current = tokens;
-
-    const settle = useCallback((offsetY: number) => {
-        const index = indexForOffset(offsetY, tokensRef.current.length);
-        if (index === lastSettledIndex.current) return;
-        lastSettledIndex.current = index;
-        Haptics.selectionAsync();
-        onSelectRef.current(tokensRef.current[index].ticker);
-    }, []);
-
-    const cancelDragSettle = useCallback(() => {
-        if (dragSettleTimer.current) {
-            clearTimeout(dragSettleTimer.current);
-            dragSettleTimer.current = null;
-        }
-    }, []);
-
-    // A drag without a fling never fires momentum events; settle on a short
-    // timer and let a real fling cancel it.
-    const scheduleDragSettle = useCallback(
-        (offsetY: number) => {
-            cancelDragSettle();
-            dragSettleTimer.current = setTimeout(
-                () => settle(offsetY),
-                DRAG_SETTLE_MS
-            );
-        },
-        [cancelDragSettle, settle]
-    );
-
-    const scrollHandler = useAnimatedScrollHandler({
-        onScroll: (event) => {
-            scrollY.value = event.contentOffset.y;
-        },
-        onEndDrag: (event) => {
-            runOnJS(scheduleDragSettle)(event.contentOffset.y);
-        },
-        onMomentumBegin: () => {
-            runOnJS(cancelDragSettle)();
-        },
-        onMomentumEnd: (event) => {
-            runOnJS(cancelDragSettle)();
-            runOnJS(settle)(event.contentOffset.y);
-        },
-    });
-
-    useEffect(() => cancelDragSettle, [cancelDragSettle]);
-
-    // No prefill: the first token is the default selection (the row the drum
-    // opens on). No haptic — nothing the user did yet.
-    useEffect(() => {
-        if (selectedTicker === null && tokens.length > 0) {
-            lastSettledIndex.current = 0;
-            onSelectRef.current(tokens[0].ticker);
-        }
-    }, [selectedTicker, tokens]);
-
-    const handleLayout = useCallback(() => {
-        if (didInitScroll.current) return;
-        didInitScroll.current = true;
-        scrollTo(scrollRef, 0, selectedIndex * ROW_HEIGHT, false);
-        scrollY.value = selectedIndex * ROW_HEIGHT;
-    }, [selectedIndex, scrollRef, scrollY]);
-
-    const handleRowPress = useCallback(
-        (index: number) => {
-            const ticker = tokensRef.current[index].ticker;
-            if (index === lastSettledIndex.current) {
-                // Tapping the centered row confirms the pick (pick = advance).
-                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                onConfirmRef.current(ticker);
-                return;
-            }
-            // Off-center row: scroll it to the band and select it.
-            lastSettledIndex.current = index;
-            Haptics.selectionAsync();
-            onSelectRef.current(ticker);
-            scrollTo(scrollRef, 0, index * ROW_HEIGHT, true);
-        },
-        [scrollRef]
+    const items = useMemo<WheelItem[]>(
+        () =>
+            tokens.map((token) => {
+                const quote = quotes[token.mint];
+                return {
+                    id: token.ticker,
+                    title: token.ticker,
+                    subtitle: token.name,
+                    leading: <TokenLogo ticker={token.ticker} size={32} />,
+                    trailingTitle: quote ? formatPrice(quote.price) : '–',
+                    trailingSubtitle: quote
+                        ? formatChange(quote.change24h)
+                        : undefined,
+                    trailingUp: (quote?.change24h ?? 0) >= 0,
+                };
+            }),
+        [tokens, quotes]
     );
 
     return (
-        <View style={[styles.container, { height: drumHeight }]}>
-            <View
-                style={[styles.selectionBand, { top: edgePadding }]}
-                pointerEvents="none"
-            />
-            <Animated.ScrollView
-                ref={scrollRef}
-                style={styles.scroll}
-                contentContainerStyle={{ paddingVertical: edgePadding }}
-                showsVerticalScrollIndicator={false}
-                snapToInterval={ROW_HEIGHT}
-                decelerationRate="fast"
-                nestedScrollEnabled
-                onLayout={handleLayout}
-                onScroll={scrollHandler}
-                scrollEventThrottle={16}
-            >
-                {tokens.map((token, index) => (
-                    <WheelRow
-                        key={token.mint}
-                        token={token}
-                        index={index}
-                        quote={quotes[token.mint]}
-                        selected={selectedIndex === index}
-                        scrollY={scrollY}
-                        onPress={() => handleRowPress(index)}
-                    />
-                ))}
-            </Animated.ScrollView>
-        </View>
+        <WheelPicker
+            items={items}
+            selectedId={selectedTicker}
+            onSelect={onSelect}
+            onConfirm={onConfirm}
+            height={height}
+        />
     );
 }
-
-const styles = StyleSheet.create({
-    container: {
-        // No fill/border: the drum floats on the sheet; overflow hidden still
-        // clips the scrolled rows to the drum's bounds.
-        borderRadius: radius.md,
-        overflow: 'hidden',
-    },
-    selectionBand: {
-        position: 'absolute',
-        left: spacing.xs,
-        right: spacing.xs,
-        height: ROW_HEIGHT,
-        // Stands on its own now that there is no container box: fully rounded
-        // pill with the primary tint and cyan rule all around.
-        borderWidth: 1,
-        borderRadius: radius.pill,
-        borderColor: colors.primary,
-        backgroundColor: 'rgba(53,215,255,0.08)',
-        zIndex: 1,
-    },
-    scroll: {
-        flex: 1,
-    },
-    row: {
-        height: ROW_HEIGHT,
-        justifyContent: 'center',
-    },
-    rowPressable: {
-        flex: 1,
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: spacing.md,
-        paddingHorizontal: spacing.md,
-    },
-    rowTextCol: {
-        flex: 1,
-        gap: 1,
-    },
-    rowTicker: {
-        color: colors.text,
-        fontSize: typography.body,
-        fontFamily: 'Poppins_700Bold',
-    },
-    rowTickerSelected: {
-        color: colors.primary,
-    },
-    rowName: {
-        color: colors.textMuted,
-        fontSize: typography.small,
-        fontFamily: 'Poppins_400Regular',
-    },
-    rowQuoteCol: {
-        alignItems: 'flex-end',
-        gap: 1,
-    },
-    rowPrice: {
-        color: colors.text,
-        fontSize: typography.small,
-        fontFamily: 'Poppins_500Medium',
-    },
-    rowChange: {
-        fontSize: 11,
-        fontFamily: 'Poppins_500Medium',
-    },
-    rowChangeUp: {
-        color: colors.success,
-    },
-    rowChangeDown: {
-        color: colors.danger,
-    },
-});

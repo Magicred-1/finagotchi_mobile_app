@@ -48,6 +48,7 @@ import {
 import { AmountSlider } from './AmountSlider';
 import { TokenLogo } from './TokenLogo';
 import { TokenWheelPicker } from './TokenWheelPicker';
+import { WheelPicker, type WheelItem } from './WheelPicker';
 import { cadenceAdverb, formatUsdc, humanDuration } from './format';
 import { useTokenPrices } from './prices';
 
@@ -90,14 +91,6 @@ const CADENCE_NOUNS: Record<CadenceId, string> = {
 const STEP_OUT = { duration: 150, easing: Easing.out(Easing.cubic) } as const;
 const STEP_IN = { duration: 200, easing: Easing.out(Easing.cubic) } as const;
 
-/** Short segment labels; full captions live in CADENCE_CAPTIONS. */
-const CADENCE_SHORT: Record<CadenceId, string> = {
-    daily: 'Daily',
-    weekly: 'Weekly',
-    biweekly: '2 wks',
-    monthly: 'Monthly',
-};
-
 /** Submit-progress copy per create/cancel stage (shown while submitting). */
 const STEP_LABELS: Record<PlanOrderStep, string> = {
     check: 'Checking your balance…',
@@ -131,10 +124,11 @@ const FACTS = [
 
 const SEGMENTED_PAD = 3;
 
-/** Cadence segments for the generic SegmentedControl. */
-const CADENCE_SEGMENTS = CADENCE_OPTIONS.map((option) => ({
+/** Cadence drum rows: full label + plain-English caption. */
+const CADENCE_WHEEL_ITEMS: WheelItem[] = CADENCE_OPTIONS.map((option) => ({
     id: option.id as string,
-    label: CADENCE_SHORT[option.id],
+    title: option.label,
+    subtitle: CADENCE_CAPTIONS[option.id],
 }));
 
 /** Amount-per-buy preset segments (percent of budget). */
@@ -669,16 +663,13 @@ export function DCAWizardSheet({
                             )}
 
                             <Text style={styles.sectionLabel}>Cadence</Text>
-                            <SegmentedControl
-                                options={CADENCE_SEGMENTS}
-                                value={cadenceId}
-                                onChange={(id) =>
+                            <WheelPicker
+                                items={CADENCE_WHEEL_ITEMS}
+                                selectedId={cadenceId}
+                                onSelect={(id) =>
                                     setCadenceId(id as CadenceId)
                                 }
                             />
-                            <Text style={styles.cadenceCaptionLine}>
-                                {CADENCE_CAPTIONS[cadenceId]}
-                            </Text>
 
                             <View style={styles.mathCard}>
                                 <Ionicons
@@ -1037,11 +1028,6 @@ const styles = StyleSheet.create({
     segmentTextSelected: {
         color: colors.primary,
         fontFamily: 'Poppins_600SemiBold',
-    },
-    cadenceCaptionLine: {
-        color: colors.textMuted,
-        fontSize: 11,
-        fontFamily: 'Poppins_400Regular',
     },
     mathCard: {
         flexDirection: 'row',
