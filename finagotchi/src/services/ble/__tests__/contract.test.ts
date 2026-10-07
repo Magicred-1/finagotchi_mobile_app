@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
-import { parseDeviceRequest, parseStateString } from '../../../features/ble/types';
+import {
+    isWifiResultLine,
+    parseDeviceRequest,
+    parseStateString,
+    parseWifiResult,
+} from '../../../features/ble/types';
 import {
     buildDcaHit,
     buildDcaPlan,
@@ -173,5 +178,54 @@ describe('device request parser (BLE notify)', () => {
             parseDeviceRequest('dca:plan:0:1:1780086400:0.25:SPYX:3:1.5:685.5')
         ).toBeNull();
         expect(parseDeviceRequest('sync:request')).toBeNull();
+    });
+});
+
+describe('wifi: join verdict lines (BLE notify)', () => {
+    it('parses wifi:ok with the SSID (colons in the name kept intact)', () => {
+        expect(isWifiResultLine('wifi:ok:HomeWifi')).toBe(true);
+        expect(parseWifiResult('wifi:ok:HomeWifi')).toEqual({
+            ok: true,
+            ssid: 'HomeWifi',
+        });
+        expect(parseWifiResult('wifi:ok:My:Network')).toEqual({
+            ok: true,
+            ssid: 'My:Network',
+        });
+    });
+
+    it('parses every documented wifi:fail code', () => {
+        for (const code of ['ssid', 'auth', 'ip', 'off'] as const) {
+            expect(parseWifiResult(`wifi:fail:${code}`)).toEqual({
+                ok: false,
+                code,
+            });
+        }
+    });
+
+    it('ignores malformed wifi: lines and never misparses them as pet state', () => {
+        for (const bad of [
+            'wifi:',
+            'wifi:ok:',
+            'wifi:fail',
+            'wifi:fail:bogus',
+            'wifi:something:else',
+        ]) {
+            expect(isWifiResultLine(bad)).toBe(true);
+            expect(parseWifiResult(bad)).toBeNull();
+        }
+        // Routing guard: wifi: lines are neither device requests nor valid
+        // pet state for the notification handler's purposes.
+        expect(parseDeviceRequest('wifi:ok:HomeWifi')).toBeNull();
+        expect(parseStateString('wifi:ok:HomeWifi')).toMatchObject({
+            stage: 'wifi',
+        });
+        // …which is exactly why useBle.handleNotification checks the wifi:
+        // prefix first and never forwards these lines to parseStateString.
+    });
+
+    it('does not confuse pet state with wifi: lines', () => {
+        expect(isWifiResultLine('coinling:3:1:2:12500:87')).toBe(false);
+        expect(parseWifiResult('coinling:3:1:2:12500:87')).toBeNull();
     });
 });
