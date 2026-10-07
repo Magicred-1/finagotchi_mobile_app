@@ -40,12 +40,6 @@ const STATE_ID_TO_STAGE: Record<StateId, PetStage> = {
     whale: 10,
 };
 
-/** Firmware mood id = index into EXPRESSIONS (see firmware BLE contract). */
-export const MOODS = EXPRESSIONS.map((expression, index) => ({
-    id: expression.id,
-    index,
-}));
-
 export function moodIndex(mood: PetMood): number {
     return EXPRESSIONS.findIndex((e) => e.id === mood);
 }
@@ -103,7 +97,7 @@ function petStoresHydrated(): boolean {
  * the firmware pauses its demo auto-evolve).
  */
 export const useDeviceControlStore = create<{
-    /** Mood override from the mood picker or a device-initiated change. */
+    /** Mood override from a device-initiated change. */
     deviceMood: PetMood | null;
     lastSentStage: PetStage | null;
     lastSentMood: number | null;
@@ -112,8 +106,6 @@ export const useDeviceControlStore = create<{
     lastSentHappy: number | null;
     lastSentStreak: number | null;
     setDeviceMood: (mood: PetMood | null) => void;
-    /** Mood picker: set the local expression and record the push. */
-    pushMood: (mood: PetMood) => void;
 }>((set) => ({
     deviceMood: null,
     lastSentStage: null,
@@ -123,7 +115,6 @@ export const useDeviceControlStore = create<{
     lastSentHappy: null,
     lastSentStreak: null,
     setDeviceMood: (mood) => set({ deviceMood: mood }),
-    pushMood: (mood) => set({ deviceMood: mood, lastSentMood: moodIndex(mood) }),
 }));
 
 /**

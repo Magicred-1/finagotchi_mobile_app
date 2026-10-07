@@ -13,6 +13,9 @@ config.watchFolders = [path.resolve(__dirname, '../shared')];
 config.resolver.assetExts = config.resolver.assetExts.filter((ext) => ext !== 'cjs');
 config.resolver.sourceExts = ['cjs', ...config.resolver.sourceExts];
 
+// 3D pet model for the BLE sync hero (PetSyncHeroGL).
+config.resolver.assetExts.push('glb');
+
 // tweetnacl requires Node's built-in 'crypto' module for randomBytes.
 // Hermes/JSC don't include it, so intercept that import and point it at our
 // minimal JS polyfill.
