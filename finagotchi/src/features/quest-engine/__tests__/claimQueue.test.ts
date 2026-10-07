@@ -218,4 +218,99 @@ describe('claimQueue credits and retries', () => {
         expect(state.failed[0].questId).toBe('quest-1');
         expect(state.pending[0].questId).toBe('quest-2');
     });
+
+    it('sends kind/programId content hints on the wire body', async () => {
+        verifyMock.mockResolvedValue({
+            credited: true,
+            xp: 25,
+            questId: 'quest-1',
+            duplicate: false,
+            flagged: false,
+        });
+        useClaimQueue
+            .getState()
+            .enqueue({ ...makeClaim(), kind: 'count', programId: 'prog-1' });
+
+        await useClaimQueue.getState().flush();
+
+        expect(verifyMock).toHaveBeenCalledWith(
+            expect.objectContaining({
+                wallet: WALLET,
+                day: DAY,
+                questId: 'quest-1',
+                kind: 'count',
+                programId: 'prog-1',
+            }),
+        );
+        // Retry metadata is queue-local and never leaks onto the wire.
+        const wire = verifyMock.mock.calls[0][0];
+        expect(wire).not.toHaveProperty('attempts');
+        expect(wire).not.toHaveProperty('firstSeenAt');
+        expect(wire).not.toHaveProperty('nextAttemptAt');
+    });
+});
+
+describe('claimQueue prepareRetry', () => {
+    it('drops matching failed entries and enqueues fresh', () => {
+        useClaimQueue.setState({
+            failed: [
+                {
+                    ...makeClaim(),
+                    attempts: 20,
+                    firstSeenAt: Date.now(),
+                    reason: 'conditions_not_met',
+                    failedAt: Date.now(),
+                },
+                {
+                    ...makeClaim('quest-2'),
+                    attempts: 1,
+                    firstSeenAt: Date.now(),
+                    reason: 'bad_signature',
+                    failedAt: Date.now(),
+                },
+            ],
+        });
+
+        useClaimQueue.getState().prepareRetry(makeClaim());
+
+        const state = useClaimQueue.getState();
+        expect(state.failed).toHaveLength(1);
+        expect(state.failed[0].questId).toBe('quest-2');
+        expect(state.pending).toHaveLength(1);
+        expect(state.pending[0].questId).toBe('quest-1');
+        expect(state.pending[0].attempts).toBe(0);
+    });
+
+    it('resets the retry budget of a matching pending claim, preserving its signature', () => {
+        useClaimQueue.setState({
+            pending: [
+                {
+                    ...makeClaim(),
+                    signature: 'sig-123',
+                    attempts: 5,
+                    firstSeenAt: Date.now() - 3_600_000,
+                    nextAttemptAt: Date.now() + 3_600_000,
+                },
+            ],
+        });
+
+        useClaimQueue.getState().prepareRetry(makeClaim());
+
+        const state = useClaimQueue.getState();
+        expect(state.pending).toHaveLength(1);
+        const [claim] = state.pending;
+        expect(claim.attempts).toBe(0);
+        expect(claim.nextAttemptAt).toBeUndefined();
+        expect(claim.signature).toBe('sig-123');
+    });
+
+    it('enqueues the claim when nothing matches', () => {
+        useClaimQueue.getState().prepareRetry(makeClaim());
+
+        const state = useClaimQueue.getState();
+        expect(state.failed).toHaveLength(0);
+        expect(state.pending).toHaveLength(1);
+        expect(state.pending[0].attempts).toBe(0);
+        expect(state.pending[0].nextAttemptAt).toBeUndefined();
+    });
 });

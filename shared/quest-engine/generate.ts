@@ -201,7 +201,9 @@ interface CohortQuest extends ExploreCandidate {
   description: string;
 }
 
-const COHORT_DEFAULT_QUESTS: readonly CohortQuest[] = [
+// Exported (additive, no logic change) so the server's verify fallback can
+// rebuild cohort definitions when a claim's positional id drifted.
+export const COHORT_DEFAULT_QUESTS: readonly CohortQuest[] = [
   {
     programId: 'JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4',
     name: 'Jupiter',

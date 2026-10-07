@@ -12,6 +12,7 @@ import {
 import { backfill, type ServerQuestProgress } from './client';
 import { useClaimQueue } from './claimQueue';
 import { useProfileStore } from './profileStore';
+import { useWalletStore } from '../wallet/store';
 import {
     mergeProgress,
     seedProgressFromProfile,
@@ -150,9 +151,14 @@ export const useQuestsStore = create<QuestsState>()(
 
                     // Auto-enqueue claims for quests the merged progress
                     // completes — the server remains the payout authority.
+                    // Demo accounts (App Store review) have no on-chain
+                    // history, so server verification can never pass; quests
+                    // still complete locally, nothing is enqueued.
+                    const demoAccount = useWalletStore.getState().demoAccount;
                     const creditedToday = profileStore.credited[wallet] ?? [];
                     const failedClaims = useClaimQueue.getState().failed;
                     for (const quest of quests) {
+                        if (demoAccount) break;
                         const p = merged[quest.id];
                         if (!p || !isComplete(quest, p)) continue;
                         // Same-day credits and definitive rejections stay quiet.
@@ -201,6 +207,11 @@ export const useQuestsStore = create<QuestsState>()(
             recordTx: (tx) => {
                 useProfileStore.getState().applyTx(tx);
 
+                // Demo accounts (App Store review) have no on-chain history,
+                // so server verification can never pass; quests still complete
+                // locally, no claim is enqueued.
+                const demoAccount = useWalletStore.getState().demoAccount;
+
                 const day = utcDay(tx.blockTime);
                 // Advance progress on any cached day whose quests this tx hits;
                 // usually just today, but a late-arriving tx can hit yesterday's
@@ -223,7 +234,7 @@ export const useQuestsStore = create<QuestsState>()(
                         dayProgress[quest.id] = next;
                         changed = true;
 
-                        if (!isComplete(quest, prev) && isComplete(quest, next)) {
+                        if (!demoAccount && !isComplete(quest, prev) && isComplete(quest, next)) {
                             useClaimQueue.getState().enqueue({
                                 wallet: tx.wallet,
                                 day: quest.day,
