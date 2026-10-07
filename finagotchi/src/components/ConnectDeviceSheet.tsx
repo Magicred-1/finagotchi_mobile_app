@@ -5,11 +5,10 @@ import { useRouter } from 'expo-router';
 
 import { BottomSheet } from './BottomSheet';
 import { Button } from './Button';
+import { PetSyncHero } from './PetSyncHero';
 import { PressableScale } from './PressableScale';
-import { SearchingRadar } from './SearchingRadar';
 import { WifiSetupSheet } from './WifiSetupSheet';
 import { colors, radius, spacing, typography } from '../theme/tokens';
-import { MOODS, useDeviceControlStore } from '../features/ble/sync';
 import { useWifiAutoSyncStore } from '../features/ble';
 import type { FinagotchiBle } from '../features/ble/types';
 
@@ -25,17 +24,12 @@ export function ConnectDeviceSheet({ visible, onClose, ble }: Props) {
         status,
         devices,
         connectedDevice,
-        deviceState,
         error,
         startScan,
         connect,
         disconnect,
         reconnect,
-        sendCommand,
     } = ble;
-
-    const deviceMood = useDeviceControlStore((state) => state.deviceMood);
-    const pushMood = useDeviceControlStore((state) => state.pushMood);
 
     const [wifiVisible, setWifiVisible] = useState(false);
     // Set when the user initiates a connect from THIS sheet: a fresh pairing
@@ -76,11 +70,6 @@ export function ConnectDeviceSheet({ visible, onClose, ble }: Props) {
     const connecting = status === 'connecting';
     const reconnecting = status === 'reconnecting';
 
-    function handleMoodPress(moodId: (typeof MOODS)[number]['id'], index: number) {
-        pushMood(moodId);
-        sendCommand(`mood:${index}`);
-    }
-
     return (
         <>
         <BottomSheet visible={visible} onClose={onClose} title="Finagotchi Hardware">
@@ -95,59 +84,6 @@ export function ConnectDeviceSheet({ visible, onClose, ble }: Props) {
                                 {connectedDevice.name ?? 'Finagotchi'}
                             </Text>
                             <Text style={styles.connectedLabel}>Connected</Text>
-                        </View>
-                    </View>
-
-                    {deviceState && (
-                        <View style={styles.stateRow}>
-                            <View style={styles.stateChip}>
-                                <Text style={styles.stateValue}>{deviceState.stage}</Text>
-                                <Text style={styles.stateLabel}>stage</Text>
-                            </View>
-                            <View style={styles.stateChip}>
-                                <Text style={styles.stateValue}>🔥 {deviceState.streak}</Text>
-                                <Text style={styles.stateLabel}>streak</Text>
-                            </View>
-                            <View style={styles.stateChip}>
-                                <Text style={styles.stateValue}>{deviceState.mood}</Text>
-                                <Text style={styles.stateLabel}>mood</Text>
-                            </View>
-                            <View style={styles.stateChip}>
-                                <Text style={styles.stateValue}>✨ {deviceState.points}</Text>
-                                <Text style={styles.stateLabel}>points</Text>
-                            </View>
-                            <View style={styles.stateChip}>
-                                <Text style={styles.stateValue}>❤️ {deviceState.happy}</Text>
-                                <Text style={styles.stateLabel}>happy</Text>
-                            </View>
-                        </View>
-                    )}
-
-                    <View style={styles.controlGroup}>
-                        <Text style={styles.controlLabel}>Mood</Text>
-                        <View style={styles.moodRow}>
-                            {MOODS.map((mood) => {
-                                const active = deviceMood === mood.id;
-                                return (
-                                    <PressableScale
-                                        key={mood.id}
-                                        onPress={() => handleMoodPress(mood.id, mood.index)}
-                                        style={[
-                                            styles.moodChip,
-                                            active && styles.moodChipActive,
-                                        ]}
-                                    >
-                                        <Text
-                                            style={[
-                                                styles.moodChipText,
-                                                active && styles.moodChipTextActive,
-                                            ]}
-                                        >
-                                            {mood.id}
-                                        </Text>
-                                    </PressableScale>
-                                );
-                            })}
                         </View>
                     </View>
 
@@ -174,14 +110,7 @@ export function ConnectDeviceSheet({ visible, onClose, ble }: Props) {
                 </View>
             ) : (
                 <View style={styles.section}>
-                    {scanning && (
-                        <View style={styles.scanCard}>
-                            <SearchingRadar />
-                            <Text style={styles.scanTitle}>
-                                Searching for nearby Finagotchi…
-                            </Text>
-                        </View>
-                    )}
+                    <PetSyncHero />
                     <Text
                         style={[
                             styles.statusText,
@@ -261,22 +190,6 @@ const styles = StyleSheet.create({
         gap: spacing.md,
         paddingBottom: spacing.md,
     },
-    scanCard: {
-        alignItems: 'center',
-        justifyContent: 'center',
-        gap: spacing.sm,
-        paddingVertical: spacing.md,
-        borderRadius: radius.md,
-        backgroundColor: colors.surfaceLight,
-        borderWidth: 1,
-        borderColor: colors.border,
-    },
-    scanTitle: {
-        color: colors.primary,
-        fontSize: typography.body,
-        fontFamily: 'Poppins_700Bold',
-        textAlign: 'center',
-    },
     statusText: {
         color: colors.textMuted,
         fontSize: typography.small,
@@ -341,64 +254,5 @@ const styles = StyleSheet.create({
         color: colors.primary,
         fontSize: typography.small,
         fontFamily: 'Poppins_600SemiBold',
-    },
-    stateRow: {
-        flexDirection: 'row',
-        gap: spacing.sm,
-    },
-    stateChip: {
-        flex: 1,
-        alignItems: 'center',
-        paddingVertical: spacing.sm,
-        borderRadius: radius.md,
-        backgroundColor: colors.surfaceLight,
-        borderWidth: 1,
-        borderColor: colors.border,
-    },
-    stateValue: {
-        color: colors.text,
-        fontSize: typography.body,
-        fontFamily: 'Poppins_700Bold',
-    },
-    stateLabel: {
-        color: colors.textMuted,
-        fontSize: typography.small,
-        fontFamily: 'Poppins_600SemiBold',
-    },
-    controlGroup: {
-        gap: spacing.sm,
-    },
-    controlLabel: {
-        color: colors.textMuted,
-        fontSize: typography.small,
-        fontFamily: 'Poppins_700Bold',
-        textTransform: 'uppercase',
-        letterSpacing: 1,
-    },
-    moodRow: {
-        flexDirection: 'row',
-        flexWrap: 'wrap',
-        gap: spacing.sm,
-    },
-    moodChip: {
-        paddingVertical: 6,
-        paddingHorizontal: 12,
-        borderRadius: radius.pill,
-        backgroundColor: colors.surfaceLight,
-        borderWidth: 1,
-        borderColor: colors.border,
-    },
-    moodChipActive: {
-        backgroundColor: 'rgba(53,215,255,0.14)',
-        borderColor: colors.primary,
-    },
-    moodChipText: {
-        color: colors.textMuted,
-        fontSize: typography.small,
-        fontFamily: 'Poppins_600SemiBold',
-        textTransform: 'capitalize',
-    },
-    moodChipTextActive: {
-        color: colors.primary,
     },
 });
