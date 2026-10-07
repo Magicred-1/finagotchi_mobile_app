@@ -40,6 +40,21 @@ const KIND_META: Record<
     explore: { label: 'Explore', icon: 'compass-outline', accent: colors.purple },
 };
 
+/** Human copy for the failure banner's most recent rejection reason. */
+const FAILURE_REASON_COPY: Record<string, string> = {
+    conditions_not_met: 'The server is still confirming your on-chain activity.',
+    unknown_quest: 'Your quest list changed since this reward was earned.',
+    signature_not_found: 'Waiting for your transaction to be indexed.',
+    bad_signature: 'Wallet sign-in problem. Reconnect your wallet and retry.',
+    wallet_mismatch: 'Wallet sign-in problem. Reconnect your wallet and retry.',
+    malformed: 'Wallet sign-in problem. Reconnect your wallet and retry.',
+    unauthorized: 'Wallet sign-in problem. Reconnect your wallet and retry.',
+};
+
+function failureReasonCopy(reason: string): string {
+    return FAILURE_REASON_COPY[reason] ?? 'Verification will retry automatically.';
+}
+
 type QuestStatus = 'active' | 'claiming' | 'credited' | 'locked';
 
 type Props = {
@@ -67,9 +82,15 @@ export default function QuestsSheet({
     const credited = useProfileStore((state) => state.credited);
     const pendingClaims = useClaimQueue((state) => state.pending);
     const failedClaims = useClaimQueue((state) => state.failed);
+    const pendingForWallet = walletAddress
+        ? pendingClaims.filter((c) => c.wallet === walletAddress)
+        : [];
     const failedForWallet = walletAddress
         ? failedClaims.filter((f) => f.wallet === walletAddress)
         : [];
+    const latestFailure = failedForWallet.length
+        ? failedForWallet.reduce((a, b) => (a.failedAt >= b.failedAt ? a : b))
+        : undefined;
 
     // Opening the sheet refreshes today's list and retries pending claims.
     useEffect(() => {
@@ -144,11 +165,11 @@ export default function QuestsSheet({
 
     function handleQuestPress(quest: QuestWithProgress & { status: QuestStatus }) {
         if (quest.status === 'claiming') {
-            // Idempotent re-enqueue (deduped queue-side) + immediate flush —
-            // the tap retries a claim stuck on a dead network or a declined
-            // signature.
+            // Atomic retry prep (drops a stale failed entry, un-backs-off a
+            // pending one, or enqueues fresh) + immediate flush — the tap
+            // always ends with a due claim to send.
             if (walletAddress) {
-                useClaimQueue.getState().enqueue({
+                useClaimQueue.getState().prepareRetry({
                     wallet: walletAddress,
                     day: quest.day,
                     questId: quest.id,
@@ -266,11 +287,18 @@ export default function QuestsSheet({
                             size={20}
                             color={colors.warning}
                         />
-                        <Text style={styles.failedBannerText}>
-                            {failedForWallet.length} reward
-                            {failedForWallet.length === 1 ? '' : 's'} failed to
-                            verify — tap to retry
-                        </Text>
+                        <View style={styles.failedBannerTextWrap}>
+                            <Text style={styles.failedBannerText}>
+                                {failedForWallet.length} reward
+                                {failedForWallet.length === 1 ? '' : 's'} failed to
+                                verify — tap to retry
+                            </Text>
+                            {latestFailure ? (
+                                <Text style={styles.failedBannerReason}>
+                                    {failureReasonCopy(latestFailure.reason)}
+                                </Text>
+                            ) : null}
+                        </View>
                     </PressableScale>
                 ) : null}
 
@@ -457,7 +485,7 @@ export default function QuestsSheet({
 
                                         {isClaiming ? (
                                             <Text style={styles.claimHint}>
-                                                {pendingClaims.some(
+                                                {pendingForWallet.some(
                                                     (c) => c.questId === quest.id
                                                 )
                                                     ? 'Verifying…'
@@ -585,12 +613,21 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         gap: spacing.sm,
     },
-    failedBannerText: {
+    failedBannerTextWrap: {
         flex: 1,
+        gap: 2,
+    },
+    failedBannerText: {
         color: colors.warning,
         fontSize: typography.small,
         lineHeight: 18,
         fontFamily: 'Poppins_600SemiBold',
+    },
+    failedBannerReason: {
+        color: colors.textMuted,
+        fontSize: typography.small,
+        lineHeight: 18,
+        fontFamily: 'Poppins_400Regular',
     },
     deathTitle: {
         color: colors.text,

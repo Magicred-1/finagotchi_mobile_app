@@ -2,18 +2,17 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 
-import type { QuestKind } from '../../../../shared/quest-engine';
 import { QuestClientError, verifyClaim, type VerifyClaimRequest } from './client';
 import { useProfileStore } from './profileStore';
 import { usePetStore } from '../pet/store';
 
 /**
  * programId/kind ride along so a credit can be recorded into the local quest
- * history without re-deriving the quest; they are stripped from the wire body.
+ * history without re-deriving the quest; they are also sent on the wire as
+ * content hints so the server can resolve claims whose positional questId
+ * drifted.
  */
 export interface QueuedClaim extends VerifyClaimRequest {
-    programId?: string;
-    kind?: QuestKind;
     /** Transient-rejection retries so far; reset when a failed claim is retried. */
     attempts: number;
     /** Epoch ms the claim first entered the queue. */
@@ -52,6 +51,14 @@ type ClaimQueueState = {
     failed: FailedClaim[];
 
     enqueue: (claim: NewClaim) => void;
+    /**
+     * Tap-to-retry, atomically: drop any `failed` entries matching
+     * wallet+questId; if a `pending` entry matches, reset its retry budget
+     * (attempts/nextAttemptAt, preserving any signature already on it);
+     * otherwise enqueue the given claim. Pairs with flush() so a tap always
+     * ends with a due claim to send.
+     */
+    prepareRetry: (claim: NewClaim) => void;
     /**
      * Move failed claims back to pending with a fresh retry budget — all of
      * a wallet's, or just one quest's. Returns the number requeued.
@@ -97,6 +104,24 @@ export const useClaimQueue = create<ClaimQueueState>()(
                         },
                     ],
                 });
+            },
+
+            prepareRetry: (claim) => {
+                const matches = (c: { wallet: string; questId: string }) =>
+                    c.wallet === claim.wallet && c.questId === claim.questId;
+                set({ failed: get().failed.filter((f) => !matches(f)) });
+                const existing = get().pending.find(matches);
+                if (existing) {
+                    set({
+                        pending: get().pending.map((c) =>
+                            c === existing
+                                ? { ...c, attempts: 0, nextAttemptAt: undefined }
+                                : c,
+                        ),
+                    });
+                    return;
+                }
+                get().enqueue(claim);
             },
 
             retryFailed: (wallet, questId) => {
@@ -154,8 +179,6 @@ export const useClaimQueue = create<ClaimQueueState>()(
                         let res;
                         try {
                             const {
-                                programId: _p,
-                                kind: _k,
                                 attempts: _a,
                                 firstSeenAt: _f,
                                 nextAttemptAt: _n,

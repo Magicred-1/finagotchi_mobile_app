@@ -2,7 +2,7 @@ import Constants from 'expo-constants';
 import * as SecureStore from 'expo-secure-store';
 import bs58 from 'bs58';
 
-import { utf8Bytes, type ActivityProfile } from '../../../../shared/quest-engine';
+import { utf8Bytes, type ActivityProfile, type QuestKind } from '../../../../shared/quest-engine';
 import { useOnboardingStore } from '../onboarding/store';
 
 /** SecureStore key holding the optional static API key (extra deployment gate). */
@@ -65,6 +65,13 @@ export interface VerifyClaimRequest {
     questId: string;
     /** Optional tx signature offered as evidence. */
     signature?: string;
+    /**
+     * Optional content hints so the server can resolve the claim by quest
+     * content when the positional questId drifted between generation and
+     * verification.
+     */
+    kind?: QuestKind;
+    programId?: string;
 }
 
 export type VerifyClaimResponse =
