@@ -115,7 +115,6 @@ export async function deleteLeaderboardEntry(wallet: string): Promise<void> {
 export interface DbsPetState {
     wallet: string;
     stage: number;
-    substage: number;
     streak: number;
     mood: string;
     points: number;
@@ -125,11 +124,38 @@ export interface DbsPetState {
 
 export type PetStatePayload = Omit<DbsPetState, 'wallet' | 'updatedAt'>;
 
+export type PushPetStateResult =
+    | { applied: true; state: DbsPetState }
+    | { applied: false; conflict: DbsPetState };
+
+/**
+ * CAS push: `clientUpdatedAt` is the server's updatedAt watermark from the
+ * last successful response (or the restored row). The server answers 409 +
+ * the current row when the client is stale; on conflict we fetch that row
+ * once (server wins) instead of retrying blindly.
+ */
 export async function pushPetState(
     wallet: string,
-    state: PetStatePayload
-): Promise<void> {
-    await authedPost('/dbs/pet-state', { wallet, ...state }, wallet);
+    state: PetStatePayload,
+    clientUpdatedAt: number | null = null
+): Promise<PushPetStateResult> {
+    try {
+        const row = (await authedPost(
+            '/dbs/pet-state',
+            {
+                wallet,
+                ...state,
+                ...(clientUpdatedAt !== null ? { clientUpdatedAt } : {}),
+            },
+            wallet
+        )) as DbsPetState;
+        return { applied: true, state: row };
+    } catch (e) {
+        if ((e as { status?: number }).status === 409) {
+            return { applied: false, conflict: await fetchPetState(wallet) };
+        }
+        throw e;
+    }
 }
 
 export async function fetchPetState(wallet: string): Promise<DbsPetState> {

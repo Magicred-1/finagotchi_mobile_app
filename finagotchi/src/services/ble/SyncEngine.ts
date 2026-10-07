@@ -58,6 +58,12 @@ export interface PendingFill {
 
 export interface ConnectInput {
     pet: PetSnapshot;
+    /**
+     * Live reader for re-pushes. The connect-time `pet` goes stale within
+     * minutes; a divergent device state must be answered with the CURRENT
+     * values, never the snapshot captured at connect.
+     */
+    getPet: () => PetSnapshot;
     plans: DcaPlanSnapshot[];
     /** Negotiated ATT payload in bytes (MTU - 3). */
     mtuPayload: number;
@@ -102,7 +108,8 @@ export function createSyncEngine(deps: SyncEngineDeps): SyncEngine {
 
     let connected = false;
     let mtuPayload = DEFAULT_ATT_PAYLOAD;
-    let lastPet: PetSnapshot | null = null;
+    /** Live snapshot reader, captured at connect — see ConnectInput.getPet. */
+    let getPet: (() => PetSnapshot) | null = null;
     /**
      * Normalized "<stage>:<streak>:<mood>:<item>:<points>:<happy>" core of the
      * last pushed snapshot — the echo-loop guard. onDeviceState receives the
@@ -157,10 +164,10 @@ export function createSyncEngine(deps: SyncEngineDeps): SyncEngine {
     }
 
     return {
-        async onConnect({ pet, plans, mtuPayload: payload }) {
+        async onConnect({ pet, getPet: readPet, plans, mtuPayload: payload }) {
             connected = true;
             mtuPayload = payload;
-            lastPet = pet;
+            getPet = readPet;
 
             await pushSnapshot(pet);
 
@@ -243,18 +250,21 @@ export function createSyncEngine(deps: SyncEngineDeps): SyncEngine {
         },
 
         async onDeviceState(state) {
-            if (!connected || !lastPet) return;
+            if (!connected || !getPet) return;
             // App is authoritative: only a state whose core fields differ
             // from what we last pushed is a genuine device-side change.
             // Echoes of our own writes compare equal and stop here.
             if (state.trim() === lastSentCore) return;
-            await pushSnapshot(lastPet);
+            // Re-push the CURRENT snapshot — reading the stores live, never
+            // the connect-time capture, so hours-old values can't regress
+            // the device (and bounce back into the app stores / the DB).
+            await pushSnapshot(getPet());
         },
 
         onDisconnect() {
             // Send nothing; the hardware continues standalone (contract §4).
             connected = false;
-            lastPet = null;
+            getPet = null;
             lastSentCore = null;
         },
 
@@ -444,17 +454,22 @@ export function useDcaSyncEngine(ble: FinagotchiBle): DcaSyncStatus {
                 ]);
             if (cancelled) return;
 
-            const pet = petStore.usePetStore.getState();
-            const deviceMood =
-                bleSync.useDeviceControlStore.getState().deviceMood;
-            const snapshot: PetSnapshot = {
-                stage: bleSync.STAGE_TO_STATE_ID[pet.stage],
-                streak: checkinStore.useCheckinStore.getState().streak,
-                mood: bleSync.moodIndex(deviceMood ?? 'waiting'),
-                item: bleSync.accessoryIndex(pet.accessory),
-                points: Math.round(pet.balance),
-                happy: Math.round(pet.happiness),
-                subStage: pet.stage,
+            // Reads the stores LIVE: the connect snapshot and every later
+            // re-push (onDeviceState divergence, sync:req) share this so the
+            // device never receives hours-old values.
+            const readPetSnapshot = (): PetSnapshot => {
+                const current = petStore.usePetStore.getState();
+                const mood =
+                    bleSync.useDeviceControlStore.getState().deviceMood;
+                return {
+                    stage: bleSync.STAGE_TO_STATE_ID[current.stage],
+                    streak: checkinStore.useCheckinStore.getState().streak,
+                    mood: bleSync.moodIndex(mood ?? 'waiting'),
+                    item: bleSync.accessoryIndex(current.accessory),
+                    points: Math.round(current.balance),
+                    happy: Math.round(current.happiness),
+                    subStage: current.stage,
+                };
             };
             const plans = planStore.usePlanStore.getState().plans;
             try {
@@ -465,7 +480,8 @@ export function useDcaSyncEngine(ble: FinagotchiBle): DcaSyncStatus {
             if (cancelled) return;
 
             await engine.onConnect({
-                pet: snapshot,
+                pet: readPetSnapshot(),
+                getPet: readPetSnapshot,
                 plans: plansToSnapshots(plans, pricesRef.current),
                 mtuPayload,
             });
