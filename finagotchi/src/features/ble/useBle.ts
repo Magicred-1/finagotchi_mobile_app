@@ -236,14 +236,22 @@ export function useFinagotchiBle(): FinagotchiBle {    const [status, setStatus]
                     }
                 }
 
-                const initial = await device.readCharacteristicForService(
-                    FINAGOTCHI_SERVICE_UUID,
-                    FINAGOTCHI_CHARACTERISTIC_UUID
-                );
-                if (initial.value) {
-                    handleNotification(
-                        Buffer.from(initial.value, 'base64').toString('utf8')
+                // Pairing-required firmware rejects this read until the bond
+                // exists — the read attempt is what raises the OS pairing
+                // dialog. Never fail the connect over it: monitoring still
+                // comes up, and notifications flow once paired.
+                try {
+                    const initial = await device.readCharacteristicForService(
+                        FINAGOTCHI_SERVICE_UUID,
+                        FINAGOTCHI_CHARACTERISTIC_UUID
                     );
+                    if (initial.value) {
+                        handleNotification(
+                            Buffer.from(initial.value, 'base64').toString('utf8')
+                        );
+                    }
+                } catch (e) {
+                    console.warn('[BLE] initial read failed (pairing pending?):', e);
                 }
 
                 monitorSub.current?.remove();
