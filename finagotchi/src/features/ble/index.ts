@@ -13,7 +13,13 @@ export {
     FINAGOTCHI_SERVICE_UUID,
     PROVISIONING_CHAR_UUID,
 } from './types';
-export type { BleStatus, FinagotchiBle, FinagotchiState } from './types';
+export type {
+    BleStatus,
+    FinagotchiBle,
+    FinagotchiState,
+    WifiFailureCode,
+    WifiResult,
+} from './types';
 export {
     getWifiCredentials,
     listSavedSsids,

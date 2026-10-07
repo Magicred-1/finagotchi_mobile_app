@@ -6,12 +6,15 @@ import { Buffer } from 'buffer';
 import {
     FINAGOTCHI_CHARACTERISTIC_UUID,
     FINAGOTCHI_SERVICE_UUID,
+    isWifiResultLine,
     parseDeviceRequest,
     parseStateString,
+    parseWifiResult,
     type BleStatus,
     type DeviceRequest,
     type FinagotchiBle,
     type FinagotchiState,
+    type WifiResult,
 } from './types';
 import { autoSyncWifiToDevice } from './wifiAutoSync';
 
@@ -20,7 +23,7 @@ export {
     FINAGOTCHI_DEVICE_NAME,
     FINAGOTCHI_SERVICE_UUID,
 } from './types';
-export type { BleStatus, DeviceRequest, FinagotchiBle, FinagotchiState } from './types';
+export type { BleStatus, DeviceRequest, FinagotchiBle, FinagotchiState, WifiResult } from './types';
 
 const SCAN_TIMEOUT_MS = 15000;
 /** Default ATT payload (MTU 23 minus 3 header bytes) before negotiation. */
@@ -71,6 +74,7 @@ export function useFinagotchiBle(): FinagotchiBle {    const [status, setStatus]
     const [connectedDevice, setConnectedDevice] = useState<Device | null>(null);
     const [deviceState, setDeviceState] = useState<FinagotchiState | null>(null);
     const [deviceRequest, setDeviceRequest] = useState<DeviceRequest | null>(null);
+    const [wifiResult, setWifiResult] = useState<WifiResult | null>(null);
     const [error, setError] = useState<string | null>(null);
 
     const monitorSub = useRef<Subscription | null>(null);
@@ -87,11 +91,17 @@ export function useFinagotchiBle(): FinagotchiBle {    const [status, setStatus]
     // Monotonic id so repeated identical <name>:req notifications retrigger effects.
     const requestSeq = useRef(0);
 
-    // Notifications are either a state snapshot or a device request
-    // (`<name>:req`, `dca:pause:<i>`, `dca:new:...`); the shapes never
-    // overlap, and a request must not reach the state parser (its numeric
-    // fields would parse as garbage zeros).
+    // Notifications are either a state snapshot, a device request
+    // (`<name>:req`, `dca:pause:<i>`, `dca:new:...`), or a Wi-Fi join verdict
+    // (`wifi:ok:<ssid>` / `wifi:fail:<code>`); the shapes never overlap, and
+    // request/verdict lines must not reach the state parser (their numeric
+    // fields would parse as garbage zeros). Malformed wifi: lines are ignored.
     const handleNotification = useCallback((raw: string) => {
+        if (isWifiResultLine(raw)) {
+            const result = parseWifiResult(raw);
+            if (result) setWifiResult({ ...result, at: Date.now() });
+            return;
+        }
         const request = parseDeviceRequest(raw);
         if (request) {
             requestSeq.current += 1;
@@ -129,6 +139,7 @@ export function useFinagotchiBle(): FinagotchiBle {    const [status, setStatus]
         setConnectedDevice(null);
         setDeviceState(null);
         setDeviceRequest(null);
+        setWifiResult(null);
 
         if (intentionalDisconnect.current || !lastDeviceId.current) {
             setStatus('idle');
@@ -153,6 +164,7 @@ export function useFinagotchiBle(): FinagotchiBle {    const [status, setStatus]
         setConnectedDevice(null);
         setDeviceState(null);
         setDeviceRequest(null);
+        setWifiResult(null);
         setStatus('off');
     }, [clearReconnectTimer]);
 
@@ -416,6 +428,7 @@ export function useFinagotchiBle(): FinagotchiBle {    const [status, setStatus]
         setConnectedDevice(null);
         setDeviceState(null);
         setDeviceRequest(null);
+        setWifiResult(null);
         setStatus('idle');
     }, [clearReconnectTimer]);
 
@@ -469,6 +482,7 @@ export function useFinagotchiBle(): FinagotchiBle {    const [status, setStatus]
         connectedDevice,
         deviceState,
         deviceRequest,
+        wifiResult,
         error,
         startScan,
         stopScan,

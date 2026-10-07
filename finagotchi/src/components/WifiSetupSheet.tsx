@@ -1,5 +1,12 @@
-import React, { useEffect, useState } from 'react';
-import { StyleSheet, Switch, Text, TextInput, View } from 'react-native';
+import React, { useEffect, useRef, useState } from 'react';
+import {
+    ActivityIndicator,
+    StyleSheet,
+    Switch,
+    Text,
+    TextInput,
+    View,
+} from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import NetInfo from '@react-native-community/netinfo';
 import * as Haptics from 'expo-haptics';
@@ -21,6 +28,7 @@ import {
     writeWifiCredentialsToDevice,
     WifiProvisionTimeoutError,
     type FinagotchiBle,
+    type WifiFailureCode,
 } from '../features/ble';
 import { requestDeviceToken } from '../features/dbs/client';
 import { useWalletStore } from '../features/wallet/store';
@@ -37,7 +45,24 @@ function validate(ssid: string, password: string): string | null {
     return null;
 }
 
-type SendState = 'idle' | 'sending' | 'pairing-required' | 'failed' | 'done';
+/** The device takes ~10 s to attempt a join; verdicts arrive as wifi: lines. */
+const JOIN_VERDICT_TIMEOUT_MS = 15_000;
+
+/** Per-code failure copy for the device's join verdict. */
+const WIFI_FAILURE_COPY: Record<WifiFailureCode, string> = {
+    ssid: "Network not found — check the name exactly. iPhone hotspot names use a curly apostrophe (’), not a straight one (').",
+    auth: 'Wrong password — try again.',
+    ip: 'Joined but no internet address — try again in a moment.',
+    off: "The device didn't attempt the join.",
+};
+
+type SendState =
+    | 'idle'
+    | 'sending'
+    | 'joining'
+    | 'pairing-required'
+    | 'failed'
+    | 'done';
 
 /**
  * Wi-Fi provisioning as a sheet over the device connection UX: the SSID is
@@ -66,7 +91,13 @@ export function WifiSetupSheet({
     const [rememberNetwork, setRememberNetwork] = useState(true);
     const [sendState, setSendState] = useState<SendState>('idle');
     const [sendError, setSendError] = useState<string | null>(null);
+    /** SSID the device confirmed it joined (from the wifi:ok verdict). */
+    const [joinedSsid, setJoinedSsid] = useState<string | null>(null);
     const [locationGranted, setLocationGranted] = useState<boolean | null>(null);
+
+    // Verdict bookkeeping: ignore wifi: lines older than the current attempt.
+    const joinStartRef = useRef(0);
+    const joinTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     const autoSync = useWifiAutoSyncStore();
 
@@ -81,6 +112,7 @@ export function WifiSetupSheet({
         setShowPassword(false);
         setSendState('idle');
         setSendError(null);
+        setJoinedSsid(null);
         if (!detectionAvailable) return;
         let cancelled = false;
         void (async () => {
@@ -140,11 +172,18 @@ export function WifiSetupSheet({
 
             await writeWifiCredentialsToDevice(device, ssid, password, deviceToken);
 
-            if (rememberNetwork) {
-                await saveWifiCredentials(ssid, password);
-            }
-            setSendState('done');
-            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+            // The write being accepted is not the verdict: the join itself
+            // takes ~10 s and the device reports back with a wifi: line.
+            joinStartRef.current = Date.now();
+            setSendState('joining');
+            if (joinTimer.current) clearTimeout(joinTimer.current);
+            joinTimer.current = setTimeout(() => {
+                joinTimer.current = null;
+                setSendState('failed');
+                setSendError(
+                    'No answer from the device — check its screen to see if it joined.'
+                );
+            }, JOIN_VERDICT_TIMEOUT_MS);
         } catch (e) {
             Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
             if (isPairingRequiredError(e)) {
@@ -165,6 +204,41 @@ export function WifiSetupSheet({
             }
         }
     }
+
+    // The device's join verdict arrives as a wifi: notification on the state
+    // characteristic; only verdicts newer than the current attempt count.
+    const wifiResult = ble.wifiResult;
+    useEffect(() => {
+        if (sendState !== 'joining' || !wifiResult) return;
+        if (wifiResult.at < joinStartRef.current) return;
+        if (joinTimer.current) {
+            clearTimeout(joinTimer.current);
+            joinTimer.current = null;
+        }
+        if (wifiResult.ok) {
+            setJoinedSsid(wifiResult.ssid ?? null);
+            setSendState('done');
+            if (rememberNetwork) {
+                void saveWifiCredentials(ssid, password);
+            }
+            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+            return;
+        }
+        setSendState('failed');
+        setSendError(
+            wifiResult.code
+                ? WIFI_FAILURE_COPY[wifiResult.code]
+                : 'The join failed — try again.'
+        );
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+    }, [wifiResult, sendState, rememberNetwork, ssid, password]);
+
+    useEffect(
+        () => () => {
+            if (joinTimer.current) clearTimeout(joinTimer.current);
+        },
+        []
+    );
 
     const validationError = validate(ssid, password);
     const sending = sendState === 'sending';
@@ -262,6 +336,27 @@ export function WifiSetupSheet({
                         </View>
                     </View>
 
+                    {ssid.includes("'") && (
+                        <PressableScale
+                            onPress={() => {
+                                Haptics.selectionAsync();
+                                setSsid((value) => value.replace(/'/g, '’'));
+                            }}
+                            style={styles.apostropheHint}
+                            accessibilityRole="button"
+                        >
+                            <Ionicons
+                                name="bulb-outline"
+                                size={13}
+                                color={colors.warning}
+                            />
+                            <Text style={styles.apostropheHintText}>
+                                iPhone hotspots spell this with a curly
+                                apostrophe (’) — tap to fix
+                            </Text>
+                        </PressableScale>
+                    )}
+
                     {detectionAvailable && locationGranted === false && (
                         <PressableScale
                             onPress={handleUseCurrentNetwork}
@@ -335,6 +430,17 @@ export function WifiSetupSheet({
                             </Text>
                         </View>
                     )}
+                    {sendState === 'joining' && (
+                        <View style={styles.joiningRow}>
+                            <ActivityIndicator
+                                size="small"
+                                color={colors.primary}
+                            />
+                            <Text style={styles.joiningText}>
+                                Finagotchi is joining {ssid}…
+                            </Text>
+                        </View>
+                    )}
                     {sendState === 'failed' && sendError && (
                         <Text style={styles.errorText}>{sendError}</Text>
                     )}
@@ -354,7 +460,7 @@ export function WifiSetupSheet({
                                         />
                                     </View>
                                     <Text style={styles.connectedName}>
-                                        Finagotchi is online
+                                        Connected to {joinedSsid ?? ssid}
                                     </Text>
                                 </View>
                                 <View style={styles.groupSeparator} />
@@ -377,7 +483,10 @@ export function WifiSetupSheet({
                             }
                             loading={sending}
                             disabled={
-                                !connected || Boolean(validationError) || sending
+                                !connected ||
+                                Boolean(validationError) ||
+                                sending ||
+                                sendState === 'joining'
                             }
                             onPress={handleSend}
                         />
@@ -513,6 +622,30 @@ const styles = StyleSheet.create({
         backgroundColor: 'rgba(255,209,102,0.10)',
         borderWidth: 1,
         borderColor: 'rgba(255,209,102,0.35)',
+    },
+    joiningRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: spacing.sm,
+        paddingVertical: spacing.xs,
+    },
+    joiningText: {
+        color: colors.textMuted,
+        fontSize: typography.small,
+        fontFamily: 'Poppins_500Medium',
+    },
+    apostropheHint: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: spacing.xs,
+        alignSelf: 'flex-start',
+    },
+    apostropheHintText: {
+        flex: 1,
+        color: colors.textMuted,
+        fontSize: typography.small,
+        fontFamily: 'Poppins_400Regular',
     },
     pairingText: {
         flex: 1,
