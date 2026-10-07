@@ -187,8 +187,9 @@ describe('plan rewrites and device-state reconciliation', () => {
         await engine.onConnect({ pet: PET, plans: PLANS, mtuPayload: 125 });
         writes.length = 0;
 
-        // Echo of the last pushed snapshot: no writes.
-        await engine.onDeviceState('egg:5:2:0:750:100:1');
+        // Echo of the last pushed snapshot (6-field core form, as the hook
+        // reconstructs it from the parsed notification): no writes.
+        await engine.onDeviceState('egg:5:2:0:750:100');
         expect(commands()).toEqual([]);
 
         // Genuine device-side change: the app (authoritative) re-pushes once.
@@ -197,7 +198,20 @@ describe('plan rewrites and device-state reconciliation', () => {
 
         // The device echoing the re-push must not start a loop.
         writes.length = 0;
-        await engine.onDeviceState('egg:5:2:0:750:100:1');
+        await engine.onDeviceState('egg:5:2:0:750:100');
+        expect(commands()).toEqual([]);
+    });
+
+    it('repeated identical notifications never re-push (echo-loop regression)', async () => {
+        const { engine, writes, commands } = makeHarness(() => NOW_MS);
+        await engine.onConnect({ pet: PET, plans: PLANS, mtuPayload: 125 });
+        writes.length = 0;
+
+        // Every notification echoing the pushed state must be a no-op, no
+        // matter how often it repeats.
+        for (let i = 0; i < 5; i++) {
+            await engine.onDeviceState('egg:5:2:0:750:100');
+        }
         expect(commands()).toEqual([]);
     });
 });
