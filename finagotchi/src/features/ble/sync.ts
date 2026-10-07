@@ -14,6 +14,7 @@ import {
 import { useDcaUiStore } from '../../services/dca/uiStore';
 import { usePlanStore } from '../../services/dca/PlanStore';
 import { assertTicker } from '../../services/ble/protocol';
+import { shouldAdoptDeviceStreak } from './streakMerge';
 import type { FinagotchiBle } from './types';
 
 /** App lifecycle stage → firmware stage name (matches PetCanvas mapping). */
@@ -428,11 +429,18 @@ export function useDeviceSync(
                 useDeviceControlStore.setState({ lastSentItem: state.item });
             }
 
-            // Device-computed streak (day rollover) → streak display. Echoes
-            // of our own `streak:` pushes are ignored via lastSentStreak.
+            // Device-computed streak (day rollover while standalone) → streak
+            // display. Echoes of our own `streak:` pushes are ignored via
+            // lastSentStreak; the device may only ever raise the local streak
+            // (see shouldAdoptDeviceStreak).
             if (state.streak !== lastSentStreak) {
                 useDeviceControlStore.setState({ lastSentStreak: state.streak });
-                if (state.streak !== useCheckinStore.getState().streak) {
+                if (
+                    shouldAdoptDeviceStreak(
+                        state.streak,
+                        useCheckinStore.getState().streak
+                    )
+                ) {
                     useCheckinStore.setState({ streak: state.streak });
                 }
             }

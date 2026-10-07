@@ -15,6 +15,7 @@ import {
     registerNftCreature,
 } from '../nft/client';
 import { fetchCheckins, fetchPetState } from '../dbs/client';
+import { setLastServerPetStateAt } from './usePetStateSync';
 import { QuestClientError } from '../quest-engine/client';
 
 function dateKey(d: Date): string {
@@ -63,6 +64,9 @@ export async function restoreCreatureFromServer(wallet: string): Promise<boolean
     const history: Record<string, boolean> = {};
     for (const date of sortedDates) history[date] = true;
     const streak = computeStreak(sortedDates);
+
+    // CAS watermark: the restored row is the server's current truth.
+    setLastServerPetStateAt(petState?.updatedAt ?? null);
 
     // Stage derives from streak (same rule as check-in); fall back to the
     // coarse server mirrors when the wallet has no check-in history.

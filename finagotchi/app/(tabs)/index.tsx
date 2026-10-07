@@ -15,6 +15,9 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { GestureDetector } from 'react-native-gesture-handler';
 import * as Haptics from 'expo-haptics';
 import Animated, {
+  FadeIn,
+  FadeInDown,
+  ReduceMotion,
   runOnJS,
   useAnimatedStyle,
   useSharedValue,
@@ -61,38 +64,11 @@ import {
   useDeviceSync,
 } from '../../src/features/ble/sync';
 import { usePetStateSync } from '../../src/features/pet/usePetStateSync';
+import { getMood } from '../../src/features/pet/mood';
 import { WaitingForSync } from '../../src/components/WaitingForSync';
 import type { PetMood as EngineMood } from '../../src/engine/expressions';
 import { colors, radius, spacing, typography } from '../../src/theme/tokens';
 import type { PetMood, PetReaction } from '../../src/components/PetCanvas';
-
-function getMood(
-  hour: number,
-  hasCheckedInToday: boolean,
-  streak: number,
-  happiness: number
-): PetMood {
-  if (happiness <= 0) {
-    return 'sad';
-  }
-
-  if (happiness < 30) {
-    return 'sad';
-  }
-
-  if (hour >= 22 || hour <= 7) {
-    return 'sleeping';
-  }
-
-  if (hasCheckedInToday) {
-    if (streak >= 7) {
-      return 'proud';
-    }
-    return 'happy';
-  }
-
-  return 'waiting';
-}
 
 function formatNumber(num: number): string {
   return Math.round(num)
@@ -693,7 +669,10 @@ export default function HomeScreen() {
           ]}
         >
           {/* TOP BAR */}
-          <View style={styles.topBar}>
+          <Animated.View
+            style={styles.topBar}
+            entering={FadeIn.duration(200).reduceMotion(ReduceMotion.System)}
+          >
             <PressableScale
               onPress={() => {
                 Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -717,6 +696,7 @@ export default function HomeScreen() {
                 }}
                 hitSlop={8}
                 style={styles.headerIconButton}
+                accessibilityLabel="Connect device"
               >
                 <Ionicons
                   name="bluetooth"
@@ -747,10 +727,19 @@ export default function HomeScreen() {
                 <Text style={styles.headerStatText}>{formatNumber(balance)}</Text>
               </View>
             </View>
-          </View>
+          </Animated.View>
 
           {/* PET CARD */}
-          <View style={styles.petCard}>
+          <Animated.View
+            style={styles.petCard}
+            entering={FadeInDown.withInitialValues({
+              opacity: 0,
+              transform: [{ translateY: 12 }],
+            })
+              .delay(60)
+              .duration(380)
+              .reduceMotion(ReduceMotion.System)}
+          >
             <View style={styles.petCardHeader}>
               <View>
                 <Text style={styles.petName}>{displayName}</Text>
@@ -769,6 +758,7 @@ export default function HomeScreen() {
               <PressableScale
                 onPress={openFoodSheet}
                 style={styles.feedButton}
+                accessibilityLabel={`Feed ${displayName}`}
               >
                 <Text style={styles.fruitIcon}>🍎</Text>
               </PressableScale>
@@ -826,13 +816,32 @@ export default function HomeScreen() {
 
               <GuardianBadge />
             </View>
-          </View>
+          </Animated.View>
 
           {/* STREAK ROW */}
-          <StreakInfo onOpenFreeze={() => setStreakFreezeVisible(true)} />
+          <Animated.View
+            entering={FadeInDown.withInitialValues({
+              opacity: 0,
+              transform: [{ translateY: 8 }],
+            })
+              .delay(140)
+              .duration(260)
+              .reduceMotion(ReduceMotion.System)}
+          >
+            <StreakInfo onOpenFreeze={() => setStreakFreezeVisible(true)} />
+          </Animated.View>
 
           {/* LEAGUE / LEADERBOARD ROW */}
-          <View style={styles.socialRow}>
+          <Animated.View
+            style={styles.socialRow}
+            entering={FadeInDown.withInitialValues({
+              opacity: 0,
+              transform: [{ translateY: 8 }],
+            })
+              .delay(200)
+              .duration(260)
+              .reduceMotion(ReduceMotion.System)}
+          >
             <PressableScale onPress={() => setLeagueVisible(true)} style={styles.socialButton}>
               <Ionicons name="trophy" size={18} color={colors.warning} />
               <Text style={styles.socialButtonText}>League</Text>
@@ -841,20 +850,38 @@ export default function HomeScreen() {
               <Ionicons name="podium" size={18} color={colors.purple} />
               <Text style={styles.socialButtonText}>Leaderboard</Text>
             </PressableScale>
-          </View>
+          </Animated.View>
 
           {/* DCA PROMO */}
-          <View style={styles.dcaCardWrap}>
+          <Animated.View
+            style={styles.dcaCardWrap}
+            entering={FadeInDown.withInitialValues({
+              opacity: 0,
+              transform: [{ translateY: 8 }],
+            })
+              .delay(260)
+              .duration(260)
+              .reduceMotion(ReduceMotion.System)}
+          >
             <DCAHome />
-          </View>
+          </Animated.View>
 
           {/* ACTION BAR */}
-          <View style={styles.actionBar}>
-            <PressableScale onPress={handleCollectibles} style={styles.actionBarIcon}>
+          <Animated.View
+            style={styles.actionBar}
+            entering={FadeInDown.withInitialValues({
+              opacity: 0,
+              transform: [{ translateY: 8 }],
+            })
+              .delay(320)
+              .duration(260)
+              .reduceMotion(ReduceMotion.System)}
+          >
+            <PressableScale onPress={handleCollectibles} style={styles.actionBarIcon} accessibilityLabel="Open collectibles">
               <Ionicons name="color-palette-outline" size={22} color={colors.text} />
             </PressableScale>
 
-            <PressableScale onPress={handleHardware} style={styles.actionBarIcon}>
+            <PressableScale onPress={handleHardware} style={styles.actionBarIcon} accessibilityLabel="Hardware">
               <Ionicons name="hardware-chip-outline" size={22} color={colors.text} />
             </PressableScale>
 
@@ -878,14 +905,14 @@ export default function HomeScreen() {
               </Text>
             </PressableScale>
 
-            <PressableScale onPress={() => setQuestsVisible(true)} style={styles.actionBarIcon}>
+            <PressableScale onPress={() => setQuestsVisible(true)} style={styles.actionBarIcon} accessibilityLabel="Open quests">
               <Ionicons name="flag-outline" size={22} color={colors.text} />
             </PressableScale>
 
-            <PressableScale onPress={handleGames} style={styles.actionBarIcon}>
+            <PressableScale onPress={handleGames} style={styles.actionBarIcon} accessibilityLabel="Mini-games, coming soon">
               <Ionicons name="game-controller-outline" size={22} color={colors.textMuted} />
             </PressableScale>
-          </View>
+          </Animated.View>
         </View>
       </GestureDetector>
 
@@ -1173,7 +1200,7 @@ const styles = StyleSheet.create({
   },
   socialButtonText: {
     fontSize: 11,
-    fontFamily: 'Poppins_800ExtraBold',
+    fontFamily: 'Poppins_700Bold',
     color: colors.text,
   },
   happinessBar: {
@@ -1275,7 +1302,7 @@ const styles = StyleSheet.create({
   guardianText: {
     color: colors.purple,
     fontSize: 10,
-    fontFamily: 'Poppins_800ExtraBold',
+    fontFamily: 'Poppins_700Bold',
   },
   spinPill: {
     position: 'absolute',
@@ -1295,7 +1322,7 @@ const styles = StyleSheet.create({
   spinPillText: {
     color: colors.text,
     fontSize: 10,
-    fontFamily: 'Poppins_800ExtraBold',
+    fontFamily: 'Poppins_700Bold',
   },
 
   /* DCA PROMO */

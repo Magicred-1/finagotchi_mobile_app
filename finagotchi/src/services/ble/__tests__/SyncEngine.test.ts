@@ -70,7 +70,7 @@ describe('onConnect write sequence', () => {
     it('writes snapshot → epoch → dca:count → dca:plan, byte-for-byte vs the builders', async () => {
         const { engine, commands } = makeHarness(() => NOW_MS);
 
-        await engine.onConnect({ pet: PET, plans: PLANS, mtuPayload: 125 });
+        await engine.onConnect({ pet: PET, getPet: () => PET, plans: PLANS, mtuPayload: 125 });
 
         expect(commands()).toEqual([
             buildSnapshot(PET),
@@ -89,18 +89,18 @@ describe('onConnect write sequence', () => {
     it('hash-skips the plan push when plans are unchanged, rewrites on change', async () => {
         const { engine, writes, commands } = makeHarness(() => NOW_MS);
 
-        await engine.onConnect({ pet: PET, plans: PLANS, mtuPayload: 125 });
+        await engine.onConnect({ pet: PET, getPet: () => PET, plans: PLANS, mtuPayload: 125 });
         writes.length = 0;
 
         // Unchanged plans: snapshot + epoch are re-written, no dca: lines.
-        await engine.onConnect({ pet: PET, plans: PLANS, mtuPayload: 125 });
+        await engine.onConnect({ pet: PET, getPet: () => PET, plans: PLANS, mtuPayload: 125 });
         expect(commands()).toEqual([buildSnapshot(PET), buildEpoch(1_780_000_000)]);
         expect(commands().some((cmd) => cmd.startsWith('dca:'))).toBe(false);
 
         // Changed plans: full dca:count + dca:plan rewrite.
         writes.length = 0;
         const changed: DcaPlanSnapshot[] = [{ ...PLANS[0], buys: 4, holdings: 1.75 }];
-        await engine.onConnect({ pet: PET, plans: changed, mtuPayload: 125 });
+        await engine.onConnect({ pet: PET, getPet: () => PET, plans: changed, mtuPayload: 125 });
         expect(commands()).toEqual([
             buildSnapshot(PET),
             buildEpoch(1_780_000_000),
@@ -112,7 +112,7 @@ describe('onConnect write sequence', () => {
         const pet: PetSnapshot = { ...PET, stage: 'coinling' }; // 22-byte snapshot
         const { engine, commands } = makeHarness(() => NOW_MS);
 
-        await engine.onConnect({ pet, plans: [], mtuPayload: 20 });
+        await engine.onConnect({ pet, getPet: () => pet, plans: [], mtuPayload: 20 });
 
         expect(buildSnapshot(pet)).toBe('coinling:5:2:0:750:100:1');
         expect(commands().slice(0, 4)).toEqual([
@@ -141,7 +141,7 @@ describe('missed fill replay', () => {
             await engine.onFill({ ticker: 'QQQX', buys: 2 });
             expect(writes).toEqual([]); // nothing written while offline
 
-            const connect = engine.onConnect({ pet: PET, plans: PLANS, mtuPayload: 125 });
+            const connect = engine.onConnect({ pet: PET, getPet: () => PET, plans: PLANS, mtuPayload: 125 });
             await vi.advanceTimersByTimeAsync(TOAST_SPACING_MS * 2 + 100);
             await connect;
 
@@ -152,7 +152,7 @@ describe('missed fill replay', () => {
             // Queue drained; a second connect does not re-replay.
             expect(storage.get(KEY_PENDING_FILLS)).toBe('[]');
             writes.length = 0;
-            await engine.onConnect({ pet: PET, plans: PLANS, mtuPayload: 125 });
+            await engine.onConnect({ pet: PET, getPet: () => PET, plans: PLANS, mtuPayload: 125 });
             expect(commands().some((cmd) => cmd.startsWith('dca:hit:'))).toBe(false);
         } finally {
             vi.useRealTimers();
@@ -161,7 +161,7 @@ describe('missed fill replay', () => {
 
     it('writes immediately and queues nothing when connected', async () => {
         const { engine, writes, storage, commands } = makeHarness(() => NOW_MS);
-        await engine.onConnect({ pet: PET, plans: PLANS, mtuPayload: 125 });
+        await engine.onConnect({ pet: PET, getPet: () => PET, plans: PLANS, mtuPayload: 125 });
         writes.length = 0;
 
         await engine.onFill({ ticker: 'SPYX', buys: 4 });
@@ -174,7 +174,7 @@ describe('missed fill replay', () => {
 describe('plan rewrites and device-state reconciliation', () => {
     it('onPlansChanged always rewrites in full, even when identical', async () => {
         const { engine, writes, commands } = makeHarness(() => NOW_MS);
-        await engine.onConnect({ pet: PET, plans: PLANS, mtuPayload: 125 });
+        await engine.onConnect({ pet: PET, getPet: () => PET, plans: PLANS, mtuPayload: 125 });
         writes.length = 0;
 
         await engine.onPlansChanged(PLANS);
@@ -184,7 +184,7 @@ describe('plan rewrites and device-state reconciliation', () => {
 
     it('onDeviceState ignores echoes, re-pushes on divergence exactly once', async () => {
         const { engine, writes, commands } = makeHarness(() => NOW_MS);
-        await engine.onConnect({ pet: PET, plans: PLANS, mtuPayload: 125 });
+        await engine.onConnect({ pet: PET, getPet: () => PET, plans: PLANS, mtuPayload: 125 });
         writes.length = 0;
 
         // Echo of the last pushed snapshot (6-field core form, as the hook
@@ -204,7 +204,7 @@ describe('plan rewrites and device-state reconciliation', () => {
 
     it('repeated identical notifications never re-push (echo-loop regression)', async () => {
         const { engine, writes, commands } = makeHarness(() => NOW_MS);
-        await engine.onConnect({ pet: PET, plans: PLANS, mtuPayload: 125 });
+        await engine.onConnect({ pet: PET, getPet: () => PET, plans: PLANS, mtuPayload: 125 });
         writes.length = 0;
 
         // Every notification echoing the pushed state must be a no-op, no
@@ -213,6 +213,36 @@ describe('plan rewrites and device-state reconciliation', () => {
             await engine.onDeviceState('egg:5:2:0:750:100');
         }
         expect(commands()).toEqual([]);
+    });
+
+    it('re-push after divergence carries CURRENT values, not the connect-time snapshot', async () => {
+        // Regression: lastPet was captured once at connect and re-pushed on
+        // every divergence — hours later the device (and then the app stores
+        // and the DB) got regressed stage/points/happy/streak.
+        let currentPet = PET;
+        const { engine, writes, commands } = makeHarness(() => NOW_MS);
+        await engine.onConnect({
+            pet: currentPet,
+            getPet: () => currentPet,
+            plans: PLANS,
+            mtuPayload: 125,
+        });
+        writes.length = 0;
+
+        // An hour later the pet has evolved locally.
+        currentPet = {
+            ...PET,
+            stage: 'coinling',
+            streak: 6,
+            points: 1200,
+            happy: 60,
+            subStage: 2,
+        };
+
+        await engine.onDeviceState('egg:1:0:0:0:0');
+
+        expect(commands()).toEqual([buildSnapshot(currentPet)]);
+        expect(commands()).toEqual(['coinling:6:2:0:1200:60:2']);
     });
 });
 
@@ -223,6 +253,7 @@ describe('validation', () => {
 
         await engine.onConnect({
             pet: PET,
+            getPet: () => PET,
             plans: [{ ...PLANS[0], ticker: 'TOOLONG' }],
             mtuPayload: 125,
         });
@@ -234,6 +265,7 @@ describe('validation', () => {
         const lower = makeHarness(() => NOW_MS);
         await lower.engine.onConnect({
             pet: PET,
+            getPet: () => PET,
             plans: [{ ...PLANS[0], ticker: 'spyx' }],
             mtuPayload: 125,
         });
@@ -243,7 +275,7 @@ describe('validation', () => {
     it('skips an invalid fill toast without throwing', async () => {
         vi.spyOn(console, 'warn').mockImplementation(() => {});
         const { engine, writes, commands } = makeHarness(() => NOW_MS);
-        await engine.onConnect({ pet: PET, plans: PLANS, mtuPayload: 125 });
+        await engine.onConnect({ pet: PET, getPet: () => PET, plans: PLANS, mtuPayload: 125 });
         writes.length = 0;
 
         await engine.onFill({ ticker: 'toolong', buys: 1 });
@@ -257,7 +289,7 @@ describe('disconnect and sync status', () => {
         let nowMs = NOW_MS;
         const { engine, writes } = makeHarness(() => nowMs);
 
-        await engine.onConnect({ pet: PET, plans: PLANS, mtuPayload: 125 });
+        await engine.onConnect({ pet: PET, getPet: () => PET, plans: PLANS, mtuPayload: 125 });
         writes.length = 0;
 
         engine.onDisconnect();
