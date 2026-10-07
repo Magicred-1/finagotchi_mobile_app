@@ -12,19 +12,19 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import NetInfo from '@react-native-community/netinfo';
-import { Buffer } from 'buffer';
 
 import { Button } from '../components/Button';
 import { PressableScale } from '../components/PressableScale';
 import { SearchingRadar } from '../components/SearchingRadar';
 import { colors, radius, spacing, typography } from '../theme/tokens';
 import {
-    FINAGOTCHI_SERVICE_UUID,
-    PROVISIONING_CHAR_UUID,
+    hasLocationPermission,
     listSavedSsids,
+    requestLocationPermission,
     saveWifiCredentials,
     useFinagotchiDevice,
     useWifiAutoSyncStore,
+    writeWifiCredentialsToDevice,
 } from '../features/ble';
 import { useDcaSyncEngine } from '../services/ble/SyncEngine';
 import { requestDeviceToken } from '../features/dbs/client';
@@ -83,14 +83,7 @@ export default function HardwareBinding() {
         (async () => {
             const saved = await listSavedSsids();
             if (cancelled || saved.length === 0) return;
-            try {
-                // Lazy import: older dev clients lack the ExpoLocation native
-                // module — a static import would crash bundle evaluation.
-                const Location = await import('expo-location');
-                await Location.requestForegroundPermissionsAsync();
-            } catch {
-                // Best effort — auto-sync records 'no-permission' otherwise.
-            }
+            await requestLocationPermission();
         })();
         return () => {
             cancelled = true;
@@ -102,9 +95,7 @@ export default function HardwareBinding() {
         let cancelled = false;
         (async () => {
             try {
-                const Location = await import('expo-location');
-                const permission = await Location.getForegroundPermissionsAsync();
-                if (!permission.granted) return;
+                if (!(await hasLocationPermission())) return;
                 const state = await NetInfo.fetch();
                 const current = state.type === 'wifi' ? state.details?.ssid : null;
                 if (!cancelled && current && current !== '<unknown ssid>') {
@@ -122,11 +113,8 @@ export default function HardwareBinding() {
     function handleRememberToggle(value: boolean) {
         setRememberNetwork(value);
         if (value) {
-            // Needed to detect the current Wi-Fi name for auto-sync. Lazy
-            // import — older dev clients lack the ExpoLocation native module.
-            void import('expo-location')
-                .then((Location) => Location.requestForegroundPermissionsAsync())
-                .catch(() => {});
+            // Needed to detect the current Wi-Fi name for auto-sync.
+            void requestLocationPermission();
         }
     }
 
@@ -152,14 +140,11 @@ export default function HardwareBinding() {
             // Contract §2: "<ssid>\n<pass>" (optional third field carries the
             // device token), one separator, no trailing newline. Firmware
             // rejects writes on an unencrypted link.
-            const raw = deviceToken
-                ? `${ssid}\n${password}\n${deviceToken}`
-                : `${ssid}\n${password}`;
-            const payload = Buffer.from(raw, 'utf8').toString('base64');
-            await connectedDevice.writeCharacteristicWithResponseForService(
-                FINAGOTCHI_SERVICE_UUID,
-                PROVISIONING_CHAR_UUID,
-                payload
+            await writeWifiCredentialsToDevice(
+                connectedDevice,
+                ssid,
+                password,
+                deviceToken
             );
 
             setCloudLinked(deviceToken !== null);

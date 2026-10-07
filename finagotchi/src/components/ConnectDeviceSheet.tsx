@@ -121,6 +121,28 @@ export function ConnectDeviceSheet({ visible, onClose, ble }: Props) {
                         </View>
                     </View>
 
+                    <PressableScale
+                        onPress={() => {
+                            onClose();
+                            router.push('/hardware/wifi');
+                        }}
+                        style={styles.deviceRow}
+                        accessibilityRole="button"
+                    >
+                        <Ionicons name="wifi" size={18} color={colors.primary} />
+                        <View style={styles.deviceRowInfo}>
+                            <Text style={styles.deviceName}>Wi-Fi Setup</Text>
+                            <Text style={styles.deviceMeta}>
+                                Let it sync without your phone
+                            </Text>
+                        </View>
+                        <Ionicons
+                            name="chevron-forward"
+                            size={14}
+                            color={colors.textMuted}
+                        />
+                    </PressableScale>
+
                     <Button title="Disconnect" variant="secondary" onPress={disconnect} />
                 </View>
             ) : (

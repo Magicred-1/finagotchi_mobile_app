@@ -25,3 +25,13 @@ export {
     useWifiAutoSyncStore,
     type WifiAutoSyncResult,
 } from './wifiAutoSync';
+export {
+    getExpoLocation,
+    hasLocationPermission,
+    requestLocationPermission,
+} from './locationPermission';
+export {
+    isPairingRequiredError,
+    writeWifiCredentialsToDevice,
+    WifiProvisionTimeoutError,
+} from './wifiProvision';

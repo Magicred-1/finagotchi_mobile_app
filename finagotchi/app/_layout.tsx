@@ -19,7 +19,7 @@ import { SheetPortalHost } from '../src/components/SheetPortal';
 import { useFillWatcher } from '../src/services/dca';
 import { useQuestEngine } from '../src/features/quest-engine/useQuestEngine';
 import { useCreatureSync } from '../src/features/pet/creatureSync';
-import { useUpdateCheck } from './hooks/useUpdateCheck';
+import { useUpdateCheck } from '../src/hooks/useUpdateCheck';
 
 import {
   Poppins_400Regular,
@@ -141,6 +141,7 @@ function AppContent() {
         }}
       />
       <Stack.Screen name="hardware/binding" options={{ headerShown: false }} />
+      <Stack.Screen name="hardware/wifi" options={{ headerShown: false }} />
     </Stack>
   );
 

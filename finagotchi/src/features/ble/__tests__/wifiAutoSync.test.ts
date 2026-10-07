@@ -1,10 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import NetInfo from '@react-native-community/netinfo';
-import * as Location from 'expo-location';
 import type { Device } from 'react-native-ble-plx';
 
 import { FINAGOTCHI_SERVICE_UUID, PROVISIONING_CHAR_UUID } from '../types';
+import { hasLocationPermission } from '../locationPermission';
 import { autoSyncWifiToDevice, useWifiAutoSyncStore } from '../wifiAutoSync';
 import { saveWifiCredentials } from '../wifiCredentials';
 
@@ -12,8 +12,9 @@ vi.mock('@react-native-community/netinfo', () => ({
     default: { fetch: vi.fn() },
 }));
 
-vi.mock('expo-location', () => ({
-    getForegroundPermissionsAsync: vi.fn(),
+vi.mock('../locationPermission', () => ({
+    hasLocationPermission: vi.fn(),
+    requestLocationPermission: vi.fn(),
 }));
 
 vi.mock('expo-secure-store', () => {
@@ -31,7 +32,7 @@ vi.mock('expo-secure-store', () => {
 });
 
 const fetchMock = vi.mocked(NetInfo.fetch);
-const permissionMock = vi.mocked(Location.getForegroundPermissionsAsync);
+const permissionMock = vi.mocked(hasLocationPermission);
 
 function makeDevice(id: string) {
     const write = vi.fn().mockResolvedValue({});
@@ -53,7 +54,7 @@ beforeEach(async () => {
     const SecureStore = await import('expo-secure-store');
     (SecureStore as unknown as { __clear: () => void }).__clear();
     vi.clearAllMocks();
-    permissionMock.mockResolvedValue({ granted: true } as never);
+    permissionMock.mockResolvedValue(true);
     useWifiAutoSyncStore.setState({ lastSsid: null, lastResult: null, lastAt: null });
 });
 
@@ -93,7 +94,7 @@ describe('autoSyncWifiToDevice', () => {
     });
 
     it('records no-permission without touching NetInfo when location is denied', async () => {
-        permissionMock.mockResolvedValue({ granted: false } as never);
+        permissionMock.mockResolvedValue(false);
         const { device, write } = makeDevice('dev-noperm');
 
         await autoSyncWifiToDevice(device);

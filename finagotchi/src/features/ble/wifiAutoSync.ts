@@ -4,6 +4,7 @@ import type { Device } from 'react-native-ble-plx';
 import { create } from 'zustand';
 
 import { FINAGOTCHI_SERVICE_UUID, PROVISIONING_CHAR_UUID } from './types';
+import { hasLocationPermission } from './locationPermission';
 import { getWifiCredentials } from './wifiCredentials';
 
 export type WifiAutoSyncResult =
@@ -42,28 +43,28 @@ const syncedKeys = new Set<string>();
  * still need one manual provision). Never requests location permission —
  * without it the SSID is unavailable and we simply record 'no-permission'.
  *
- * expo-location is imported lazily: dev clients built before the module was
- * added lack the ExpoLocation native module, and a static import would throw
- * at bundle evaluation and take down every route that pulls in the BLE stack.
+ * Location goes through locationPermission.ts, which resolves the ExpoLocation
+ * native module without evaluating expo-location's JS: that package throws at
+ * module scope when the native module is missing (older dev clients), and
+ * Metro evaluates imports eagerly, so a dynamic import in try/catch still
+ * crashed the whole BLE import chain at bundle load.
  */
 export async function autoSyncWifiToDevice(device: Device): Promise<void> {
     const { record } = useWifiAutoSyncStore.getState();
 
-    let permitted = false;
-    try {
-        const Location = await import('expo-location');
-        const permission = await Location.getForegroundPermissionsAsync();
-        permitted = permission.granted;
-    } catch {
-        permitted = false;
-    }
-    if (!permitted) {
+    if (!(await hasLocationPermission())) {
         record('no-permission', null);
         return;
     }
 
-    const state = await NetInfo.fetch();
-    const ssid = state.type === 'wifi' ? state.details?.ssid : null;
+    let ssid: string | null = null;
+    try {
+        const state = await NetInfo.fetch();
+        ssid = state.type === 'wifi' ? (state.details?.ssid ?? null) : null;
+    } catch {
+        // NetInfo native module unavailable — bail silently.
+        return;
+    }
     if (!ssid || ssid === '<unknown ssid>') return;
 
     const password = await getWifiCredentials(ssid);
