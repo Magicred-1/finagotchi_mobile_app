@@ -24,7 +24,6 @@ import {
     buildDcaHit,
     buildEpoch,
     buildPlanPush,
-    buildSnapshot,
     buildSnapshotWrites,
     buildSolUsd,
     planPushHash,
@@ -75,6 +74,11 @@ export interface SyncEngine {
     onConnect: (input: ConnectInput) => Promise<void>;
     onPlansChanged: (plans: DcaPlanSnapshot[]) => Promise<void>;
     onFill: (fill: PendingFill) => Promise<void>;
+    /**
+     * Device notification, in the normalized 6-field core form
+     * "<stage>:<streak>:<mood>:<item>:<points>:<happy>" (the hook reconstructs
+     * it from the parsed state; trailing dcaCount/subStage fields are dropped).
+     */
     onDeviceState: (state: string) => Promise<void>;
     onDisconnect: () => void;
     getSyncStatus: () => DcaSyncStatus;
@@ -84,14 +88,31 @@ function delay(ms: number): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+/**
+ * Normalized "<stage>:<streak>:<mood>:<item>:<points>:<happy>" core of a pet
+ * snapshot — the form onDeviceState receives (reconstructed from the parsed
+ * device notification), used for arity-exact echo comparison.
+ */
+function snapshotCore(pet: PetSnapshot): string {
+    return `${pet.stage}:${pet.streak}:${pet.mood}:${pet.item}:${pet.points}:${pet.happy}`;
+}
+
 export function createSyncEngine(deps: SyncEngineDeps): SyncEngine {
     const { write, storage, now } = deps;
 
     let connected = false;
     let mtuPayload = DEFAULT_ATT_PAYLOAD;
     let lastPet: PetSnapshot | null = null;
-    /** Full snapshot string last pushed — the only echo-loop guard. */
-    let lastSentSnapshot: string | null = null;
+    /**
+     * Normalized "<stage>:<streak>:<mood>:<item>:<points>:<happy>" core of the
+     * last pushed snapshot — the echo-loop guard. onDeviceState receives the
+     * same 6-field form (reconstructed from the parsed notification), so the
+     * comparison is arity-exact: the full pushed string also carries subStage
+     * (and the device notify may append dcaCount), and comparing those longer
+     * strings against the 6-field core never matched — every notification
+     * re-pushed the snapshot, the device re-notified, and the loop spun.
+     */
+    let lastSentCore: string | null = null;
     let lastSyncedAt: number | null = null;
 
     // Restore the watermark so the offline label survives restarts.
@@ -122,16 +143,14 @@ export function createSyncEngine(deps: SyncEngineDeps): SyncEngine {
     }
 
     async function pushSnapshot(pet: PetSnapshot): Promise<void> {
-        let full: string;
         let lines: string[];
         try {
-            full = buildSnapshot(pet);
             lines = buildSnapshotWrites(pet, mtuPayload);
         } catch (e) {
             console.warn('[SyncEngine] invalid pet snapshot, skipped:', e);
             return;
         }
-        lastSentSnapshot = full;
+        lastSentCore = snapshotCore(pet);
         for (const line of lines) {
             await safeWrite(line);
         }
@@ -225,10 +244,10 @@ export function createSyncEngine(deps: SyncEngineDeps): SyncEngine {
 
         async onDeviceState(state) {
             if (!connected || !lastPet) return;
-            // App is authoritative: only a state that differs from what we
-            // last pushed is a genuine device-side change. Echoes of our own
-            // writes compare equal and stop here.
-            if (state.trim() === lastSentSnapshot) return;
+            // App is authoritative: only a state whose core fields differ
+            // from what we last pushed is a genuine device-side change.
+            // Echoes of our own writes compare equal and stop here.
+            if (state.trim() === lastSentCore) return;
             await pushSnapshot(lastPet);
         },
 
@@ -236,7 +255,7 @@ export function createSyncEngine(deps: SyncEngineDeps): SyncEngine {
             // Send nothing; the hardware continues standalone (contract §4).
             connected = false;
             lastPet = null;
-            lastSentSnapshot = null;
+            lastSentCore = null;
         },
 
         getSyncStatus() {

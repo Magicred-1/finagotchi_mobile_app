@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AppState, PermissionsAndroid, Platform } from 'react-native';
-import { BleManager, State, type Device, type Subscription } from 'react-native-ble-plx';
+import { BleManager, ConnectionPriority, State, type Device, type Subscription } from 'react-native-ble-plx';
 import { Buffer } from 'buffer';
 
 import {
@@ -203,6 +203,16 @@ export function useFinagotchiBle(): FinagotchiBle {    const [status, setStatus]
                 await device.discoverAllServicesAndCharacteristics();
 
                 if (Platform.OS === 'android') {
+                    try {
+                        // High priority (short connection interval) keeps the
+                        // link responsive and less likely to be dropped by the
+                        // stack. Requested before MTU, and never fatal.
+                        await device.requestConnectionPriority(
+                            ConnectionPriority.High
+                        );
+                    } catch (e) {
+                        console.warn('[BLE] connection priority request failed:', e);
+                    }
                     try {
                         // Resolves with the Device on success; Android grants the
                         // requested MTU or rejects, so the payload is known.
