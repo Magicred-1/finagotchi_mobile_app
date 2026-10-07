@@ -141,7 +141,6 @@ function AppContent() {
         }}
       />
       <Stack.Screen name="hardware/binding" options={{ headerShown: false }} />
-      <Stack.Screen name="hardware/wifi" options={{ headerShown: false }} />
     </Stack>
   );
 

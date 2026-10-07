@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
@@ -7,8 +7,10 @@ import { BottomSheet } from './BottomSheet';
 import { Button } from './Button';
 import { PressableScale } from './PressableScale';
 import { SearchingRadar } from './SearchingRadar';
+import { WifiSetupSheet } from './WifiSetupSheet';
 import { colors, radius, spacing, typography } from '../theme/tokens';
 import { MOODS, useDeviceControlStore } from '../features/ble/sync';
+import { useWifiAutoSyncStore } from '../features/ble';
 import type { FinagotchiBle } from '../features/ble/types';
 
 type Props = {
@@ -35,6 +37,33 @@ export function ConnectDeviceSheet({ visible, onClose, ble }: Props) {
     const deviceMood = useDeviceControlStore((state) => state.deviceMood);
     const pushMood = useDeviceControlStore((state) => state.pushMood);
 
+    const [wifiVisible, setWifiVisible] = useState(false);
+    // Set when the user initiates a connect from THIS sheet: a fresh pairing
+    // is the first-time-setup moment, so the Wi-Fi sheet auto-opens on
+    // success — unless auto-sync already pushed known credentials for the
+    // current network (nothing left to do). Routine reconnects and connects
+    // from other screens never trigger it.
+    const wifiPromptPending = useRef(false);
+
+    // First connect from this sheet → offer Wi-Fi setup right away.
+    useEffect(() => {
+        if (!visible || !connectedDevice || !wifiPromptPending.current) return;
+        wifiPromptPending.current = false;
+        if (useWifiAutoSyncStore.getState().lastResult !== 'synced') {
+            setWifiVisible(true);
+        }
+    }, [visible, connectedDevice]);
+
+    // Closing the sheet drops any pending prompt.
+    useEffect(() => {
+        if (!visible) wifiPromptPending.current = false;
+    }, [visible]);
+
+    function handleConnectPress(device: (typeof devices)[number]) {
+        wifiPromptPending.current = true;
+        connect(device);
+    }
+
     // Start looking for the device as soon as the sheet opens.
     useEffect(() => {
         if (visible && status === 'idle' && !connectedDevice) {
@@ -53,6 +82,7 @@ export function ConnectDeviceSheet({ visible, onClose, ble }: Props) {
     }
 
     return (
+        <>
         <BottomSheet visible={visible} onClose={onClose} title="Finagotchi Hardware">
             {connectedDevice ? (
                 <View style={styles.section}>
@@ -122,10 +152,7 @@ export function ConnectDeviceSheet({ visible, onClose, ble }: Props) {
                     </View>
 
                     <PressableScale
-                        onPress={() => {
-                            onClose();
-                            router.push('/hardware/wifi');
-                        }}
+                        onPress={() => setWifiVisible(true)}
                         style={styles.deviceRow}
                         accessibilityRole="button"
                     >
@@ -171,7 +198,7 @@ export function ConnectDeviceSheet({ visible, onClose, ble }: Props) {
                     {devices.map((device) => (
                         <PressableScale
                             key={device.id}
-                            onPress={() => connect(device)}
+                            onPress={() => handleConnectPress(device)}
                             disabled={connecting}
                             style={[
                                 styles.deviceRow,
@@ -219,6 +246,13 @@ export function ConnectDeviceSheet({ visible, onClose, ble }: Props) {
                 </View>
             )}
         </BottomSheet>
+
+        <WifiSetupSheet
+            visible={wifiVisible}
+            onClose={() => setWifiVisible(false)}
+            ble={ble}
+        />
+        </>
     );
 }
 
