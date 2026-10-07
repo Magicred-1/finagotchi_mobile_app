@@ -1,5 +1,7 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
+    ActivityIndicator,
+    AppState,
     KeyboardAvoidingView,
     Platform,
     SafeAreaView,
@@ -18,7 +20,10 @@ import { PressableScale } from '../components/PressableScale';
 import { SearchingRadar } from '../components/SearchingRadar';
 import { colors, radius, spacing, typography } from '../theme/tokens';
 import {
+    FINAGOTCHI_CHARACTERISTIC_UUID,
+    FINAGOTCHI_SERVICE_UUID,
     hasLocationPermission,
+    isPairingRequiredError,
     listSavedSsids,
     requestLocationPermission,
     saveWifiCredentials,
@@ -33,7 +38,14 @@ import { useOnboardingStore } from '../features/onboarding/store';
 
 const KEYBOARD_BEHAVIOR = Platform.OS === 'ios' ? 'padding' : 'height';
 
+/** Re-probe the encrypted link while the OS pairing dialog is up. */
+const PROBE_INTERVAL_MS = 2_000;
+/** Give up waiting for pairing after this; the retry button re-arms it. */
+const PROBE_TIMEOUT_MS = 60_000;
+
 type Step = 'scan' | 'pair' | 'provision' | 'done';
+
+type PairState = 'probing' | 'waiting' | 'error';
 
 export default function HardwareBinding() {
     const ble = useFinagotchiDevice();
@@ -50,7 +62,11 @@ export default function HardwareBinding() {
     } = ble;
 
     const [step, setStep] = useState<Step>('scan');
-    const [pairCode, setPairCode] = useState('');
+    const [pairState, setPairState] = useState<PairState>('probing');
+    const [pairError, setPairError] = useState<string | null>(null);
+    // Bumped by the retry button to re-run the probe effect.
+    const [pairNonce, setPairNonce] = useState(0);
+    const probingRef = useRef(false);
     const [ssid, setSsid] = useState('');
     const [password, setPassword] = useState('');
     const [rememberNetwork, setRememberNetwork] = useState(true);
@@ -74,6 +90,64 @@ export default function HardwareBinding() {
             setStep('scan');
         }
     }, [connectedDevice, step]);
+
+    // Seamless pairing: no in-app code entry (the OS owns the passkey dialog).
+    // Probe the encrypted state characteristic — on an unbonded link the
+    // probe itself raises the system pairing dialog; on a bonded one it just
+    // succeeds and we move straight to provisioning.
+    useEffect(() => {
+        if (step !== 'pair' || !connectedDevice) return;
+        let cancelled = false;
+        let timer: ReturnType<typeof setTimeout> | null = null;
+        const deadline = Date.now() + PROBE_TIMEOUT_MS;
+
+        const probe = async () => {
+            if (cancelled || probingRef.current) return;
+            probingRef.current = true;
+            try {
+                await connectedDevice.readCharacteristicForService(
+                    FINAGOTCHI_SERVICE_UUID,
+                    FINAGOTCHI_CHARACTERISTIC_UUID
+                );
+                if (!cancelled) setStep('provision');
+            } catch (e) {
+                if (cancelled) return;
+                if (isPairingRequiredError(e)) {
+                    setPairState('waiting');
+                    if (Date.now() < deadline) {
+                        timer = setTimeout(probe, PROBE_INTERVAL_MS);
+                    } else {
+                        setPairState('error');
+                        setPairError(
+                            'Pairing timed out — tap retry to try again.'
+                        );
+                    }
+                } else {
+                    setPairState('error');
+                    setPairError(
+                        e instanceof Error ? e.message : 'Verification failed.'
+                    );
+                }
+            } finally {
+                probingRef.current = false;
+            }
+        };
+
+        setPairState('probing');
+        setPairError(null);
+        void probe();
+
+        // Returning from the system pairing dialog re-probes immediately.
+        const appStateSub = AppState.addEventListener('change', (next) => {
+            if (next === 'active') void probe();
+        });
+
+        return () => {
+            cancelled = true;
+            if (timer) clearTimeout(timer);
+            appStateSub.remove();
+        };
+    }, [step, connectedDevice, pairNonce]);
 
     // Auto-sync reads the current Wi-Fi name, which requires location
     // permission on both platforms. Ask for it up front only when there is at
@@ -184,7 +258,8 @@ export default function HardwareBinding() {
                     <Text style={styles.subtitle}>
                         {step === 'scan' &&
                             'Find your device over Bluetooth to get started.'}
-                        {step === 'pair' && 'Pair with your device.'}
+                        {step === 'pair' &&
+                            'Securing the connection — no code to type here.'}
                         {step === 'provision' &&
                             'Give your device Wi-Fi so it can sync on its own.'}
                         {step === 'done' && 'Your Finagotchi is ready.'}
@@ -258,32 +333,28 @@ export default function HardwareBinding() {
 
                     {step === 'pair' && (
                         <View style={styles.section}>
-                            <Text style={styles.prompt}>
-                                Enter the 6-digit code on your Finagotchi's
-                                screen
-                            </Text>
-                            <TextInput
-                                value={pairCode}
-                                onChangeText={(text) =>
-                                    setPairCode(text.replace(/\D/g, ''))
-                                }
-                                placeholder="123456"
-                                placeholderTextColor={colors.textMuted}
-                                style={[styles.input, styles.codeInput]}
-                                keyboardType="number-pad"
-                                maxLength={6}
-                                returnKeyType="done"
-                                onSubmitEditing={() => {
-                                    if (pairCode.length === 6) {
-                                        setStep('provision');
+                            <View style={styles.pairRow}>
+                                <ActivityIndicator
+                                    size="small"
+                                    color={colors.primary}
+                                />
+                                <Text style={styles.prompt}>
+                                    {pairState === 'waiting'
+                                        ? 'Your Finagotchi is showing a 6-digit code — enter it in the pairing dialog.'
+                                        : pairState === 'error'
+                                          ? (pairError ?? 'Verification failed.')
+                                          : 'Securing the connection…'}
+                                </Text>
+                            </View>
+                            {pairState !== 'probing' && (
+                                <Button
+                                    title="Not seeing the dialog? Tap to retry"
+                                    variant="secondary"
+                                    onPress={() =>
+                                        setPairNonce((nonce) => nonce + 1)
                                     }
-                                }}
-                            />
-                            <Button
-                                title="Continue"
-                                disabled={pairCode.length !== 6}
-                                onPress={() => setStep('provision')}
-                            />
+                                />
+                            )}
                         </View>
                     )}
 
@@ -454,9 +525,15 @@ const styles = StyleSheet.create({
         textAlign: 'center',
     },
     prompt: {
+        flex: 1,
         color: colors.text,
         fontSize: typography.body,
         fontFamily: 'Poppins_600SemiBold',
+    },
+    pairRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: spacing.sm,
     },
     input: {
         backgroundColor: colors.surface,
@@ -468,11 +545,6 @@ const styles = StyleSheet.create({
         paddingHorizontal: spacing.lg,
         fontSize: typography.body,
         fontFamily: 'Poppins_500Medium',
-    },
-    codeInput: {
-        textAlign: 'center',
-        fontSize: typography.heading,
-        letterSpacing: 8,
     },
     errorText: {
         color: colors.danger,
