@@ -48,7 +48,6 @@ import {
 import { AmountSlider } from './AmountSlider';
 import { TokenLogo } from './TokenLogo';
 import { TokenWheelPicker } from './TokenWheelPicker';
-import { WheelPicker, type WheelItem } from './WheelPicker';
 import { cadenceAdverb, formatUsdc, humanDuration } from './format';
 import { useTokenPrices } from './prices';
 
@@ -73,13 +72,6 @@ const MIN_ROUND_USD = 10;
 
 /** Jupiter DCA program — the starter quest "Plant a Seed" watches it. */
 const JUPITER_DCA_PROGRAM_ID = 'DCA265Vj8a9CEuX1eb1LWRnDT7uK6q1xMipnNyatn23M';
-
-const CADENCE_CAPTIONS: Record<CadenceId, string> = {
-    daily: 'A buy every day',
-    weekly: 'A buy every 7 days',
-    biweekly: 'Two buys a month',
-    monthly: 'One buy a month',
-};
 
 const CADENCE_NOUNS: Record<CadenceId, string> = {
     daily: 'day',
@@ -106,7 +98,7 @@ const STEP_LABELS: Record<PlanOrderStep, string> = {
 const FACTS = [
     {
         icon: 'sparkles-outline',
-        text: 'Every buy farms your pet: +25 points, +10 XP, happiness and a Care Clock refill.',
+        text: 'Every buy farms your pet: +25 points, +10 XP.',
     },
     {
         icon: 'flash-outline',
@@ -114,21 +106,32 @@ const FACTS = [
     },
     {
         icon: 'lock-closed-outline',
-        text: 'Budget lives in the on-chain Jupiter DCA account. Only you can withdraw (non-custodial).',
+        text: 'Non-custodial — only you can withdraw.',
     },
     {
         icon: 'wallet-outline',
-        text: 'Output tokens are sent to your wallet each cycle.',
+        text: 'Output tokens go to your wallet each cycle.',
     },
 ] as const;
 
 const SEGMENTED_PAD = 3;
 
-/** Cadence drum rows: full label + plain-English caption. */
-const CADENCE_WHEEL_ITEMS: WheelItem[] = CADENCE_OPTIONS.map((option) => ({
+/** Short cadence segment labels (the math card carries the plain-English). */
+const CADENCE_SHORT: Record<CadenceId, string> = {
+    daily: 'Daily',
+    weekly: 'Weekly',
+    biweekly: '2 wks',
+    monthly: 'Monthly',
+};
+
+const CADENCE_SEGMENTS = CADENCE_OPTIONS.map((option) => ({
     id: option.id as string,
-    title: option.label,
-    subtitle: CADENCE_CAPTIONS[option.id],
+    label: CADENCE_SHORT[option.id],
+}));
+
+const BUDGET_SEGMENTS = BUDGET_OPTIONS.map((option) => ({
+    id: String(option),
+    label: `${option} USDC`,
 }));
 
 /** Amount-per-buy preset segments (percent of budget). */
@@ -146,10 +149,13 @@ function SegmentedControl({
     options,
     value,
     onChange,
+    disabledIds,
 }: {
     options: readonly { id: string; label: string }[];
     value: string;
     onChange: (id: string) => void;
+    /** Dimmed and non-selectable segments (e.g. below the Jupiter minimum). */
+    disabledIds?: ReadonlySet<string>;
 }) {
     const [width, setWidth] = useState(0);
     const x = useSharedValue(0);
@@ -193,14 +199,19 @@ function SegmentedControl({
             ) : null}
             {options.map((option) => {
                 const selected = option.id === value;
+                const disabled = disabledIds?.has(option.id) ?? false;
                 return (
                     <PressableScale
                         key={option.id}
+                        disabled={disabled}
                         onPress={() => {
                             Haptics.selectionAsync();
                             onChange(option.id);
                         }}
-                        style={styles.segment}
+                        style={[
+                            styles.segment,
+                            disabled && styles.segmentDisabled,
+                        ]}
                     >
                         <Text
                             style={[
@@ -541,8 +552,9 @@ export function DCAWizardSheet({
                 style={[
                     styles.body,
                     // Fixed body height: the sheet never jumps size between
-                    // steps, and step 1 (the tallest) fits without clipping.
-                    { height: Math.min(windowHeight * 0.6, 520) },
+                    // steps. Steps 1-2 are compressed to fit a 375×667 screen
+                    // without scrolling; the ScrollView stays as a safety net.
+                    { height: Math.min(windowHeight * 0.64, 540) },
                 ]}
                 showsVerticalScrollIndicator={false}
                 contentContainerStyle={[
@@ -577,59 +589,20 @@ export function DCAWizardSheet({
                             <Text style={styles.sectionLabel}>
                                 Total budget
                             </Text>
-                            <View style={styles.groupCard}>
-                                {BUDGET_OPTIONS.map((option, index) => {
-                                    const selected = budget === option;
-                                    const disabled =
-                                        (option * percent) / 100 <
-                                        MIN_ROUND_USD;
-                                    return (
-                                        <View key={option}>
-                                            {index > 0 && (
-                                                <View
-                                                    style={
-                                                        styles.groupSeparator
-                                                    }
-                                                />
-                                            )}
-                                            <PressableScale
-                                                disabled={disabled}
-                                                onPress={() => {
-                                                    Haptics.selectionAsync();
-                                                    setBudget(option);
-                                                }}
-                                                style={[
-                                                    styles.groupRow,
-                                                    disabled &&
-                                                        styles.groupRowDisabled,
-                                                ]}
-                                                accessibilityRole="button"
-                                                accessibilityState={{
-                                                    selected,
-                                                    disabled,
-                                                }}
-                                            >
-                                                <Text
-                                                    style={[
-                                                        styles.groupRowLabel,
-                                                        selected &&
-                                                            styles.groupRowLabelSelected,
-                                                    ]}
-                                                >
-                                                    {option} USDC
-                                                </Text>
-                                                {selected && (
-                                                    <Ionicons
-                                                        name="checkmark"
-                                                        size={18}
-                                                        color={colors.primary}
-                                                    />
-                                                )}
-                                            </PressableScale>
-                                        </View>
-                                    );
-                                })}
-                            </View>
+                            <SegmentedControl
+                                options={BUDGET_SEGMENTS}
+                                value={String(budget)}
+                                onChange={(id) => setBudget(Number(id))}
+                                disabledIds={
+                                    new Set(
+                                        BUDGET_OPTIONS.filter(
+                                            (option) =>
+                                                (option * percent) / 100 <
+                                                MIN_ROUND_USD
+                                        ).map(String)
+                                    )
+                                }
+                            />
 
                             <Text style={styles.sectionLabel}>
                                 Amount per buy
@@ -667,10 +640,10 @@ export function DCAWizardSheet({
                             )}
 
                             <Text style={styles.sectionLabel}>Cadence</Text>
-                            <WheelPicker
-                                items={CADENCE_WHEEL_ITEMS}
-                                selectedId={cadenceId}
-                                onSelect={(id) =>
+                            <SegmentedControl
+                                options={CADENCE_SEGMENTS}
+                                value={cadenceId}
+                                onChange={(id) =>
                                     setCadenceId(id as CadenceId)
                                 }
                             />
@@ -906,7 +879,7 @@ const styles = StyleSheet.create({
         paddingBottom: spacing.sm,
     },
     section: {
-        gap: spacing.md,
+        gap: spacing.sm,
     },
     sectionLabel: {
         color: colors.textMuted,
@@ -914,7 +887,7 @@ const styles = StyleSheet.create({
         fontFamily: 'Poppins_600SemiBold',
         textTransform: 'uppercase',
         letterSpacing: 1,
-        marginTop: spacing.sm,
+        marginTop: spacing.xs,
     },
     groupCard: {
         backgroundColor: colors.surfaceLight,
@@ -926,22 +899,10 @@ const styles = StyleSheet.create({
     groupRow: {
         flexDirection: 'row',
         alignItems: 'center',
-        gap: spacing.md,
-        paddingVertical: 12,
+        gap: spacing.sm,
+        paddingVertical: spacing.sm,
         paddingHorizontal: spacing.md,
-        minHeight: 48,
-    },
-    groupRowDisabled: {
-        opacity: 0.4,
-    },
-    groupRowLabel: {
-        flex: 1,
-        color: colors.text,
-        fontSize: typography.body,
-        fontFamily: 'Poppins_500Medium',
-    },
-    groupRowLabelSelected: {
-        color: colors.primary,
+        minHeight: 40,
     },
     groupRowTextCol: {
         flex: 1,
@@ -957,9 +918,9 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         justifyContent: 'space-between',
         gap: spacing.md,
-        paddingVertical: 12,
+        paddingVertical: spacing.sm,
         paddingHorizontal: spacing.md,
-        minHeight: 44,
+        minHeight: 34,
     },
     summaryLabel: {
         color: colors.textMuted,
@@ -986,9 +947,9 @@ const styles = StyleSheet.create({
     },
     amountValue: {
         color: colors.text,
-        fontSize: typography.title,
+        fontSize: typography.heading,
         fontFamily: 'Poppins_700Bold',
-        letterSpacing: tracking.title * typography.title,
+        letterSpacing: tracking.heading * typography.heading,
         fontVariant: ['tabular-nums'],
         textAlign: 'center',
         marginTop: spacing.xs,
@@ -1023,6 +984,9 @@ const styles = StyleSheet.create({
         height: 38,
         alignItems: 'center',
         justifyContent: 'center',
+    },
+    segmentDisabled: {
+        opacity: 0.35,
     },
     segmentText: {
         color: colors.textMuted,
@@ -1087,7 +1051,7 @@ const styles = StyleSheet.create({
     },
     approvalsText: {
         color: colors.textMuted,
-        fontSize: typography.small,
+        fontSize: 11,
         fontFamily: 'Poppins_400Regular',
         textAlign: 'center',
     },
