@@ -28,7 +28,6 @@ type WalletState = {
     demoAccount: boolean;
     transactionsToday: number;
     transactionsResetAt: string | null;
-    passkeyRegistrationPrompted: boolean;
     /**
      * Last embedded-wallet creation failure (Dynamic sign-in path), already
      * mapped to human-readable copy. Null when creation succeeded or a Sol
@@ -39,7 +38,6 @@ type WalletState = {
     connect: (address: string, connectionType: WalletConnectionType) => boolean;
     setSession: (session: Partial<WalletSession>) => void;
     setDemoAccount: (demoAccount: boolean) => void;
-    setPasskeyRegistrationPrompted: (prompted: boolean) => void;
     setEmbeddedWalletError: (message: string | null) => void;
     recordTransaction: () => void;
     resetTransactionsIfNeeded: () => void;
@@ -59,7 +57,6 @@ export const useWalletStore = create<WalletState>()(
             demoAccount: false,
             transactionsToday: 0,
             transactionsResetAt: null,
-            passkeyRegistrationPrompted: false,
             embeddedWalletError: null,
 
             connect: (address, connectionType) => {
@@ -87,10 +84,6 @@ export const useWalletStore = create<WalletState>()(
                         ...session,
                     },
                 }));
-            },
-
-            setPasskeyRegistrationPrompted: (prompted) => {
-                set({ passkeyRegistrationPrompted: prompted });
             },
 
             setDemoAccount: (demoAccount) => {

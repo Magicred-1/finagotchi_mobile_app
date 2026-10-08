@@ -72,7 +72,7 @@ function findSolanaWallet(wallets: DynamicWallet[]): DynamicWallet | undefined {
 }
 
 /**
- * Auth signer for Dynamic embedded wallets (email/social/passkey sign-ins).
+ * Auth signer for Dynamic embedded wallets (email/social sign-ins).
  * Uses the same signer factory as useWallet's signAndSendWithDynamic.
  */
 export function createDynamicAuthSigner(): AuthSigner {

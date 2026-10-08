@@ -172,12 +172,12 @@ export function toHumanReadableWalletError(error: unknown): Error {
     }
     if (/invalid deposit transaction|accounts modified/.test(normalized)) {
         return friendly(
-            "This wallet can't sign Jupiter DCA deposits — it alters the transaction before signing. Try Phantom, or connect with email/passkey instead."
+            "This wallet can't sign Jupiter DCA deposits — it alters the transaction before signing. Try Phantom, or connect with email or Google instead."
         );
     }
     if (/not properly formed|cannot be signed|can't be signed|rewrote the deposit/.test(normalized)) {
         return friendly(
-            "This wallet can't sign Jupiter DCA deposits — it rewrites transactions before signing. Try Phantom, or connect with email/passkey instead."
+            "This wallet can't sign Jupiter DCA deposits — it rewrites transactions before signing. Try Phantom, or connect with email or Google instead."
         );
     }
 

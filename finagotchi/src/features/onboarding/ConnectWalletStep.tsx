@@ -22,7 +22,6 @@ import { colors, radius, spacing, typography } from '../../theme/tokens';
 type Props = {
     platform: 'ios' | 'android' | 'web';
     isSeeker: boolean;
-    onConnectPasskey: () => Promise<void>;
     onConnectGoogle: () => Promise<void>;
     onConnectApple: () => Promise<void>;
     onRequestEmailOtp: (email: string) => Promise<void>;
@@ -32,7 +31,6 @@ type Props = {
 };
 
 type AuthMethod =
-    | 'passkey'
     | 'google'
     | 'apple'
     | 'email-request'
@@ -46,7 +44,6 @@ const OTP_LENGTH = 6;
 export default function ConnectWalletStep({
     platform,
     isSeeker,
-    onConnectPasskey,
     onConnectGoogle,
     onConnectApple,
     onRequestEmailOtp,
@@ -106,11 +103,6 @@ export default function ConnectWalletStep({
     const isLoading = useCallback(
         (method: AuthMethod) => activeMethod === method,
         [activeMethod]
-    );
-
-    const handlePasskey = useCallback(
-        () => run('passkey', onConnectPasskey),
-        [run, onConnectPasskey]
     );
 
     const handleGoogle = useCallback(
@@ -358,21 +350,9 @@ export default function ConnectWalletStep({
                                         }}
                                         disabled={isBusy}
                                     />
-                                    <IconButton
-                                        icon={<Ionicons name="finger-print-outline" size={24} color={colors.text} />}
-                                        label="Passkey"
-                                        onPress={handlePasskey}
-                                        loading={isLoading('passkey')}
-                                        disabled={isBusy}
-                                    />
                                 </View>
 
                                 {showEmail && renderEmailForm()}
-
-                                <Text style={styles.hint}>
-                                    Passkey sign-in works once you have signed
-                                    in with email or Google on this device.
-                                </Text>
 
                                 <View style={styles.divider}>
                                     <View style={styles.dividerLine} />
