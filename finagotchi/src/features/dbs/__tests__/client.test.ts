@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, afterEach } from 'vitest';
-import { recordCheckin, fetchCheckins, addStreakFreezes, addLeagueScore, fetchLeaderboard, pushPetState } from '../client';
+import { recordCheckin, fetchCheckins, addStreakFreezes, fetchLeaderboard, setProfileName, addFriend, removeFriend, pushPetState } from '../client';
 
 const { mockedClient } = vi.hoisted(() => {
     return { mockedClient: { authedGet: vi.fn(), authedPost: vi.fn(), authedDelete: vi.fn() } };
@@ -33,18 +33,27 @@ describe('dbs client', () => {
         expect(mockedClient.authedPost).toHaveBeenCalledWith('/dbs/streak-freeze/add', { wallet: 'abc', amount: 2 }, 'abc');
     });
 
-    it('adds league score', async () => {
-        mockedClient.authedPost.mockResolvedValueOnce({ wallet: 'abc', score: 100, currentTier: 'bronze' });
-        const res = await addLeagueScore('abc', 25);
-        expect(res.score).toBe(100);
-        expect(mockedClient.authedPost).toHaveBeenCalledWith('/dbs/league/add', { wallet: 'abc', amount: 25 }, 'abc');
-    });
-
     it('fetches leaderboard', async () => {
         mockedClient.authedGet.mockResolvedValueOnce({ global: [], friends: [] });
         const res = await fetchLeaderboard('abc');
         expect(res.global).toHaveLength(0);
         expect(mockedClient.authedGet).toHaveBeenCalledWith('/dbs/leaderboard', { wallet: 'abc' }, 'abc');
+    });
+
+    it('sets the profile name', async () => {
+        mockedClient.authedPost.mockResolvedValueOnce({ wallet: 'abc', displayName: 'Finny' });
+        await setProfileName('abc', 'Finny');
+        expect(mockedClient.authedPost).toHaveBeenCalledWith('/dbs/profile', { wallet: 'abc', displayName: 'Finny' }, 'abc');
+    });
+
+    it('adds and removes friends', async () => {
+        mockedClient.authedPost.mockResolvedValueOnce({});
+        await addFriend('abc', 'def');
+        expect(mockedClient.authedPost).toHaveBeenCalledWith('/dbs/friends', { wallet: 'abc', friendWallet: 'def' }, 'abc');
+
+        mockedClient.authedDelete.mockResolvedValueOnce({});
+        await removeFriend('abc', 'def');
+        expect(mockedClient.authedDelete).toHaveBeenCalledWith('/dbs/friends', { wallet: 'abc', friendWallet: 'def' }, 'abc');
     });
 });
 
