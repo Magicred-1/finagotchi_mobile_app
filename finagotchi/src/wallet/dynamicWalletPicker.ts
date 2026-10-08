@@ -44,6 +44,9 @@ export async function getWalletOptions(): Promise<WalletOption[]> {
 export async function connectDynamicWallet(
     walletKey: string
 ): Promise<WalletAccount> {
+    // Stage markers: a silent hang is the failure mode users report, so the
+    // console must show exactly where the flow stopped.
+    console.warn(`wc: connect start (${walletKey})`);
     await waitForClientInitialized(newDynamicClient);
     registerWalletConnectActionHandler();
 
@@ -51,19 +54,44 @@ export async function connectDynamicWallet(
         { addToDynamicWalletAccounts: true },
         newDynamicClient
     );
+    console.warn('wc: proposal created');
 
     const catalog = await getWalletConnectCatalog(newDynamicClient);
-    const wallet = catalog.wallets[walletKey];
-    const base = wallet?.deeplinks?.native ?? wallet?.deeplinks?.universal;
-    if (base) {
-        await Linking.openURL(
-            appendWalletConnectUriToDeepLink({
-                deepLinkUrl: base,
-                walletConnectUri: uri,
-            })
+    // The options catalogue and the WC catalog don't always agree on keys —
+    // exact key first, then a case-insensitive key/name match.
+    const catalogWallet =
+        catalog.wallets[walletKey] ??
+        Object.entries(catalog.wallets).find(
+            ([key, w]) =>
+                key.toLowerCase() === walletKey.toLowerCase() ||
+                w.name?.toLowerCase().includes(walletKey.toLowerCase())
+        )?.[1];
+    const base =
+        catalogWallet?.deeplinks?.native ?? catalogWallet?.deeplinks?.universal;
+
+    try {
+        if (base) {
+            await Linking.openURL(
+                appendWalletConnectUriToDeepLink({
+                    deepLinkUrl: base,
+                    walletConnectUri: uri,
+                })
+            );
+            console.warn(`wc: deep-linked into ${walletKey}`);
+        } else {
+            // No catalog deep link for this wallet — hand the raw WC URI to
+            // the OS; any installed wallet registering the wc: scheme picks
+            // it up (Android app chooser / iOS universal handler).
+            console.warn(`wc: no deep link for '${walletKey}', opening raw wc: URI`);
+            await Linking.openURL(uri);
+        }
+    } catch {
+        throw new Error(
+            `Couldn't open ${walletKey} — is the wallet app installed on this device?`
         );
     }
 
+    console.warn('wc: awaiting in-wallet approval');
     const { walletAccounts } = await approval();
     const account =
         walletAccounts.find((candidate) => candidate.chain === 'SOL') ??
