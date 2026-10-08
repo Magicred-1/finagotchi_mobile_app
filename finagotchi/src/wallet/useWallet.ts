@@ -32,6 +32,7 @@ import {
     toHumanReadableWalletError,
     withHumanReadableErrors,
 } from './walletErrors';
+import { diffWalletTx, isLighthouseOnlyRewrite } from './walletTxDiff';
 import { getWalletOptions, type WalletOption as DynamicWalletOption } from './dynamicWalletPicker';
 import {
     disconnectExternalWallet,
@@ -368,94 +369,6 @@ function serializeLegacyWithSignature(
     return Buffer.from(wire).toString('base64');
 }
 
-interface AddedAccountInfo {
-    key: string;
-    signer: boolean;
-    writable: boolean;
-    /** Programs whose instructions reference this account. */
-    usedBy: string[];
-}
-
-interface WalletTxDiff {
-    added: string[];
-    addedDetails: AddedAccountInfo[];
-    removed: string[];
-    craftedPrograms: string[];
-    walletPrograms: string[];
-}
-
-/**
- * Compares a wallet's returned transaction against the crafted deposit:
- * accounts the wallet added or removed, and the program ids of both. Order
- * differences are ignored on purpose — Jupiter accepts any account order
- * (probe-verified); only set changes break validation.
- */
-function diffWalletTx(
-    crafted: VersionedTransaction,
-    signed: Transaction | VersionedTransaction
-): WalletTxDiff {
-    const craftedKeys = crafted.message.staticAccountKeys.map((k) =>
-        k.toBase58()
-    );
-    const rawMessage =
-        'version' in signed ? signed.message : signed.compileMessage();
-    const message: {
-        accountKeys: PublicKey[];
-        compiledInstructions: {
-            programIdIndex: number;
-            accountKeyIndexes: number[];
-        }[];
-    } =
-        'version' in signed
-            ? {
-                  accountKeys: signed.message.staticAccountKeys,
-                  compiledInstructions: signed.message.compiledInstructions,
-              }
-            : signed.compileMessage();
-    const signedKeys = message.accountKeys.map((k) => k.toBase58());
-    const craftedSet = new Set(craftedKeys);
-    const signedSet = new Set(signedKeys);
-    const programIds = (m: {
-        accountKeys: PublicKey[];
-        compiledInstructions: { programIdIndex: number }[];
-    }) =>
-        m.compiledInstructions.map(
-            (ci) => m.accountKeys[ci.programIdIndex]?.toBase58() ?? '?'
-        );
-    const added = signedKeys.filter((k) => !craftedSet.has(k));
-    const numSigners = rawMessage.header.numRequiredSignatures;
-    const addedDetails: AddedAccountInfo[] = added.map((key) => {
-        const index = signedKeys.indexOf(key);
-        const usedBy = [
-            ...new Set(
-                message.compiledInstructions
-                    .filter((ci) => ci.accountKeyIndexes.includes(index))
-                    .map(
-                        (ci) =>
-                            message.accountKeys[ci.programIdIndex]?.toBase58() ??
-                            '?'
-                    )
-            ),
-        ];
-        return {
-            key,
-            signer: index >= 0 && index < numSigners,
-            writable: index >= 0 ? rawMessage.isAccountWritable(index) : false,
-            usedBy,
-        };
-    });
-    return {
-        added,
-        addedDetails,
-        removed: craftedKeys.filter((k) => !signedSet.has(k)),
-        craftedPrograms: programIds({
-            accountKeys: crafted.message.staticAccountKeys,
-            compiledInstructions: crafted.message.compiledInstructions,
-        }),
-        walletPrograms: programIds(message),
-    };
-}
-
 /**
  * Signs an arbitrary UTF-8 message with the active wallet (Dynamic or MWA),
  * returning a bs58 ed25519 signature. Module-level (no hooks) so non-React
@@ -671,22 +584,31 @@ export const signTransactionWithWallet = withHumanReadableErrors(
                 );
             }
 
-            // The wallet rewrote even the legacy payload. If it changed the
-            // account SET, Jupiter will reject it — fail instantly with the
-            // diff on screen instead of after a 33s landing attempt. If only
-            // the order changed, forward the wallet's transaction: Jupiter
-            // accepts any account order (probe-verified).
+            // The wallet rewrote even the legacy payload. A rewrite that only
+            // APPENDS Lighthouse assertion instructions (Seeker's wallet does
+            // this to guard against simulation spoofing) is benign: Jupiter
+            // validates deposits semantically and the assertion simply
+            // executes on-chain — forward the wallet's transaction. Any other
+            // account-set change breaks Jupiter's validation, so fail
+            // instantly with the diff on screen instead of after a 33s
+            // landing attempt. If only the order changed, forward the wallet's
+            // transaction: Jupiter accepts any account order (probe-verified).
             const diff = diffWalletTx(transaction, signedTx);
             console.warn('dca: wallet rewrote the deposit tx', JSON.stringify(diff));
             if (diff.added.length > 0 || diff.removed.length > 0) {
-                const detail = diff.addedDetails
-                    .map(
-                        (a) =>
-                            `${a.key} (${[a.signer ? 'signer' : null, a.writable ? 'writable' : 'readonly', a.usedBy.length ? `used by ${a.usedBy.join(',')}` : 'unused by any instruction'].filter(Boolean).join(', ')})`
-                    )
-                    .join(' ');
-                throw new Error(
-                    `Wallet altered the deposit accounts (+${diff.added.length}/-${diff.removed.length}). ${detail || [...diff.added, ...diff.removed].join(', ')}`
+                if (!isLighthouseOnlyRewrite(legacyMessage, signedTx)) {
+                    const detail = diff.addedDetails
+                        .map(
+                            (a) =>
+                                `${a.key} (${[a.signer ? 'signer' : null, a.writable ? 'writable' : 'readonly', a.usedBy.length ? `used by ${a.usedBy.join(',')}` : 'unused by any instruction'].filter(Boolean).join(', ')})`
+                        )
+                        .join(' ');
+                    throw new Error(
+                        `Wallet altered the deposit accounts (+${diff.added.length}/-${diff.removed.length}). ${detail || [...diff.added, ...diff.removed].join(', ')}`
+                    );
+                }
+                console.warn(
+                    'dca: tolerating wallet-appended Lighthouse assertion (Seeker rewrite)'
                 );
             }
             const bytes =
