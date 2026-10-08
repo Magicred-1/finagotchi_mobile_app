@@ -74,7 +74,6 @@ export type Wallet = {
     solBalanceLoaded: boolean;
     refreshBalance: () => Promise<number | null>;
     connectWithMwa: () => Promise<void>;
-    connectWithPasskey: () => Promise<void>;
     connectWithGoogle: () => Promise<void>;
     connectWithApple: () => Promise<void>;
     connectWithOwnWallet: () => Promise<DynamicWalletOption[]>;
@@ -707,12 +706,6 @@ export function useWallet(): Wallet {
     const connectStore = useWalletStore((state) => state.connect);
     const setSession = useWalletStore((state) => state.setSession);
     const disconnectStore = useWalletStore((state) => state.disconnect);
-    const passkeyRegistrationPrompted = useWalletStore(
-        (state) => state.passkeyRegistrationPrompted
-    );
-    const setPasskeyRegistrationPrompted = useWalletStore(
-        (state) => state.setPasskeyRegistrationPrompted
-    );
     const authToken = useWalletStore((state) => state.session.authToken);
     const connectionType = useWalletStore(
         (state) => state.session.connectionType
@@ -859,22 +852,6 @@ export function useWallet(): Wallet {
         })();
     }, [authenticatedUser, userWallets, address, connectStore]);
 
-    // Offer passkey registration once after the first Dynamic sign-in, so the
-    // Passkey button becomes useful on subsequent logins.
-    useEffect(() => {
-        if (!authenticatedUser) return;
-        if (passkeyRegistrationPrompted) return;
-
-        setPasskeyRegistrationPrompted(true);
-        dynamicClient.passkeys.register().catch(() => {
-            // User cancelled or passkeys unavailable; ignore.
-        });
-    }, [
-        authenticatedUser,
-        passkeyRegistrationPrompted,
-        setPasskeyRegistrationPrompted,
-    ]);
-
     const connectWithMwa = useCallback(
         withHumanReadableErrors(async () => {
             const transact = await loadMwaTransact();
@@ -906,32 +883,6 @@ export function useWallet(): Wallet {
             });
         }),
         [connectStore, setSession]
-    );
-
-    const connectWithPasskey = useCallback(
-        withHumanReadableErrors(async () => {
-            await ensureDynamicSignerReady();
-            try {
-                await withTimeout(
-                    dynamicClient.auth.passkey.signIn(),
-                    WALLET_SIGNING_TIMEOUT_MS,
-                    'The wallet service is not responding — check your connection and try again.'
-                );
-            } catch (error) {
-                // Only a missing passkey or a user cancellation gets the
-                // friendly message — everything else (transport down, network
-                // failure) must reach withHumanReadableErrors untranslated.
-                const message =
-                    error instanceof Error ? error.message : String(error);
-                if (/passkey|not found|cancel/i.test(message)) {
-                    throw new Error(
-                        'No passkey found on this device — sign in with email or Google first'
-                    );
-                }
-                throw error;
-            }
-        }),
-        []
     );
 
     const connectWithGoogle = useCallback(
@@ -1231,7 +1182,6 @@ export function useWallet(): Wallet {
             solBalanceLoaded,
             refreshBalance,
             connectWithMwa,
-            connectWithPasskey,
             connectWithGoogle,
             connectWithApple,
         connectWithOwnWallet,
@@ -1255,7 +1205,6 @@ export function useWallet(): Wallet {
             solBalanceLoaded,
             refreshBalance,
             connectWithMwa,
-            connectWithPasskey,
             connectWithGoogle,
             connectWithApple,
             requestEmailOtp,

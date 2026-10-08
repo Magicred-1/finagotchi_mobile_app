@@ -248,10 +248,6 @@ export default function OnboardingFlow({
         }
     }
 
-    const handlePasskey = async () => {
-        await wallet.connectWithPasskey();
-    };
-
     const handleGoogle = async () => {
         await wallet.connectWithGoogle();
     };
@@ -369,7 +365,6 @@ export default function OnboardingFlow({
                     <ConnectWalletStep
                         platform={Platform.OS as 'ios' | 'android' | 'web'}
                         isSeeker={wallet.isSeeker}
-                        onConnectPasskey={handlePasskey}
                         onConnectGoogle={handleGoogle}
                         onConnectApple={handleApple}
     onConnectOwnWallet={handleOwnWallet}
