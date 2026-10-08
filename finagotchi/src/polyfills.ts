@@ -54,3 +54,31 @@ if (typeof (globalThis as any).crypto.randomBytes !== 'function') {
         return Buffer.from(bytes);
     };
 }
+
+// WalletConnect's proposal-expiry watcher throws "Proposal expired" from an
+// internal setTimeout with no consumer — it lands as an uncaught rejection
+// even when the connect flow already caught approval()'s own rejection and
+// alerted the user. Take over RN's rejection tracking (enable() replaces the
+// previous hooks) to downgrade exactly that noise to a warning; everything
+// else keeps the default loud 'Uncaught (in promise)' logging.
+try {
+    const rejectionTracking = require('promise/setimmediate/rejection-tracking');
+    rejectionTracking.enable({
+        allRejections: true,
+        onUnhandled: (id: number, error: unknown) => {
+            const message =
+                error instanceof Error ? error.message : String(error ?? '');
+            if (/proposal expired|proposal_expire/i.test(message)) {
+                console.warn(
+                    'wc: wallet connection proposal expired before approval — user can simply retry'
+                );
+                return;
+            }
+            console.error(`Uncaught (in promise, id: ${id})`, error);
+        },
+        onHandled: () => {},
+    });
+} catch {
+    // The promise polyfill layout changed — RN's default tracking still
+    // applies, just noisier for WalletConnect expiries.
+}
