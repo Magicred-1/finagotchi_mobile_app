@@ -262,6 +262,25 @@ function errorMessage(status: number, body: unknown): string {
     return `HTTP ${status}`;
 }
 
+/**
+ * Jupiter strict-compares the signed deposit/withdrawal against its cached
+ * craft and rejects ANY account-set change (probe-verified against the live
+ * API, 2026-10-08: an appended no-op ix yields 400 'Invalid deposit
+ * transaction: Transaction accounts modified'). Wallets that append
+ * protection instructions — Seeker's Lighthouse assertions — can never pass;
+ * translate the raw rejection into actionable guidance instead of a
+ * cryptic 400.
+ */
+function walletRewriteGuidance(raw: string): string | null {
+    if (!/invalid (deposit|withdrawal) transaction/i.test(raw)) return null;
+    return (
+        "Your wallet rewrote Jupiter's transaction — Seeker devices attach a " +
+        "Lighthouse security assertion — and Jupiter's DCA API rejects any " +
+        'modified transaction. Use the embedded wallet or Phantom/Backpack on ' +
+        'your device to create or pause DCA plans.'
+    );
+}
+
 async function rawPost(path: string, body: unknown, walletPubkey: string): Promise<unknown> {
     const sessionToken = await serverSessionToken(walletPubkey);
     const res = await fetchWithTimeout(withWalletParam((await jupBaseUrl()) + path, walletPubkey), {
@@ -707,7 +726,8 @@ export async function createPlanOrder({
         });
         const orderData = order.data as { id?: string; txSignature?: string };
         if (order.status !== 200 || !orderData.id) {
-            throw new Error(`dca: order create failed: ${errorMessage(order.status, order.data)}`);
+            const raw = errorMessage(order.status, order.data);
+            throw new Error(walletRewriteGuidance(raw) ?? `dca: order create failed: ${raw}`);
         }
 
         return { orderId: orderData.id, txSignature: orderData.txSignature ?? '' };
@@ -833,9 +853,8 @@ export async function cancelPlanOrder({
     });
     const confirmData = confirm.data as { txSignature?: string };
     if (confirm.status !== 200) {
-        throw new Error(
-            `dca: confirm-cancel failed: ${errorMessage(confirm.status, confirm.data)}`
-        );
+        const raw = errorMessage(confirm.status, confirm.data);
+        throw new Error(walletRewriteGuidance(raw) ?? `dca: confirm-cancel failed: ${raw}`);
     }
 
     return { txSignature: confirmData.txSignature ?? '' };
