@@ -20,7 +20,6 @@ export interface DbsLeague {
     wallet: string;
     score: number;
     currentTier: string;
-    seasonId: string | null;
     updatedAt: number | null;
 }
 
@@ -80,11 +79,9 @@ export async function useStreakFreezeOnServer(wallet: string, date: string): Pro
     return { wallet, count: res.remaining, freezeLastUsedAt: Date.now(), updatedAt: Date.now() };
 }
 
-export async function addLeagueScore(wallet: string, amount: number): Promise<DbsLeague> {
-    const res = (await authedPost('/dbs/league/add', { wallet, amount }, wallet)) as DbsLeague;
-    return res;
-}
-
+// League score is credited SERVER-SIDE (+10 checkin, +50 per stage on
+// pet-state push, quest XP on verified claims) — there is no client score
+// write. GET /dbs/league is the only league call left.
 export async function fetchLeague(wallet: string): Promise<DbsLeague> {
     const res = (await authedGet('/dbs/league', { wallet }, wallet)) as DbsLeague;
     return res;
@@ -99,17 +96,27 @@ export async function fetchLeaderboard(wallet: string): Promise<DbsLeaderboardRe
     return res;
 }
 
-export async function upsertLeaderboardEntry(
+/** Set the caller's display name (≤24 chars, server-validated). */
+export async function setProfileName(
     wallet: string,
-    displayName: string,
-    score: number,
-    isFriend: boolean
+    displayName: string
 ): Promise<void> {
-    await authedPost('/dbs/leaderboard', { wallet, displayName, score, isFriend }, wallet);
+    await authedPost('/dbs/profile', { wallet, displayName }, wallet);
 }
 
-export async function deleteLeaderboardEntry(wallet: string): Promise<void> {
-    await authedDelete('/dbs/leaderboard', { wallet }, wallet);
+/** Add a friend (viewer-scoped; isFriend in leaderboard responses derives from this). */
+export async function addFriend(
+    wallet: string,
+    friendWallet: string
+): Promise<void> {
+    await authedPost('/dbs/friends', { wallet, friendWallet }, wallet);
+}
+
+export async function removeFriend(
+    wallet: string,
+    friendWallet: string
+): Promise<void> {
+    await authedDelete('/dbs/friends', { wallet, friendWallet }, wallet);
 }
 
 export interface DbsPetState {

@@ -2,10 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import { useWalletStore } from '../wallet/store';
-import {
-    addLeagueScore as addLeagueScoreOnServer,
-    fetchLeague,
-} from '../dbs/client';
+import { fetchLeague } from '../dbs/client';
 
 /** League score awarded for a successful daily check-in. */
 export const CHECKIN_SCORE = 10;
@@ -67,24 +64,17 @@ export const useLeagueStore = create<LeagueState>()(
             seasonEndsAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
             leaderboardScope: 'global',
             addScore: (amount) => {
+                // Score is credited SERVER-SIDE now (+10 on checkin insert,
+                // +50 per stage gained on pet-state push, quest XP on
+                // verified claims) — POST /dbs/league/add is gone. This is
+                // only an optimistic local bump so the UI reacts instantly;
+                // the next syncFromServer() overwrites it with the
+                // authoritative server total, so no double-count is possible.
                 const nextScore = Math.max(0, get().score + amount);
                 set({
                     score: nextScore,
                     currentTier: computeTier(nextScore),
                 });
-                // Optimistic server sync; the server recomputes the tier and
-                // its response reconciles local state back to authoritative.
-                const wallet = useWalletStore.getState().address;
-                if (wallet) {
-                    addLeagueScoreOnServer(wallet, amount)
-                        .then((res) => {
-                            set({
-                                score: res.score,
-                                currentTier: computeTier(res.score),
-                            });
-                        })
-                        .catch(() => {});
-                }
             },
             syncFromServer: async () => {
                 const wallet = useWalletStore.getState().address;
