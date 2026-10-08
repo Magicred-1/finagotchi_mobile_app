@@ -21,33 +21,31 @@ import {
     addFriend,
     fetchLeaderboard,
     removeFriend,
-    setProfileName,
+    searchUsers,
+    setProfileUsername,
+    USERNAME_REGEX,
+    type DbsLeaderboardEntry,
     type DbsLeaderboardResponse,
 } from '../features/dbs/client';
 import { useWalletStore } from '../features/wallet/store';
+import { dynamicClient } from '../wallet/dynamicClient';
 
 interface Props {
     visible: boolean;
     onClose: () => void;
 }
 
-/** Server-side display name limit (POST /dbs/profile 400s beyond it). */
-const DISPLAY_NAME_MAX = 24;
+/** Server-side username limit (POST /dbs/profile 400s beyond it). */
+const USERNAME_MAX = 24;
 
 function shortWallet(wallet: string): string {
     return wallet.slice(0, 4) + '...' + wallet.slice(-4);
 }
 
-function toEntry(entry: {
-    wallet: string;
-    score: number;
-    displayName: string;
-    tier: string;
-    isFriend?: boolean;
-}): LeaderboardEntry {
+function toEntry(entry: DbsLeaderboardEntry): LeaderboardEntry {
     return {
         userId: entry.wallet,
-        name: entry.displayName || shortWallet(entry.wallet),
+        name: entry.username || entry.displayName || shortWallet(entry.wallet),
         score: entry.score,
         tier: entry.tier as LeaderboardEntry['tier'],
         isFriend: entry.isFriend,
@@ -78,12 +76,18 @@ export function LeaderboardSheet({ visible, onClose }: Props) {
     // True while a mutation refetch is in flight — stale rows stay visible.
     const [mutating, setMutating] = useState(false);
 
-    const [editingName, setEditingName] = useState(false);
-    const [nameDraft, setNameDraft] = useState('');
-    const [nameError, setNameError] = useState<string | null>(null);
+    const [editingUsername, setEditingUsername] = useState(false);
+    const [usernameDraft, setUsernameDraft] = useState('');
+    const [usernameError, setUsernameError] = useState<string | null>(null);
 
     const [friendDraft, setFriendDraft] = useState('');
     const [friendError, setFriendError] = useState<string | null>(null);
+    // Nickname search results; null = no active search. The friends list is
+    // never cleared while searching — results render above it.
+    const [searchResults, setSearchResults] = useState<
+        { wallet: string; displayName: string }[] | null
+    >(null);
+    const [searching, setSearching] = useState(false);
 
     // Stale-while-revalidate: never clear `data` on a refetch failure, only
     // surface the error state when there is nothing to show at all.
@@ -109,11 +113,48 @@ export function LeaderboardSheet({ visible, onClose }: Props) {
     // Closing the sheet drops any half-finished edits.
     useEffect(() => {
         if (visible) return;
-        setEditingName(false);
-        setNameError(null);
+        setEditingUsername(false);
+        setUsernameError(null);
         setFriendDraft('');
         setFriendError(null);
+        setSearchResults(null);
+        setSearching(false);
     }, [visible]);
+
+    const trimmedQuery = friendDraft.trim();
+    // A valid base58 address skips search entirely — it can be added directly.
+    const queryIsAddress = isValidSolanaAddress(trimmedQuery);
+
+    // Debounced nickname search (≥2 chars; the server 400s below that).
+    useEffect(() => {
+        if (!wallet || trimmedQuery.length < 2 || queryIsAddress) {
+            setSearchResults(null);
+            setSearching(false);
+            return;
+        }
+        let cancelled = false;
+        setSearching(true);
+        const timer = setTimeout(() => {
+            void searchUsers(wallet, trimmedQuery)
+                .then((res) => {
+                    if (cancelled) return;
+                    setSearchResults(res);
+                    setFriendError(null);
+                    setSearching(false);
+                })
+                .catch(() => {
+                    if (cancelled) return;
+                    setSearchResults(null);
+                    setFriendError('Search failed — try again.');
+                    setSearching(false);
+                });
+        }, 300);
+        return () => {
+            cancelled = true;
+            clearTimeout(timer);
+        };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [trimmedQuery, queryIsAddress, wallet]);
 
     const entries = useMemo(() => {
         const rows = scope === 'global' ? data?.global : data?.friends;
@@ -140,25 +181,54 @@ export function LeaderboardSheet({ visible, onClose }: Props) {
         return index >= 0 ? index + 1 : null;
     }, [wallet, data]);
 
-    async function handleSaveName() {
+    function handleEditUsername() {
+        // Prefill from the server row; for Dynamic sessions fall back to the
+        // Dynamic profile username. Read lazily (non-reactive) on press.
+        const own = data?.own?.username;
+        const draft =
+            own ||
+            (useWalletStore.getState().session.connectionType === 'dynamic'
+                ? (dynamicClient.auth.authenticatedUser?.username ?? '')
+                : '');
+        setUsernameDraft(draft);
+        setUsernameError(null);
+        setEditingUsername(true);
+    }
+
+    async function handleSaveUsername() {
         if (!wallet) return;
-        const displayName = nameDraft.trim();
-        if (displayName.length > DISPLAY_NAME_MAX) {
-            setNameError(`Keep it under ${DISPLAY_NAME_MAX} characters.`);
+        const username = usernameDraft.trim();
+        // '' clears the username server-side; anything else must match.
+        if (username !== '' && !USERNAME_REGEX.test(username)) {
+            setUsernameError('3–24 characters: letters, numbers, _ or -');
             return;
         }
         setMutating(true);
-        setNameError(null);
+        setUsernameError(null);
         try {
-            // '' clears the name server-side; the row falls back to wallet.
-            await setProfileName(wallet, displayName);
+            await setProfileUsername(wallet, username);
+            // The server is authoritative for the leaderboard; syncing the
+            // Dynamic profile is best-effort and only works over the Dynamic
+            // WebView transport.
+            if (useWalletStore.getState().session.connectionType === 'dynamic') {
+                try {
+                    await dynamicClient.auth.updateUser({
+                        username: username === '' ? null : username,
+                    });
+                } catch (e) {
+                    console.warn('Dynamic username sync failed', e);
+                }
+            }
             await reload();
-            setEditingName(false);
+            setEditingUsername(false);
         } catch (e) {
-            setNameError(
-                (e as { status?: number }).status === 400
-                    ? `Keep it under ${DISPLAY_NAME_MAX} characters.`
-                    : 'Could not save — try again.'
+            const status = (e as { status?: number }).status;
+            setUsernameError(
+                status === 409
+                    ? 'That username is taken.'
+                    : status === 400
+                      ? '3–24 characters: letters, numbers, _ or -'
+                      : 'Could not save — try again.'
             );
         } finally {
             setMutating(false);
@@ -176,11 +246,18 @@ export function LeaderboardSheet({ visible, onClose }: Props) {
             setFriendError("That's your own wallet.");
             return;
         }
+        await addFriendAndReload(friendWallet);
+    }
+
+    // Add from a search-result row or the direct-address row.
+    async function addFriendAndReload(friendWallet: string) {
+        if (!wallet) return;
         setMutating(true);
         setFriendError(null);
         try {
             await addFriend(wallet, friendWallet);
             setFriendDraft('');
+            setSearchResults(null);
             await reload();
         } catch (e) {
             setFriendError(
@@ -249,8 +326,146 @@ export function LeaderboardSheet({ visible, onClose }: Props) {
         : !wallet
           ? 'Connect your wallet to see the leaderboard.'
           : scope === 'friends'
-            ? 'Add friends by wallet address to see them here.'
+            ? 'Search by nickname to add friends to your board.'
             : 'No entries yet. Check in daily to climb the ranks.';
+
+    const addFriendFooter =
+        scope === 'friends' && wallet && !failed ? (
+            <View>
+                <View style={styles.addFriendRow}>
+                    <Ionicons
+                        name="search"
+                        size={16}
+                        color={colors.textMuted}
+                        style={styles.searchIcon}
+                    />
+                    <TextInput
+                        value={friendDraft}
+                        onChangeText={setFriendDraft}
+                        placeholder="Search by nickname or paste an address…"
+                        placeholderTextColor={colors.textMuted}
+                        style={styles.addFriendInput}
+                        autoCapitalize="none"
+                        autoCorrect={false}
+                    />
+                </View>
+
+                {trimmedQuery.length >= 2 && (
+                    <View style={styles.searchResults}>
+                        {queryIsAddress ? (
+                            <View style={styles.row}>
+                                <View
+                                    style={[
+                                        styles.avatar,
+                                        { backgroundColor: colors.surfaceLight },
+                                    ]}
+                                >
+                                    <Ionicons
+                                        name="wallet-outline"
+                                        size={16}
+                                        color={colors.textMuted}
+                                    />
+                                </View>
+                                <View style={styles.nameCol}>
+                                    <Text style={styles.name} numberOfLines={1}>
+                                        Add {shortWallet(trimmedQuery)}
+                                    </Text>
+                                    <Text style={styles.tier}>
+                                        Wallet address
+                                    </Text>
+                                </View>
+                                <PressableScale
+                                    onPress={handleAddFriend}
+                                    disabled={mutating}
+                                    style={styles.addFriendButton}
+                                    accessibilityLabel={`Add ${shortWallet(trimmedQuery)}`}
+                                >
+                                    {mutating ? (
+                                        <ActivityIndicator
+                                            size="small"
+                                            color={colors.background}
+                                        />
+                                    ) : (
+                                        <Ionicons
+                                            name="add"
+                                            size={18}
+                                            color={colors.background}
+                                        />
+                                    )}
+                                </PressableScale>
+                            </View>
+                        ) : searching ? (
+                            <Text style={styles.searchHint}>Searching…</Text>
+                        ) : searchResults && searchResults.length > 0 ? (
+                            searchResults.map((result) => (
+                                <View key={result.wallet} style={styles.row}>
+                                    <View
+                                        style={[
+                                            styles.avatar,
+                                            {
+                                                backgroundColor:
+                                                    colors.surfaceLight,
+                                            },
+                                        ]}
+                                    >
+                                        <Text style={styles.avatarText}>
+                                            {(
+                                                result.displayName ||
+                                                shortWallet(result.wallet)
+                                            )[0].toUpperCase()}
+                                        </Text>
+                                    </View>
+                                    <View style={styles.nameCol}>
+                                        <Text
+                                            style={styles.name}
+                                            numberOfLines={1}
+                                        >
+                                            {result.displayName ||
+                                                shortWallet(result.wallet)}
+                                        </Text>
+                                        <Text style={styles.tier}>
+                                            {shortWallet(result.wallet)}
+                                        </Text>
+                                    </View>
+                                    <PressableScale
+                                        onPress={() =>
+                                            addFriendAndReload(result.wallet)
+                                        }
+                                        disabled={mutating}
+                                        style={styles.addFriendButton}
+                                        accessibilityLabel={`Add ${
+                                            result.displayName ||
+                                            shortWallet(result.wallet)
+                                        }`}
+                                    >
+                                        {mutating ? (
+                                            <ActivityIndicator
+                                                size="small"
+                                                color={colors.background}
+                                            />
+                                        ) : (
+                                            <Ionicons
+                                                name="add"
+                                                size={18}
+                                                color={colors.background}
+                                            />
+                                        )}
+                                    </PressableScale>
+                                </View>
+                            ))
+                        ) : searchResults ? (
+                            <Text style={styles.searchHint}>
+                                No one by that nickname.
+                            </Text>
+                        ) : null}
+                    </View>
+                )}
+
+                {friendError && (
+                    <Text style={styles.fieldError}>{friendError}</Text>
+                )}
+            </View>
+        ) : null;
 
     return (
         <Modal transparent visible={visible} animationType="slide">
@@ -305,17 +520,17 @@ export function LeaderboardSheet({ visible, onClose }: Props) {
                                     Y
                                 </Text>
                             </View>
-                            {editingName ? (
+                            {editingUsername ? (
                                 <View style={styles.nameEditCol}>
                                     <TextInput
-                                        value={nameDraft}
-                                        onChangeText={setNameDraft}
-                                        placeholder="Display name"
+                                        value={usernameDraft}
+                                        onChangeText={setUsernameDraft}
+                                        placeholder="Username"
                                         placeholderTextColor={colors.textMuted}
                                         style={styles.nameInput}
                                         autoCapitalize="none"
                                         autoCorrect={false}
-                                        maxLength={DISPLAY_NAME_MAX + 1}
+                                        maxLength={USERNAME_MAX}
                                         autoFocus
                                     />
                                 </View>
@@ -324,20 +539,20 @@ export function LeaderboardSheet({ visible, onClose }: Props) {
                                     <Text style={styles.name}>You</Text>
                                     <Text style={styles.tier}>
                                         {ownEntry.tier}
-                                        {data?.own?.displayName
-                                            ? ` · ${data.own.displayName}`
+                                        {data?.own?.username
+                                            ? ` · @${data.own.username}`
                                             : ''}
                                     </Text>
                                 </View>
                             )}
                             <Text style={styles.score}>{ownEntry.score}</Text>
-                            {editingName ? (
+                            {editingUsername ? (
                                 <View style={styles.nameEditActions}>
                                     <PressableScale
-                                        onPress={handleSaveName}
+                                        onPress={handleSaveUsername}
                                         disabled={mutating}
                                         hitSlop={8}
-                                        accessibilityLabel="Save name"
+                                        accessibilityLabel="Save username"
                                     >
                                         {mutating ? (
                                             <ActivityIndicator
@@ -354,8 +569,8 @@ export function LeaderboardSheet({ visible, onClose }: Props) {
                                     </PressableScale>
                                     <PressableScale
                                         onPress={() => {
-                                            setEditingName(false);
-                                            setNameError(null);
+                                            setEditingUsername(false);
+                                            setUsernameError(null);
                                         }}
                                         hitSlop={8}
                                         accessibilityLabel="Cancel"
@@ -369,13 +584,9 @@ export function LeaderboardSheet({ visible, onClose }: Props) {
                                 </View>
                             ) : (
                                 <PressableScale
-                                    onPress={() => {
-                                        setNameDraft(data?.own?.displayName ?? '');
-                                        setNameError(null);
-                                        setEditingName(true);
-                                    }}
+                                    onPress={handleEditUsername}
                                     hitSlop={8}
-                                    accessibilityLabel="Edit display name"
+                                    accessibilityLabel="Edit username"
                                 >
                                     <Ionicons
                                         name="pencil-outline"
@@ -386,7 +597,7 @@ export function LeaderboardSheet({ visible, onClose }: Props) {
                             )}
                         </View>
                     )}
-                    {nameError && <Text style={styles.fieldError}>{nameError}</Text>}
+                    {usernameError && <Text style={styles.fieldError}>{usernameError}</Text>}
 
                     <FlatList
                         data={entries}
@@ -399,47 +610,7 @@ export function LeaderboardSheet({ visible, onClose }: Props) {
                         ListEmptyComponent={
                             <Text style={styles.emptyText}>{emptyText}</Text>
                         }
-                        ListFooterComponent={
-                            scope === 'friends' && wallet && !failed ? (
-                                <View>
-                                    <View style={styles.addFriendRow}>
-                                        <TextInput
-                                            value={friendDraft}
-                                            onChangeText={setFriendDraft}
-                                            placeholder="Friend's wallet address"
-                                            placeholderTextColor={colors.textMuted}
-                                            style={styles.addFriendInput}
-                                            autoCapitalize="none"
-                                            autoCorrect={false}
-                                        />
-                                        <PressableScale
-                                            onPress={handleAddFriend}
-                                            disabled={mutating}
-                                            style={styles.addFriendButton}
-                                            accessibilityLabel="Add friend"
-                                        >
-                                            {mutating ? (
-                                                <ActivityIndicator
-                                                    size="small"
-                                                    color={colors.background}
-                                                />
-                                            ) : (
-                                                <Ionicons
-                                                    name="add"
-                                                    size={18}
-                                                    color={colors.background}
-                                                />
-                                            )}
-                                        </PressableScale>
-                                    </View>
-                                    {friendError && (
-                                        <Text style={styles.fieldError}>
-                                            {friendError}
-                                        </Text>
-                                    )}
-                                </View>
-                            ) : null
-                        }
+                        ListFooterComponent={addFriendFooter}
                     />
                 </View>
             </KeyboardAvoidingView>
@@ -605,6 +776,19 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         justifyContent: 'center',
         backgroundColor: colors.primary,
+    },
+    searchIcon: {
+        marginLeft: spacing.xs,
+    },
+    searchResults: {
+        gap: 8,
+        marginTop: 8,
+    },
+    searchHint: {
+        fontSize: typography.small,
+        fontFamily: 'Poppins_500Medium',
+        color: colors.textMuted,
+        paddingVertical: spacing.xs,
     },
     fieldError: {
         fontSize: 11,

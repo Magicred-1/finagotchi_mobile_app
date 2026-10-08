@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, afterEach } from 'vitest';
-import { recordCheckin, fetchCheckins, addStreakFreezes, fetchLeaderboard, setProfileName, addFriend, removeFriend, pushPetState } from '../client';
+import { recordCheckin, fetchCheckins, addStreakFreezes, fetchLeaderboard, setProfileName, setProfileUsername, addFriend, removeFriend, searchUsers, pushPetState } from '../client';
 
 const { mockedClient } = vi.hoisted(() => {
     return { mockedClient: { authedGet: vi.fn(), authedPost: vi.fn(), authedDelete: vi.fn() } };
@@ -46,6 +46,12 @@ describe('dbs client', () => {
         expect(mockedClient.authedPost).toHaveBeenCalledWith('/dbs/profile', { wallet: 'abc', displayName: 'Finny' }, 'abc');
     });
 
+    it('sets the profile username', async () => {
+        mockedClient.authedPost.mockResolvedValueOnce({ wallet: 'abc', username: 'finny_1' });
+        await setProfileUsername('abc', 'finny_1');
+        expect(mockedClient.authedPost).toHaveBeenCalledWith('/dbs/profile', { wallet: 'abc', username: 'finny_1' }, 'abc');
+    });
+
     it('adds and removes friends', async () => {
         mockedClient.authedPost.mockResolvedValueOnce({});
         await addFriend('abc', 'def');
@@ -54,6 +60,16 @@ describe('dbs client', () => {
         mockedClient.authedDelete.mockResolvedValueOnce({});
         await removeFriend('abc', 'def');
         expect(mockedClient.authedDelete).toHaveBeenCalledWith('/dbs/friends', { wallet: 'abc', friendWallet: 'def' }, 'abc');
+    });
+
+    it('searches users by nickname and returns results', async () => {
+        mockedClient.authedGet.mockResolvedValueOnce({
+            query: 'fin',
+            results: [{ wallet: 'def', displayName: 'Finny' }],
+        });
+        const res = await searchUsers('abc', 'fin');
+        expect(res).toEqual([{ wallet: 'def', displayName: 'Finny' }]);
+        expect(mockedClient.authedGet).toHaveBeenCalledWith('/dbs/users/search', { wallet: 'abc', q: 'fin' }, 'abc');
     });
 });
 

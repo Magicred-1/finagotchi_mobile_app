@@ -28,9 +28,13 @@ export interface DbsLeaderboardEntry {
     score: number;
     displayName: string;
     tier: string;
+    username?: string;
     isFriend?: boolean;
     updatedAt?: number;
 }
+
+/** Server-side username format (POST /dbs/profile 400s otherwise). */
+export const USERNAME_REGEX = /^[A-Za-z0-9_-]{3,24}$/;
 
 export interface DbsLeaderboardResponse {
     global: DbsLeaderboardEntry[];
@@ -102,6 +106,35 @@ export async function setProfileName(
     displayName: string
 ): Promise<void> {
     await authedPost('/dbs/profile', { wallet, displayName }, wallet);
+}
+
+/**
+ * Nickname search (2–24 chars, 400 otherwise): case-insensitive substring
+ * over the resolved leaderboard name (username → display_name → creature
+ * name). The caller is excluded from results.
+ */
+export async function searchUsers(
+    wallet: string,
+    query: string
+): Promise<{ wallet: string; displayName: string }[]> {
+    const res = (await authedGet(
+        '/dbs/users/search',
+        { wallet, q: query },
+        wallet
+    )) as { results: { wallet: string; displayName: string }[] };
+    return res.results;
+}
+
+/**
+ * Set the caller's unique username (see USERNAME_REGEX). '' clears it;
+ * the server answers 409 { error: 'username_taken' } when another wallet
+ * already holds it (case-insensitive).
+ */
+export async function setProfileUsername(
+    wallet: string,
+    username: string
+): Promise<void> {
+    await authedPost('/dbs/profile', { wallet, username }, wallet);
 }
 
 /** Add a friend (viewer-scoped; isFriend in leaderboard responses derives from this). */
