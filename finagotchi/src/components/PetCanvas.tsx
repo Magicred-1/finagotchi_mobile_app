@@ -449,7 +449,12 @@ function PetCanvasInner({
         : null;
 
   useEffect(() => {
-    if (stage > previousStage.current) {
+    // Only celebrate stages beyond the store's celebrated watermark. The
+    // watermark persists and rehydrates in the same batch as `stage`, so the
+    // post-launch rehydration jump (and device-sync oscillations) no longer
+    // read as a fresh evolution.
+    const { lastCelebratedStage } = usePetStore.getState();
+    if (stage > previousStage.current && stage > lastCelebratedStage) {
       onEvolve?.(stage);
     }
     previousStage.current = stage;
