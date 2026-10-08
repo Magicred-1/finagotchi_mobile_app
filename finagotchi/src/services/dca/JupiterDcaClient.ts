@@ -250,6 +250,14 @@ function errorMessage(status: number, body: unknown): string {
         const record = body as Record<string, unknown>;
         const message = record.error ?? record.message;
         if (typeof message === 'string') return message;
+        // Structured error (validation details, nested error object): keep
+        // the whole payload — it is the only copy of why Jupiter rejected.
+        try {
+            const dump = JSON.stringify(body);
+            return dump.length > 500 ? `${dump.slice(0, 500)}…` : dump;
+        } catch {
+            // fall through
+        }
     }
     return `HTTP ${status}`;
 }
