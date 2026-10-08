@@ -15,9 +15,13 @@ import {
     LIGHTHOUSE_PROGRAM_ID,
     diffWalletTx,
     isLighthouseOnlyRewrite,
+    lighthouseRewriteVerdict,
 } from '../walletTxDiff';
 
 const LIGHTHOUSE = new PublicKey(LIGHTHOUSE_PROGRAM_ID);
+const COMPUTE_BUDGET = new PublicKey(
+    'ComputeBudget111111111111111111111111111111'
+);
 const BLOCKHASH = '4uQeVj5tqViQh7yWWGStvkEG1Zmhx6uasJtWCJziofM';
 
 const payer = Keypair.generate().publicKey;
@@ -25,8 +29,18 @@ const receiver = Keypair.generate().publicKey;
 const tokenProgramFake = Keypair.generate().publicKey;
 const tokenAccount = Keypair.generate().publicKey;
 
+function computeBudgetIx(unitPrice: number): TransactionInstruction {
+    return new TransactionInstruction({
+        programId: COMPUTE_BUDGET,
+        keys: [],
+        data: Buffer.from([3, ...new Array(8).fill(unitPrice)]),
+    });
+}
+
 function craftedInstructions(): TransactionInstruction[] {
     return [
+        computeBudgetIx(1),
+        computeBudgetIx(1),
         SystemProgram.transfer({
             fromPubkey: payer,
             toPubkey: receiver,
@@ -122,10 +136,27 @@ describe('isLighthouseOnlyRewrite', () => {
         expect(isLighthouseOnlyRewrite(crafted, signed)).toBe(false);
     });
 
-    it('rejects when a crafted instruction was tampered with', () => {
+    it('tolerates re-priced ComputeBudget instructions (Seeker re-simulation)', () => {
+        const crafted = buildCraftedMessage();
+        const repriced = craftedInstructions().map((ix) =>
+            ix.programId.equals(COMPUTE_BUDGET) ? computeBudgetIx(9) : ix
+        );
+        const signed = new Transaction({
+            feePayer: payer,
+            recentBlockhash: BLOCKHASH,
+        }).add(
+            ...repriced,
+            lighthouseAssertionIx(),
+            lighthouseAssertionIx(),
+            lighthouseAssertionIx()
+        );
+        expect(isLighthouseOnlyRewrite(crafted, signed)).toBe(true);
+    });
+
+    it('rejects when a crafted non-budget instruction was tampered with', () => {
         const crafted = buildCraftedMessage();
         const tampered = craftedInstructions();
-        tampered[0] = SystemProgram.transfer({
+        tampered[2] = SystemProgram.transfer({
             fromPubkey: payer,
             toPubkey: receiver,
             lamports: 2_000_000, // doubled
@@ -134,7 +165,9 @@ describe('isLighthouseOnlyRewrite', () => {
             feePayer: payer,
             recentBlockhash: BLOCKHASH,
         }).add(...tampered, lighthouseAssertionIx());
+        const verdict = lighthouseRewriteVerdict(crafted, signed);
         expect(isLighthouseOnlyRewrite(crafted, signed)).toBe(false);
+        expect(verdict).toContain('was modified');
     });
 
     it('rejects when the assertion drags in a new signer', () => {
@@ -154,8 +187,10 @@ describe('isLighthouseOnlyRewrite', () => {
         const signed = new Transaction({
             feePayer: payer,
             recentBlockhash: BLOCKHASH,
-        }).add(craftedInstructions()[0], lighthouseAssertionIx());
+        }).add(craftedInstructions()[2], lighthouseAssertionIx());
+        const verdict = lighthouseRewriteVerdict(crafted, signed);
         expect(isLighthouseOnlyRewrite(crafted, signed)).toBe(false);
+        expect(verdict).toContain('instruction count differs');
     });
 });
 

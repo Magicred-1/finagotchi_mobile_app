@@ -32,7 +32,7 @@ import {
     toHumanReadableWalletError,
     withHumanReadableErrors,
 } from './walletErrors';
-import { diffWalletTx, isLighthouseOnlyRewrite } from './walletTxDiff';
+import { diffWalletTx, lighthouseRewriteVerdict } from './walletTxDiff';
 import { getWalletOptions, type WalletOption as DynamicWalletOption } from './dynamicWalletPicker';
 import {
     disconnectExternalWallet,
@@ -596,7 +596,9 @@ export const signTransactionWithWallet = withHumanReadableErrors(
             const diff = diffWalletTx(transaction, signedTx);
             console.warn('dca: wallet rewrote the deposit tx', JSON.stringify(diff));
             if (diff.added.length > 0 || diff.removed.length > 0) {
-                if (!isLighthouseOnlyRewrite(legacyMessage, signedTx)) {
+                const verdict = lighthouseRewriteVerdict(legacyMessage, signedTx);
+                if (verdict !== null) {
+                    console.warn('dca: rewrite not tolerated:', verdict);
                     const detail = diff.addedDetails
                         .map(
                             (a) =>
