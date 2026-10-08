@@ -45,7 +45,15 @@ const newDynamicClient = createDynamicClient({
 addSolanaExtension();
 addPhantomRedirectSolanaExtension({
     onCloseTab: () => {},
-    url: new URL('https://www.finagotchi.app'),
+    // Custom scheme, NOT the https universal link: Android App Links only
+    // fire when the installed build's signing cert matches assetlinks.json —
+    // dev/EAS builds fail domain verification and dump the user into a
+    // browser, so the connection never completes. finagotchi:// always opens
+    // the app. Phantom appends its response params to this URL; the Linking
+    // handler in app/_layout.tsx detects and completes the redirect.
+    // (This is the Phantom provider's redirect target — the metadata
+    // universalLink above still feeds WalletConnect and must stay https.)
+    url: new URL('finagotchi://phantom'),
 });
 addMetaMaskSolanaExtension();
 addWalletConnectSolanaExtension();
