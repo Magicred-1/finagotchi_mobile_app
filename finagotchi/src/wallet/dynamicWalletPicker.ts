@@ -2,6 +2,7 @@ import {
     getWalletOptionsCatalogue,
     waitForClientInitialized,
     getWalletConnectCatalog,
+    connectWithWalletProvider,
     type WalletOption,
     type WalletAccount,
 } from '@dynamic-labs-sdk/client';
@@ -13,7 +14,11 @@ import { useWalletStore } from '../features/wallet/store';
 
 export type { WalletOption };
 
-const ALLOWED_WALLETS = new Set(['phantom', 'solflare', 'metamask', 'backpack']);
+// Solflare is deliberately absent: Dynamic's wallet book lists it with
+// WalletConnect sign_v1 only (the WC catalog requires sign_v2) and no mobile
+// deep link, so it can never connect this way. On Android, Solflare works
+// through the MWA button (Solana Mobile Stack) instead.
+const ALLOWED_WALLETS = new Set(['phantom', 'metamask', 'backpack']);
 
 function normalizeWallet(wallet: WalletOption): WalletOption {
     return {
@@ -49,6 +54,30 @@ export async function connectDynamicWallet(
     console.warn(`wc: connect start (${walletKey})`);
     await waitForClientInitialized(newDynamicClient);
     registerWalletConnectActionHandler();
+
+    // Phantom speaks its own deep-link protocol, not WalletConnect (wallet
+    // book: walletConnect.sdks unset). addPhantomRedirectSolanaExtension
+    // registers it as the 'phantomsol:deepLink' provider, which opens the
+    // Phantom app itself and resolves when the redirect returns — handled by
+    // the Linking listener in app/_layout.tsx.
+    if (walletKey === 'phantom') {
+        console.warn('wc: phantom via deep-link redirect provider');
+        const account = await connectWithWalletProvider(
+            { walletProviderKey: 'phantomsol:deepLink' },
+            newDynamicClient
+        );
+        if (!account?.address) {
+            throw new Error('No wallet account returned');
+        }
+        console.warn('wc: phantom connected');
+        const phantomConnected = useWalletStore
+            .getState()
+            .connect(account.address, 'external');
+        if (!phantomConnected) {
+            throw new Error('Invalid wallet address');
+        }
+        return account;
+    }
 
     const { uri, approval } = await connectWithWalletConnectSolana(
         { addToDynamicWalletAccounts: true },
