@@ -116,6 +116,13 @@ export function toHumanReadableWalletError(error: unknown): Error {
             'Your account already has a wallet — sign out and back in to reload it.'
         );
     }
+    // WalletConnect proposal TTL (~5 min) elapsed before the user approved in
+    // their wallet app.
+    if (/proposal expired|proposal_expire/.test(normalized)) {
+        return friendly(
+            'The connection request expired — start it again and approve promptly in your wallet.'
+        );
+    }
     if (/transaction simulation failed|custom program error|instructionerror/.test(normalized)) {
         return friendly('Solana rejected the transaction — please try again.');
     }
