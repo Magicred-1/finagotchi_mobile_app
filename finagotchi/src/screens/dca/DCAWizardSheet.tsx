@@ -483,7 +483,11 @@ export function DCAWizardSheet({
             onSuccess?.();
         } catch (err) {
             Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-            setError(err instanceof Error ? err.message : String(err));
+            const message = err instanceof Error ? err.message : String(err);
+            // The sheet shows the message, but support reports come from the
+            // console — make sure the full Jupiter error body lands there too.
+            console.error('dca: create plan failed:', message);
+            setError(message);
         } finally {
             setSubmitting(false);
         }
