@@ -740,6 +740,15 @@ export async function createPlanOrder({
             return await attemptCreate();
         } catch (err) {
             const message = err instanceof Error ? err.message : String(err);
+            // The crafted deposit's requestId lives in a short-TTL, single-use
+            // server-side cache. A slow wallet round-trip (Seeker re-simulates
+            // the tx, shows its sheet, waits for biometrics) can outlive it —
+            // the submit then 400s with "Deposit transaction not found in
+            // cache" and NOTHING was sent on-chain. Safe to retry with a fresh
+            // craft; give it two extra lives for very slow signers.
+            if (/not found in cache/i.test(message) && attempt < 2) {
+                continue;
+            }
             const expired = /expired|without landing|blockhash|block height/i.test(message);
             if (!expired || attempt >= 1) {
                 if (expired) {
