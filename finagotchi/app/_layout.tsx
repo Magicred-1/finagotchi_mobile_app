@@ -4,6 +4,11 @@ import React, { useEffect, useMemo } from 'react';
 import { Stack } from 'expo-router';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import * as SplashScreen from 'expo-splash-screen';
+import * as Linking from 'expo-linking';
+import {
+  detectPhantomRedirect,
+  completePhantomRedirect,
+} from '@dynamic-labs-sdk/solana';
 
 import { dynamicClient } from '../src/wallet/dynamicClient';
 import { newDynamicClient } from '../src/wallet/newDynamicClient';
@@ -88,6 +93,33 @@ function AppContent() {
 
   // EAS Update prompt for TestFlight builds.
   useUpdateCheck();
+
+  // Phantom's deep-link connect/sign flows come back as an incoming URL
+  // (finagotchi:// or the https universal link). Feed every incoming URL to
+  // the SDK's Phantom redirect detector; non-Phantom URLs are ignored.
+  // Without this, tapping Phantom opens the wallet but the connection never
+  // completes back in the app.
+  useEffect(() => {
+    const handleIncomingUrl = (url: string | null) => {
+      if (!url) return;
+      void (async () => {
+        try {
+          const parsed = new URL(url);
+          if (await detectPhantomRedirect({ url: parsed }, newDynamicClient)) {
+            console.warn('phantom: completing redirect');
+            await completePhantomRedirect({ url: parsed }, newDynamicClient);
+          }
+        } catch (err) {
+          console.warn('phantom: redirect handling failed', err);
+        }
+      })();
+    };
+    const subscription = Linking.addEventListener('url', (event) =>
+      handleIncomingUrl(event.url)
+    );
+    void Linking.getInitialURL().then(handleIncomingUrl);
+    return () => subscription.remove();
+  }, []);
 
   // Wallet connection and creature mint are mandatory. If any required state
   // is missing, force the user back into onboarding at the appropriate step.

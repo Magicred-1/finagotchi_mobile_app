@@ -39,6 +39,24 @@ export function toHumanReadableWalletError(error: unknown): Error {
             'The wallet session expired — reconnect your wallet.'
         );
     }
+    // Phantom deep-link flow: user declined in the Phantom app.
+    if (errorCode === 'phantom_redirect_rejected_error') {
+        return friendly('Cancelled in your wallet.');
+    }
+    // Phantom deep-link flow: no stored session (expired or cleared).
+    if (errorCode === 'no_phantom_session_error') {
+        return friendly('The Phantom session expired — reconnect your wallet.');
+    }
+    // The wallet has no connection path this app can drive (e.g. no
+    // WalletConnect v2 and no deep-link provider).
+    if (
+        errorName === 'noconnectionoptionavailableerror' ||
+        errorCode === 'no_connection_option_available_error'
+    ) {
+        return friendly(
+            "This wallet can't connect from the app — use Phantom, MetaMask, Backpack, or the embedded wallet."
+        );
+    }
     // ValueMustBeDefinedError (name is 'ValueMustBeDefined' — no 'Error'
     // suffix): getSignClient throws this when the WalletConnect project ID or
     // app display name is unset in the Dynamic dashboard. App-side
