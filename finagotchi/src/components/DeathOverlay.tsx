@@ -10,7 +10,7 @@ import * as Haptics from 'expo-haptics';
 
 import { Button } from './Button';
 import { PressableScale } from './PressableScale';
-import { colors, radius, spacing, typography } from '../theme/tokens';
+import { colors, fonts, landing, radius, shadows, spacing, tracking, typography } from '../theme/tokens';
 import type { CauseOfDeath } from '../features/pet/store';
 
 type Props = {
@@ -115,7 +115,7 @@ export default function DeathOverlay({
 
                 <View style={styles.lossCard}>
                     <Text style={styles.lossTitle}>What happened</Text>
-                    <View style={styles.lossRow}>
+                    <View style={[styles.lossRow, styles.lossRowFirst]}>
                         <Text style={styles.lossLabel}>NFT</Text>
                         <Text style={[styles.lossValue, styles.lossValueSafe]}>Safe in wallet</Text>
                     </View>
@@ -210,7 +210,7 @@ const styles = StyleSheet.create({
     overlay: {
         ...StyleSheet.absoluteFillObject,
         zIndex: 2000,
-        backgroundColor: colors.background,
+        backgroundColor: 'rgba(6,29,61,0.75)',
         alignItems: 'center',
         justifyContent: 'center',
         padding: 24,
@@ -220,111 +220,124 @@ const styles = StyleSheet.create({
         maxWidth: 360,
         alignItems: 'center',
         gap: spacing.lg,
+        padding: spacing.lg,
+        borderRadius: radius.lg,
+        backgroundColor: landing.navy,
+        borderWidth: 1,
+        borderColor: landing.glassBorderStrong,
+        ...shadows.popup,
     },
     skull: {
         fontSize: 80,
     },
     title: {
-        color: colors.text,
+        color: colors.textStrong,
         fontSize: typography.heading,
-        fontFamily: 'Poppins_800ExtraBold',
+        fontFamily: fonts.bold,
+        letterSpacing: tracking.heading,
         textAlign: 'center',
     },
     subtitle: {
-        color: colors.danger,
+        color: colors.heart,
         fontSize: typography.body,
-        fontFamily: 'Poppins_600SemiBold',
+        fontFamily: fonts.medium,
         textAlign: 'center',
     },
     lossCard: {
         width: '100%',
         padding: spacing.lg,
-        borderRadius: radius.lg,
-        backgroundColor: colors.surface,
+        borderRadius: radius.md,
+        backgroundColor: landing.glass,
         borderWidth: 1,
-        borderColor: 'rgba(255,255,255,0.08)',
-        gap: spacing.sm,
+        borderColor: landing.glassBorder,
     },
     lossTitle: {
         color: colors.textMuted,
-        fontSize: typography.small,
-        fontFamily: 'Poppins_700Bold',
+        fontSize: typography.micro,
+        fontFamily: fonts.mono,
+        letterSpacing: tracking.eyebrow,
+        textTransform: 'uppercase',
         marginBottom: spacing.sm,
     },
     lossRow: {
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'center',
+        paddingTop: spacing.sm,
+        marginTop: spacing.sm,
+        borderTopWidth: 1,
+        borderTopColor: colors.borderSoft,
+    },
+    lossRowFirst: {
+        paddingTop: 0,
+        marginTop: 0,
+        borderTopWidth: 0,
     },
     lossLabel: {
         color: colors.textMuted,
-        fontSize: typography.body,
-        fontFamily: 'Poppins_500Medium',
+        fontSize: typography.micro,
+        fontFamily: fonts.mono,
+        letterSpacing: tracking.eyebrow,
+        textTransform: 'uppercase',
     },
     lossValue: {
-        color: colors.danger,
+        color: colors.heart,
         fontSize: typography.body,
-        fontFamily: 'Poppins_800ExtraBold',
+        fontFamily: fonts.monoBold,
     },
     lossValueSafe: {
-        color: colors.primary,
+        color: colors.success,
     },
     urge: {
         color: colors.textMuted,
         fontSize: typography.small,
-        fontFamily: 'Poppins_400Regular',
+        fontFamily: fonts.regular,
         textAlign: 'center',
         lineHeight: 22,
     },
     windowCard: {
         width: '100%',
         padding: spacing.lg,
-        borderRadius: radius.lg,
-        backgroundColor: 'rgba(255,142,74,0.10)',
+        borderRadius: radius.md,
+        backgroundColor: 'rgba(233,184,70,0.10)',
         borderWidth: 1,
-        borderColor: 'rgba(255,142,74,0.20)',
+        borderColor: 'rgba(233,184,70,0.25)',
         alignItems: 'center',
         gap: spacing.xs,
     },
     windowLabel: {
         color: colors.textMuted,
         fontSize: typography.small,
-        fontFamily: 'Poppins_600SemiBold',
+        fontFamily: fonts.medium,
         textAlign: 'center',
     },
     windowValue: {
-        color: '#FF8E4A',
+        color: colors.gold,
         fontSize: typography.heading,
-        fontFamily: 'Poppins_800ExtraBold',
+        fontFamily: fonts.monoBold,
         textAlign: 'center',
     },
     windowExpired: {
-        color: colors.danger,
+        color: colors.heart,
         fontSize: typography.body,
     },
     deathCountText: {
         color: colors.textMuted,
         fontSize: typography.small,
-        fontFamily: 'Poppins_500Medium',
+        fontFamily: fonts.regular,
         textAlign: 'center',
     },
     actions: {
         width: '100%',
         gap: spacing.md,
     },
-    freeReviveText: {
-        color: colors.primary,
-        fontSize: typography.small,
-        fontFamily: 'Poppins_600SemiBold',
-        textAlign: 'center',
-    },
     inviteCard: {
         width: '100%',
         padding: spacing.md,
-        borderRadius: radius.lg,
-        backgroundColor: 'rgba(53,215,255,0.08)',
+        borderRadius: radius.md,
+        backgroundColor: 'rgba(141,201,246,0.08)',
         borderWidth: 1,
-        borderColor: 'rgba(53,215,255,0.20)',
+        borderColor: 'rgba(141,201,246,0.20)',
         gap: spacing.sm,
     },
     inviteCardHeader: {
@@ -333,14 +346,14 @@ const styles = StyleSheet.create({
         alignItems: 'center',
     },
     inviteTitle: {
-        color: colors.text,
+        color: colors.textStrong,
         fontSize: typography.body,
-        fontFamily: 'Poppins_700Bold',
+        fontFamily: fonts.medium,
     },
     inviteProgress: {
         color: colors.textMuted,
         fontSize: typography.body,
-        fontFamily: 'Poppins_800ExtraBold',
+        fontFamily: fonts.monoBold,
     },
     inviteProgressReady: {
         color: colors.primary,
@@ -348,20 +361,20 @@ const styles = StyleSheet.create({
     inviteBody: {
         color: colors.textMuted,
         fontSize: typography.small,
-        fontFamily: 'Poppins_400Regular',
+        fontFamily: fonts.regular,
         lineHeight: 20,
     },
     inviteButton: {
         alignItems: 'center',
         justifyContent: 'center',
         paddingVertical: spacing.sm,
-        borderRadius: radius.md,
+        borderRadius: radius.sm,
         backgroundColor: colors.primary,
     },
     inviteButtonText: {
-        color: colors.background,
+        color: colors.onPrimary,
         fontSize: typography.small,
-        fontFamily: 'Poppins_700Bold',
+        fontFamily: fonts.semiBold,
     },
     altActions: {
         flexDirection: 'row',
@@ -372,14 +385,14 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         justifyContent: 'center',
         paddingVertical: spacing.md,
-        borderRadius: radius.lg,
-        backgroundColor: colors.surface,
+        borderRadius: radius.sm,
+        backgroundColor: landing.glass,
         borderWidth: 1,
-        borderColor: 'rgba(255,255,255,0.08)',
+        borderColor: colors.border,
     },
     altButtonText: {
         color: colors.text,
         fontSize: typography.body,
-        fontFamily: 'Poppins_700Bold',
+        fontFamily: fonts.medium,
     },
 });

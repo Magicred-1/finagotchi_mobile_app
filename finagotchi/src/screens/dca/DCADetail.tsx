@@ -22,6 +22,7 @@ import {
 } from '../../services/dca';
 import { useWallet } from '../../wallet/useWallet';
 import { Button } from '../../components/Button';
+import { PressableScale } from '../../components/PressableScale';
 import {
     colors,
     radius,
@@ -92,7 +93,7 @@ function ProgressRing({ plan }: { plan: DcaPlan }) {
                     cx={RING_SIZE / 2}
                     cy={RING_SIZE / 2}
                     r={RING_RADIUS}
-                    stroke={colors.surfaceLight}
+                    stroke={colors.border}
                     strokeWidth={RING_STROKE}
                     fill="none"
                 />
@@ -366,20 +367,29 @@ export function DCADetail({ planId, onClose }: Props) {
                                     }
                                     onPress={handleEdit}
                                 />
-                                <Button
-                                    title="Pause plan"
-                                    variant="secondary"
-                                    icon={
+                                <PressableScale
+                                    onPress={handlePause}
+                                    disabled={!wallet.connected || busy}
+                                    style={styles.pauseButton}
+                                    accessibilityRole="button"
+                                    accessibilityLabel="Pause plan"
+                                >
+                                    {busy ? (
+                                        <ActivityIndicator
+                                            size="small"
+                                            color={colors.heart}
+                                        />
+                                    ) : (
                                         <Ionicons
                                             name="pause-outline"
                                             size={16}
-                                            color={colors.text}
+                                            color={colors.heart}
                                         />
-                                    }
-                                    loading={busy}
-                                    disabled={!wallet.connected}
-                                    onPress={handlePause}
-                                />
+                                    )}
+                                    <Text style={styles.pauseButtonText}>
+                                        Pause plan
+                                    </Text>
+                                </PressableScale>
                                 <Text style={styles.actionCaption}>
                                     Pausing stops buys and returns unspent
                                     USDC to your wallet.
@@ -454,22 +464,22 @@ const styles = StyleSheet.create({
         marginBottom: spacing.sm,
     },
     headerTitle: {
-        color: colors.text,
+        color: colors.textStrong,
         fontSize: typography.body,
-        fontFamily: 'Poppins_600SemiBold',
-        letterSpacing: tracking.heading * typography.body,
+        fontFamily: 'DMSans_700Bold',
+        letterSpacing: tracking.heading,
     },
     headerQuote: {
         color: colors.textMuted,
         fontSize: 11,
-        fontFamily: 'Poppins_500Medium',
+        fontFamily: 'DMSans_700Bold',
         fontVariant: ['tabular-nums'],
     },
     headerQuoteUp: {
         color: colors.success,
     },
     headerQuoteDown: {
-        color: colors.danger,
+        color: colors.heart,
     },
     body: {
         // Horizontal padding comes from the BottomSheet container.
@@ -498,16 +508,15 @@ const styles = StyleSheet.create({
         gap: 2,
     },
     ringPercent: {
-        color: colors.text,
+        color: colors.textStrong,
         fontSize: typography.title,
-        fontFamily: 'Poppins_700Bold',
-        letterSpacing: tracking.title * typography.title,
+        fontFamily: 'DMSans_700Bold',
         fontVariant: ['tabular-nums'],
     },
     ringValue: {
         color: colors.textMuted,
         fontSize: typography.small,
-        fontFamily: 'Poppins_500Medium',
+        fontFamily: 'DMSans_700Bold',
         fontVariant: ['tabular-nums'],
     },
     nextWrap: {
@@ -515,9 +524,9 @@ const styles = StyleSheet.create({
         gap: spacing.xs,
     },
     nextText: {
-        color: colors.text,
+        color: colors.primary,
         fontSize: typography.small,
-        fontFamily: 'Poppins_500Medium',
+        fontFamily: 'DMSans_700Bold',
         fontVariant: ['tabular-nums'],
         textAlign: 'center',
     },
@@ -538,7 +547,7 @@ const styles = StyleSheet.create({
     overdueBadgeText: {
         color: colors.warning,
         fontSize: 11,
-        fontFamily: 'Poppins_600SemiBold',
+        fontFamily: 'DMSans_600SemiBold',
     },
     overdueDot: {
         width: 6,
@@ -549,10 +558,29 @@ const styles = StyleSheet.create({
     actions: {
         gap: spacing.sm,
     },
+    pauseButton: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: spacing.sm,
+        minHeight: 48,
+        borderRadius: radius.sm,
+        borderWidth: 1,
+        borderColor: colors.heart,
+        backgroundColor: colors.surfaceLight,
+        paddingVertical: spacing.md,
+    },
+    pauseButtonText: {
+        color: colors.heart,
+        fontSize: typography.small,
+        fontFamily: 'DMSans_600SemiBold',
+        letterSpacing: 0.8,
+        textTransform: 'uppercase',
+    },
     actionCaption: {
         color: colors.textMuted,
         fontSize: 11,
-        fontFamily: 'Poppins_400Regular',
+        fontFamily: 'DMSans_400Regular',
         textAlign: 'center',
     },
     activatingPill: {
@@ -570,12 +598,12 @@ const styles = StyleSheet.create({
         flex: 1,
         color: colors.textMuted,
         fontSize: typography.small,
-        fontFamily: 'Poppins_500Medium',
+        fontFamily: 'DMSans_500Medium',
     },
     statusCopy: {
         color: colors.textMuted,
         fontSize: typography.small,
-        fontFamily: 'Poppins_500Medium',
+        fontFamily: 'DMSans_500Medium',
         textAlign: 'center',
     },
     fills: {
@@ -583,16 +611,16 @@ const styles = StyleSheet.create({
     },
     sectionTitle: {
         color: colors.textMuted,
-        fontSize: typography.small,
-        fontFamily: 'Poppins_600SemiBold',
+        fontSize: typography.micro,
+        fontFamily: 'DMSans_500Medium',
         textTransform: 'uppercase',
-        letterSpacing: 1,
+        letterSpacing: tracking.eyebrow,
         marginTop: spacing.sm,
     },
     emptyFills: {
         color: colors.textMuted,
         fontSize: typography.small,
-        fontFamily: 'Poppins_400Regular',
+        fontFamily: 'DMSans_400Regular',
     },
     fillRow: {
         flexDirection: 'row',
@@ -613,18 +641,18 @@ const styles = StyleSheet.create({
     fillText: {
         color: colors.text,
         fontSize: typography.small,
-        fontFamily: 'Poppins_600SemiBold',
+        fontFamily: 'DMSans_700Bold',
         fontVariant: ['tabular-nums'],
     },
     fillTime: {
         color: colors.textMuted,
         fontSize: typography.small,
-        fontFamily: 'Poppins_400Regular',
+        fontFamily: 'DMSans_400Regular',
     },
     footerNote: {
         color: colors.textMuted,
         fontSize: typography.small,
-        fontFamily: 'Poppins_400Regular',
+        fontFamily: 'DMSans_400Regular',
         textAlign: 'center',
         marginTop: spacing.md,
     },
@@ -637,6 +665,6 @@ const styles = StyleSheet.create({
     missingText: {
         color: colors.textMuted,
         fontSize: typography.body,
-        fontFamily: 'Poppins_500Medium',
+        fontFamily: 'DMSans_500Medium',
     },
 });

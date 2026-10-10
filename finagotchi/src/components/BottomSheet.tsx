@@ -24,13 +24,22 @@ import Animated, {
     withTiming,
 } from 'react-native-reanimated';
 
-import { colors, radius, spacing, springs, typography } from '../theme/tokens';
+import { colors, fonts, gradients, gradientStops, landing, radius, spacing, springs, tracking, typography } from '../theme/tokens';
+import { GradientFill } from './GradientFill';
+import { SoftGlow } from './SoftGlow';
 import { useSheetPortal } from './SheetPortal';
 
 type Props = {
     visible: boolean;
     onClose: () => void;
     title?: string;
+    /**
+     * Color story: 'landing' (default, the app-wide identity) renders the
+     * landing dialog surface (site `.popup-dialog`: navy → deep-blue
+     * gradient, radial highlight, glass border); 'dark' is the legacy
+     * near-black sheet.
+     */
+    tone?: 'dark' | 'landing';
     children: React.ReactNode;
 };
 
@@ -54,7 +63,7 @@ function rubberband(overshoot: number, dimension: number, constant = 0.55) {
     return (overshoot * dimension * constant) / (dimension + constant * overshoot);
 }
 
-export function BottomSheet({ visible, onClose, title, children }: Props) {
+export function BottomSheet({ visible, onClose, title, tone = 'landing', children }: Props) {
     const { height } = useWindowDimensions();
     const insets = useSafeAreaInsets();
 
@@ -203,6 +212,8 @@ export function BottomSheet({ visible, onClose, title, children }: Props) {
         ],
     }));
 
+    const isLanding = tone === 'landing';
+
     useSheetPortal(
         modalVisible ? (
             <View style={styles.container}>
@@ -210,6 +221,7 @@ export function BottomSheet({ visible, onClose, title, children }: Props) {
                     style={[
                         StyleSheet.absoluteFill,
                         styles.backdrop,
+                        isLanding && styles.backdropLanding,
                         backdropStyle,
                     ]}
                 >
@@ -222,6 +234,7 @@ export function BottomSheet({ visible, onClose, title, children }: Props) {
                 <Animated.View
                     style={[
                         styles.sheet,
+                        isLanding && styles.sheetLanding,
                         {
                             paddingBottom: Math.max(insets.bottom, 16),
                             maxHeight: keyboardOpen
@@ -231,14 +244,42 @@ export function BottomSheet({ visible, onClose, title, children }: Props) {
                         sheetStyle,
                     ]}
                 >
+                    {isLanding ? (
+                        <>
+                            <GradientFill
+                                colors={gradients.landingDialog}
+                                locations={gradientStops.landingDialog}
+                                start={{ x: 0.2, y: 0 }}
+                                end={{ x: 0.8, y: 1 }}
+                                style={StyleSheet.absoluteFill}
+                            />
+                            <SoftGlow
+                                color={landing.dialogHighlight}
+                                style={styles.dialogHighlight}
+                            />
+                        </>
+                    ) : null}
+
                     <GestureDetector gesture={panGesture}>
                         <View style={styles.dragHandle}>
-                            <View style={styles.handle} />
+                            <View
+                                style={[
+                                    styles.handle,
+                                    isLanding && styles.handleLanding,
+                                ]}
+                            />
                         </View>
                     </GestureDetector>
 
                     {title ? (
-                        <Text style={styles.title}>{title}</Text>
+                        <Text
+                            style={[
+                                styles.title,
+                                isLanding && styles.titleLanding,
+                            ]}
+                        >
+                            {title}
+                        </Text>
                     ) : null}
 
                     {children}
@@ -256,7 +297,11 @@ const styles = StyleSheet.create({
         justifyContent: 'flex-end',
     },
     backdrop: {
-        backgroundColor: 'rgba(0,0,0,0.55)',
+        // Landing dialogs use a dimmed, blurred backdrop.
+        backgroundColor: 'rgba(4, 6, 9, 0.6)',
+    },
+    backdropLanding: {
+        backgroundColor: landing.backdrop,
     },
     sheet: {
         width: '100%',
@@ -264,9 +309,21 @@ const styles = StyleSheet.create({
         borderTopLeftRadius: radius.lg,
         borderTopRightRadius: radius.lg,
         borderTopWidth: 1,
-        borderColor: 'rgba(255,255,255,0.08)',
+        borderColor: colors.border,
         paddingTop: 12,
         paddingHorizontal: spacing.lg,
+    },
+    sheetLanding: {
+        backgroundColor: landing.navy,
+        borderColor: landing.glassBorderStrong,
+        overflow: 'hidden',
+    },
+    dialogHighlight: {
+        position: 'absolute',
+        top: '-18%',
+        right: '-25%',
+        width: '70%',
+        height: '55%',
     },
     dragHandle: {
         alignSelf: 'stretch',
@@ -282,10 +339,17 @@ const styles = StyleSheet.create({
         backgroundColor: colors.border,
         marginBottom: spacing.md,
     },
+    handleLanding: {
+        backgroundColor: landing.glassBorderStrong,
+    },
     title: {
-        color: colors.text,
+        color: colors.textStrong,
         fontSize: typography.heading,
-        fontFamily: 'Poppins_700Bold',
+        fontFamily: fonts.medium,
+        letterSpacing: tracking.heading,
         marginBottom: spacing.md,
+    },
+    titleLanding: {
+        color: landing.text,
     },
 });

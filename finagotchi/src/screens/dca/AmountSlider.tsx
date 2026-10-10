@@ -159,9 +159,9 @@ const styles = StyleSheet.create({
         width: KNOB_SIZE,
         height: KNOB_SIZE,
         borderRadius: KNOB_SIZE / 2,
-        backgroundColor: colors.primary,
-        borderWidth: 3,
-        borderColor: colors.text,
+        backgroundColor: colors.surfaceLight,
+        borderWidth: 1,
+        borderColor: colors.border,
         ...shadows.small,
     },
 });

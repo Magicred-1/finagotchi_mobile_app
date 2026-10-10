@@ -12,7 +12,7 @@ import Animated, {
     withSpring,
 } from 'react-native-reanimated';
 
-import { colors, press, radius, spacing, typography } from '../theme/tokens';
+import { colors, fonts, landing, press, radius, spacing, typography } from '../theme/tokens';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
@@ -22,6 +22,12 @@ type Props = {
     disabled?: boolean;
     loading?: boolean;
     variant?: 'primary' | 'secondary';
+    /**
+     * Color story: 'landing' (default, the app-wide identity) uses the
+     * landing-blue recipe (frosted secondary); 'dark' is the legacy
+     * near-black glass look.
+     */
+    tone?: 'dark' | 'landing';
     icon?: React.ReactNode;
 };
 
@@ -31,6 +37,7 @@ export function Button({
     disabled = false,
     loading = false,
     variant = 'primary',
+    tone = 'landing',
     icon,
 }: Props) {
     const pressed = useSharedValue(0);
@@ -55,7 +62,13 @@ export function Button({
     }));
 
     const isDisabled = disabled || loading;
-    const spinnerColor = variant === 'primary' ? '#07111F' : colors.text;
+    const secondaryLanding = variant === 'secondary' && tone === 'landing';
+    const spinnerColor =
+        variant === 'primary'
+            ? colors.onPrimary
+            : secondaryLanding
+              ? landing.ink
+              : colors.text;
 
     return (
         <AnimatedPressable
@@ -63,9 +76,13 @@ export function Button({
             onPressIn={onPressIn}
             onPressOut={onPressOut}
             disabled={isDisabled}
+            accessibilityRole="button"
+            accessibilityLabel={title}
+            accessibilityState={{ disabled: isDisabled, busy: loading }}
             style={[
                 styles.button,
                 variant === 'secondary' && styles.secondary,
+                secondaryLanding && styles.secondaryLanding,
                 isDisabled && styles.disabled,
                 animatedStyle,
             ]}
@@ -84,6 +101,7 @@ export function Button({
                     style={[
                         styles.text,
                         variant === 'secondary' && styles.textSecondary,
+                        secondaryLanding && styles.textSecondaryLanding,
                     ]}
                 >
                     {title}
@@ -98,15 +116,21 @@ const styles = StyleSheet.create({
         backgroundColor: colors.primary,
         paddingVertical: spacing.md,
         paddingHorizontal: spacing.lg,
-        borderRadius: radius.md,
+        borderRadius: radius.sm,
         alignItems: 'center',
         minHeight: 48,
     },
 
     secondary: {
-        backgroundColor: colors.surfaceLight,
+        backgroundColor: colors.borderSoft,
         borderWidth: 1,
         borderColor: colors.border,
+    },
+
+    /** Landing identity: frosted light secondary (site `.waitlist-dialog` inputs/buttons). */
+    secondaryLanding: {
+        backgroundColor: landing.frostSurface,
+        borderColor: landing.frostBorder,
     },
 
     disabled: {
@@ -124,12 +148,18 @@ const styles = StyleSheet.create({
     },
 
     text: {
-        color: '#07111F',
-        fontSize: typography.body,
-        fontFamily: 'Poppins_800ExtraBold',
+        color: colors.onPrimary,
+        fontSize: typography.small,
+        fontFamily: fonts.semiBold,
+        letterSpacing: 0.8,
+        textTransform: 'uppercase',
     },
 
     textSecondary: {
         color: colors.text,
+    },
+
+    textSecondaryLanding: {
+        color: landing.ink,
     },
 });

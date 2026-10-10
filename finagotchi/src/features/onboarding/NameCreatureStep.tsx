@@ -15,7 +15,9 @@ import {
 
 import { Button } from '../../components/Button';
 import { RadialPet } from '../../components/RadialPet';
-import { colors, radius, spacing, typography } from '../../theme/tokens';
+import { LandingGradient } from '../../components/LandingGradient';
+import { FadeInUp } from './FadeInUp';
+import { fonts, landing, radius, spacing, tracking, typography } from '../../theme/tokens';
 
 const KEYBOARD_BEHAVIOR = Platform.OS === 'ios' ? 'padding' : 'height';
 
@@ -25,6 +27,7 @@ type Props = {
 
 export default function NameCreatureStep({ onSubmit }: Props) {
     const [name, setName] = useState('');
+    const [focused, setFocused] = useState(false);
     const { width, height } = useWindowDimensions();
     const scrollRef = useRef<ScrollView>(null);
 
@@ -44,6 +47,7 @@ export default function NameCreatureStep({ onSubmit }: Props) {
 
     return (
         <SafeAreaView style={styles.safe}>
+            <LandingGradient />
             <KeyboardAvoidingView
                 behavior={KEYBOARD_BEHAVIOR}
                 style={styles.keyboard}
@@ -60,7 +64,7 @@ export default function NameCreatureStep({ onSubmit }: Props) {
                         style={styles.dismissArea}
                         onPress={Keyboard.dismiss}
                     >
-                        <View style={[styles.content, { paddingHorizontal: horizontalPadding }]}>
+                        <FadeInUp style={[styles.content, { paddingHorizontal: horizontalPadding }]}>
                             <View style={[styles.creatureWrap, isSmall && styles.creatureWrapSmall]}>
                                 <RadialPet stage="egg" mood="calm" size={isSmall ? 96 : 128} />
                             </View>
@@ -82,19 +86,23 @@ export default function NameCreatureStep({ onSubmit }: Props) {
                                 Give your Finagotchi a name before minting it as your
                                 on-chain companion.
                             </Text>
-                        </View>
+                        </FadeInUp>
 
-                        <View style={[styles.form, { paddingHorizontal: horizontalPadding }]}>
+                        <FadeInUp delay={160} style={[styles.form, { paddingHorizontal: horizontalPadding }]}>
                             <TextInput
                                 value={name}
                                 onChangeText={setName}
                                 placeholder="e.g. Solana, Finny, HODLbot"
-                                placeholderTextColor={colors.textMuted}
-                                style={styles.input}
+                                placeholderTextColor={landing.placeholder}
+                                style={[styles.input, focused && styles.inputFocused]}
                                 maxLength={24}
                                 autoFocus
                                 returnKeyType="done"
-                                onFocus={scrollToForm}
+                                onFocus={() => {
+                                    setFocused(true);
+                                    scrollToForm();
+                                }}
+                                onBlur={() => setFocused(false)}
                                 onSubmitEditing={() => {
                                     if (canSubmit) onSubmit(name.trim());
                                 }}
@@ -103,8 +111,9 @@ export default function NameCreatureStep({ onSubmit }: Props) {
                                 title="Continue"
                                 onPress={() => onSubmit(name.trim())}
                                 disabled={!canSubmit}
+                                tone="landing"
                             />
-                        </View>
+                        </FadeInUp>
                     </Pressable>
                 </ScrollView>
             </KeyboardAvoidingView>
@@ -115,7 +124,7 @@ export default function NameCreatureStep({ onSubmit }: Props) {
 const styles = StyleSheet.create({
     safe: {
         flex: 1,
-        backgroundColor: colors.background,
+        backgroundColor: landing.navy,
     },
     keyboard: {
         flex: 1,
@@ -148,9 +157,10 @@ const styles = StyleSheet.create({
         marginBottom: spacing.sm,
     },
     title: {
-        color: colors.text,
+        color: landing.text,
         fontSize: typography.title,
-        fontFamily: 'Poppins_700Bold',
+        fontFamily: fonts.medium,
+        letterSpacing: tracking.title,
         textAlign: 'center',
         marginBottom: spacing.md,
     },
@@ -161,9 +171,9 @@ const styles = StyleSheet.create({
         fontSize: 24,
     },
     body: {
-        color: colors.textMuted,
+        color: landing.textMuted,
         fontSize: typography.body,
-        fontFamily: 'Poppins_400Regular',
+        fontFamily: fonts.regular,
         textAlign: 'center',
         lineHeight: 24,
         maxWidth: 320,
@@ -178,14 +188,18 @@ const styles = StyleSheet.create({
         paddingBottom: spacing.lg,
     },
     input: {
-        backgroundColor: colors.surface,
-        color: colors.text,
+        backgroundColor: landing.frostSurface,
+        color: landing.ink,
         borderWidth: 1,
-        borderColor: colors.border,
-        borderRadius: 14,
-        paddingVertical: spacing.md,
-        paddingHorizontal: spacing.lg,
+        borderColor: landing.frostBorder,
+        borderRadius: radius.sm,
+        minHeight: 54,
+        paddingVertical: 15,
+        paddingHorizontal: 16,
         fontSize: typography.body,
-        fontFamily: 'Poppins_500Medium',
+        fontFamily: fonts.medium,
+    },
+    inputFocused: {
+        borderColor: landing.accent,
     },
 });

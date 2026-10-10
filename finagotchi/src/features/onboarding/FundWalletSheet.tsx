@@ -4,8 +4,9 @@ import { Ionicons } from '@expo/vector-icons';
 import QRCode from 'react-native-qrcode-svg';
 
 import { BottomSheet } from '../../components/BottomSheet';
+import { Button } from '../../components/Button';
 import { PressableScale } from '../../components/PressableScale';
-import { colors, radius, spacing, typography } from '../../theme/tokens';
+import { fonts, landing, radius, spacing, tracking, typography } from '../../theme/tokens';
 
 type Props = {
     visible: boolean;
@@ -63,18 +64,31 @@ export function FundWalletSheet({
             visible={visible}
             onClose={onClose}
             title="Add SOL to your wallet"
+            tone="landing"
         >
             <View style={styles.section}>
                 <Text style={styles.body}>
-                    Your embedded wallet needs at least{' '}
-                    {formatSol(requiredLamports)} SOL to mint your Finagotchi.
-                    {balanceLamports !== null
-                        ? ` You currently have ${formatSol(balanceLamports)} SOL.`
-                        : ''}
+                    Your embedded wallet needs SOL to mint your Finagotchi.
                 </Text>
             </View>
 
             <View style={styles.depositCard}>
+                <View style={styles.specRows}>
+                    <View style={styles.specRow}>
+                        <Text style={styles.specLabel}>Required</Text>
+                        <Text style={styles.specValue}>
+                            {formatSol(requiredLamports)} SOL
+                        </Text>
+                    </View>
+                    {balanceLamports !== null ? (
+                        <View style={[styles.specRow, styles.specRowDivider]}>
+                            <Text style={styles.specLabel}>Balance</Text>
+                            <Text style={styles.specValue}>
+                                {formatSol(balanceLamports)} SOL
+                            </Text>
+                        </View>
+                    ) : null}
+                </View>
                 <View style={styles.qrWrap}>
                     <QRCode
                         value={walletAddress}
@@ -86,17 +100,20 @@ export function FundWalletSheet({
                 <Text style={styles.address} selectable>
                     {walletAddress}
                 </Text>
-                <PressableScale
-                    onPress={handleShareAddress}
-                    style={styles.shareButton}
-                >
-                    <Ionicons
-                        name="share-outline"
-                        size={16}
-                        color={colors.background}
+                <View style={styles.shareWrap}>
+                    <Button
+                        title="Share address"
+                        onPress={handleShareAddress}
+                        tone="landing"
+                        icon={
+                            <Ionicons
+                                name="share-outline"
+                                size={16}
+                                color={landing.onAccent}
+                            />
+                        }
                     />
-                    <Text style={styles.shareButtonLabel}>Share address</Text>
-                </PressableScale>
+                </View>
                 <Text style={styles.hint}>
                     Send SOL to this address from another wallet or exchange.
                 </Text>
@@ -117,9 +134,9 @@ const styles = StyleSheet.create({
         marginBottom: spacing.md,
     },
     body: {
-        color: colors.textMuted,
+        color: landing.textMuted,
         fontSize: typography.body,
-        fontFamily: 'Poppins_400Regular',
+        fontFamily: fonts.regular,
         textAlign: 'center',
         lineHeight: 22,
     },
@@ -129,9 +146,38 @@ const styles = StyleSheet.create({
         padding: spacing.md,
         marginBottom: spacing.md,
         borderRadius: radius.md,
-        backgroundColor: colors.surfaceLight,
+        backgroundColor: landing.glass,
         borderWidth: 1,
-        borderColor: colors.border,
+        borderColor: landing.glassBorder,
+    },
+    specRows: {
+        alignSelf: 'stretch',
+        paddingBottom: spacing.sm,
+        marginBottom: spacing.xs,
+        borderBottomWidth: 1,
+        borderBottomColor: landing.glassBorder,
+    },
+    specRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        paddingVertical: spacing.xs,
+    },
+    specRowDivider: {
+        borderTopWidth: 1,
+        borderTopColor: landing.glassBorder,
+    },
+    specLabel: {
+        color: landing.eyebrow,
+        fontSize: typography.micro,
+        fontFamily: fonts.mono,
+        letterSpacing: tracking.eyebrow,
+        textTransform: 'uppercase',
+    },
+    specValue: {
+        color: landing.text,
+        fontSize: typography.small,
+        fontFamily: fonts.monoBold,
     },
     qrWrap: {
         padding: spacing.sm,
@@ -139,30 +185,19 @@ const styles = StyleSheet.create({
         backgroundColor: 'white',
     },
     address: {
-        color: colors.text,
+        color: landing.text,
         fontSize: typography.small,
-        fontFamily: 'Poppins_500Medium',
+        fontFamily: fonts.mono,
         textAlign: 'center',
         lineHeight: 18,
     },
-    shareButton: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: spacing.xs,
-        paddingHorizontal: spacing.md,
-        minHeight: 40,
-        borderRadius: radius.sm,
-        backgroundColor: colors.primary,
-    },
-    shareButtonLabel: {
-        color: colors.background,
-        fontSize: typography.small,
-        fontFamily: 'Poppins_600SemiBold',
+    shareWrap: {
+        alignSelf: 'stretch',
     },
     hint: {
-        color: colors.textMuted,
-        fontSize: 11,
-        fontFamily: 'Poppins_400Regular',
+        color: landing.textMuted,
+        fontSize: typography.micro,
+        fontFamily: fonts.regular,
         textAlign: 'center',
         lineHeight: 16,
     },
@@ -173,8 +208,8 @@ const styles = StyleSheet.create({
         marginBottom: spacing.sm,
     },
     laterButtonLabel: {
-        color: colors.textMuted,
+        color: landing.textMuted,
         fontSize: typography.body,
-        fontFamily: 'Poppins_600SemiBold',
+        fontFamily: fonts.semiBold,
     },
 });

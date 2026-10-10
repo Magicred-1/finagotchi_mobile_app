@@ -35,7 +35,7 @@ import {
   type PetStage as NumericStage,
 } from '../features/pet/store';
 import { clamp } from '../utils/math';
-import { colors } from '../theme/tokens';
+import { colors, landing, radius } from '../theme/tokens';
 import { RadialPet } from './RadialPet';
 
 export type PetMoodLabel =
@@ -65,6 +65,12 @@ type Props = {
   onLook?: (yaw: number, pitch: number) => void;
   /** Drag released: resume idle gaze wander. */
   onLookEnd?: () => void;
+  /**
+   * Render the in-canvas chrome (stage node dots + life timer) below the
+   * pet. The home screen hides it and places PetStageProgress inside its
+   * own stage card instead, so the dots don't overlap the portrait stage.
+   */
+  showChrome?: boolean;
 };
 
 const STAGE_TO_RADIAL: Record<NumericStage, StateId> = {
@@ -253,7 +259,7 @@ function StageTooltip({
   );
 }
 
-function StageProgress() {
+function StageProgress({ showLabels = true }: { showLabels?: boolean }) {
   const stage = usePetStore((s) => s.stage);
   const totalCheckins = usePetStore((s) => s.totalCheckins);
   const [tooltipStage, setTooltipStage] = useState<number | null>(null);
@@ -314,22 +320,31 @@ function StageProgress() {
           })}
         </View>
       </View>
-      <View style={styles.stageLabelRow}>
-        <Text style={styles.stageName}>{STAGE_NAMES[stage as NumericStage]}</Text>
-        {!isMaxed ? (
-          <Text style={styles.stageToGo}>
-            {totalCheckins}/{nextThreshold} to next
-          </Text>
-        ) : (
-          <Text style={styles.stageToGo}>Max stage reached</Text>
-        )}
-      </View>
+      {showLabels ? (
+        <View style={styles.stageLabelRow}>
+          <Text style={styles.stageName}>{STAGE_NAMES[stage as NumericStage]}</Text>
+          {!isMaxed ? (
+            <Text style={styles.stageToGo}>
+              {totalCheckins}/{nextThreshold} to next
+            </Text>
+          ) : (
+            <Text style={styles.stageToGo}>Max stage reached</Text>
+          )}
+        </View>
+      ) : null}
     </View>
   );
 }
 
+/**
+ * The stage node-dots track, exported so screens can place it in their own
+ * layout (the home screen integrates it into the stage card below the
+ * portrait). `showLabels={false}` renders just the track + nodes.
+ */
+export const PetStageProgress = StageProgress;
+
 function LifeTimerText({ text, critical }: { text: string; critical: boolean }) {
-  const tone = critical ? colors.danger : colors.textMuted;
+  const tone = critical ? colors.danger : landing.textMuted;
   return (
     <View style={styles.lifeTimerPill}>
       <Ionicons name="heart-outline" size={11} color={tone} />
@@ -431,6 +446,7 @@ function PetCanvasInner({
   onEvolve,
   onLook,
   onLookEnd,
+  showChrome = true,
 }: Props) {
   const stage = usePetStore((state) => state.stage);
   const life = useLifeClock();
@@ -655,9 +671,13 @@ function PetCanvasInner({
 
       </View>
 
-      <StageProgress />
+      {showChrome ? (
+        <>
+          <StageProgress />
 
-      <LifeTimerText text={life.text} critical={life.isLow || life.isDead} />
+          <LifeTimerText text={life.text} critical={life.isLow || life.isDead} />
+        </>
+      ) : null}
     </View>
   );
 }
@@ -698,7 +718,7 @@ const styles = StyleSheet.create({
   },
   lifeTimerText: {
     fontSize: 11,
-    fontFamily: 'Poppins_600SemiBold',
+    fontFamily: 'DMSans_700Bold',
     letterSpacing: 0.2,
   },
   blePill: {
@@ -710,10 +730,10 @@ const styles = StyleSheet.create({
     gap: 6,
     paddingVertical: 5,
     paddingHorizontal: 12,
-    borderRadius: 999,
-    backgroundColor: 'rgba(14,27,46,0.80)',
+    borderRadius: radius.pill,
+    backgroundColor: landing.glassActive,
     borderWidth: 1,
-    borderColor: 'rgba(53,215,255,0.35)',
+    borderColor: landing.glassBorderStrong,
   },
   bleDot: {
     width: 7,
@@ -722,17 +742,17 @@ const styles = StyleSheet.create({
     backgroundColor: colors.primary,
   },
   bleText: {
-    color: colors.text,
+    color: landing.text,
     fontSize: 10,
-    fontFamily: 'Poppins_800ExtraBold',
+    fontFamily: 'DMSans_700Bold',
   },
   sleepZ: {
     position: 'absolute',
     top: CANVAS / 2 - 60,
     right: CANVAS / 2 - 50,
-    color: colors.text,
+    color: landing.text,
     fontSize: 20,
-    fontFamily: 'Poppins_800ExtraBold',
+    fontFamily: 'DMSans_700Bold',
     opacity: 0.8,
   },
   stageProgressWrapper: {
@@ -808,7 +828,7 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(2,6,12,0.72)',
+    backgroundColor: landing.backdrop,
     paddingHorizontal: 24,
   },
   tooltipCard: {
@@ -816,10 +836,10 @@ const styles = StyleSheet.create({
     maxWidth: 280,
     alignItems: 'center',
     padding: 24,
-    borderRadius: 20,
-    backgroundColor: colors.surface,
+    borderRadius: radius.lg,
+    backgroundColor: landing.navy,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: landing.glassBorderStrong,
   },
   tooltipIcon: {
     width: 64,
@@ -830,20 +850,20 @@ const styles = StyleSheet.create({
   },
   tooltipTitle: {
     fontSize: 18,
-    fontFamily: 'Poppins_800ExtraBold',
-    color: colors.text,
+    fontFamily: 'DMSans_700Bold',
+    color: landing.text,
     letterSpacing: 0.2,
   },
   tooltipSubtitle: {
     fontSize: 12,
-    fontFamily: 'Poppins_600SemiBold',
-    color: colors.textMuted,
+    fontFamily: 'DMSans_600SemiBold',
+    color: landing.textMuted,
     marginTop: 2,
   },
   tooltipBody: {
     fontSize: 12,
-    fontFamily: 'Poppins_600SemiBold',
-    color: colors.textMuted,
+    fontFamily: 'DMSans_600SemiBold',
+    color: landing.textMuted,
     marginTop: 8,
     textAlign: 'center',
   },
@@ -856,14 +876,14 @@ const styles = StyleSheet.create({
   },
   stageName: {
     fontSize: 13,
-    fontFamily: 'Poppins_800ExtraBold',
-    color: colors.text,
+    fontFamily: 'DMSans_700Bold',
+    color: landing.text,
     letterSpacing: 0.2,
   },
   stageToGo: {
     fontSize: 12,
-    fontFamily: 'Poppins_600SemiBold',
-    color: colors.textMuted,
+    fontFamily: 'DMSans_600SemiBold',
+    color: landing.textMuted,
     letterSpacing: 0.2,
   },
 });

@@ -44,12 +44,14 @@ export function TokenLogo({ ticker, size = 28 }: Props) {
 const styles = StyleSheet.create({
     circle: {
         backgroundColor: colors.surfaceLight,
+        borderWidth: 1,
+        borderColor: colors.border,
         alignItems: 'center',
         justifyContent: 'center',
         overflow: 'hidden',
     },
     letter: {
         color: colors.textMuted,
-        fontFamily: 'Poppins_600SemiBold',
+        fontFamily: 'DMSans_600SemiBold',
     },
 });

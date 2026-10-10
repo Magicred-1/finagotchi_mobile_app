@@ -39,7 +39,8 @@ import {
 import { TokenLogo } from '../screens/dca/TokenLogo';
 import { ExportKeySheet } from './ExportKeySheet';
 import { PressableScale } from './PressableScale';
-import { colors, radius, shadows, spacing, springs, typography } from '../theme/tokens';
+import { SectionLabel } from './SectionLabel';
+import { colors, fonts, landing, radius, shadows, spacing, springs, tracking, typography } from '../theme/tokens';
 
 /**
  * Responsive drawer width: 85% of the screen, capped so foldables/tablets
@@ -473,8 +474,8 @@ export function Sidebar({
                                                     size={20}
                                                     color={
                                                         active
-                                                            ? colors.primary
-                                                            : colors.text
+                                                            ? landing.accent
+                                                            : landing.text
                                                     }
                                                 />
                                             </View>
@@ -496,14 +497,16 @@ export function Sidebar({
 
                             {/* WALLET */}
                             <View style={styles.section}>
-                                <Text style={styles.sectionTitle}>Wallet</Text>
+                                <View style={styles.sectionHeader}>
+                                    <SectionLabel>Wallet</SectionLabel>
+                                </View>
 
                                 <View style={styles.connectionRow}>
                                     <View style={styles.connectionIcon}>
                                         <Ionicons
                                             name="wallet-outline"
                                             size={22}
-                                            color={colors.text}
+                                            color={landing.text}
                                         />
                                     </View>
                                     <View style={styles.connectionBody}>
@@ -631,7 +634,7 @@ export function Sidebar({
                                             <Ionicons
                                                 name="qr-code-outline"
                                                 size={18}
-                                                color={colors.background}
+                                                color={landing.onAccent}
                                             />
                                             <Text style={styles.walletActionText}>
                                                 Show QR
@@ -675,7 +678,7 @@ export function Sidebar({
                                         <Ionicons
                                             name="key-outline"
                                             size={16}
-                                            color={colors.textMuted}
+                                            color={landing.textMuted}
                                         />
                                         <Text style={styles.exportText}>
                                             Export private key
@@ -720,7 +723,7 @@ export function Sidebar({
                                                     <Ionicons
                                                         name="share-outline"
                                                         size={18}
-                                                        color={colors.background}
+                                                        color={landing.onAccent}
                                                     />
                                                     <Text
                                                         style={styles.qrShareText}
@@ -770,15 +773,15 @@ const styles = StyleSheet.create({
         zIndex: 1000,
     },
     backdrop: {
-        backgroundColor: 'rgba(0,0,0,0.55)',
+        backgroundColor: 'rgba(6,29,61,0.6)',
     },
     sidebar: {
         position: 'absolute',
         left: 0,
         top: 0,
-        backgroundColor: 'rgba(14,27,46,0.97)',
+        backgroundColor: landing.navy,
         borderRightWidth: 1,
-        borderRightColor: colors.border,
+        borderRightColor: landing.glassBorderStrong,
         paddingHorizontal: spacing.lg,
         shadowColor: '#000',
         shadowOffset: { width: 8, height: 0 },
@@ -794,7 +797,7 @@ const styles = StyleSheet.create({
         width: 4,
         height: 44,
         borderRadius: radius.pill,
-        backgroundColor: 'rgba(255,255,255,0.14)',
+        backgroundColor: landing.glassBorderStrong,
     },
     scroll: {
         flex: 1,
@@ -802,10 +805,10 @@ const styles = StyleSheet.create({
     headerCard: {
         marginBottom: spacing.lg,
         padding: spacing.md,
-        borderRadius: radius.lg,
-        backgroundColor: 'rgba(7,17,31,0.55)',
+        borderRadius: radius.md,
+        backgroundColor: landing.glass,
         borderWidth: 1,
-        borderColor: colors.border,
+        borderColor: landing.glassBorder,
         overflow: 'hidden',
     },
     headerGlow: {
@@ -815,7 +818,7 @@ const styles = StyleSheet.create({
         width: 110,
         height: 110,
         borderRadius: 55,
-        backgroundColor: 'rgba(53,215,255,0.07)',
+        backgroundColor: 'rgba(141,201,246,0.07)',
     },
     headerContent: {
         flexDirection: 'row',
@@ -826,24 +829,24 @@ const styles = StyleSheet.create({
         width: 48,
         height: 48,
         borderRadius: radius.md,
-        backgroundColor: colors.background,
+        backgroundColor: landing.glassActive,
         borderWidth: 1,
-        borderColor: colors.border,
+        borderColor: landing.glassBorder,
     },
     headerText: {
         flex: 1,
         gap: 2,
     },
     name: {
-        color: colors.text,
+        color: landing.text,
         fontSize: typography.heading,
-        fontFamily: 'Poppins_700Bold',
-        letterSpacing: -0.3,
+        fontFamily: fonts.bold,
+        letterSpacing: tracking.heading,
     },
     subtitle: {
-        color: colors.textMuted,
+        color: landing.textMuted,
         fontSize: typography.small,
-        fontFamily: 'Poppins_500Medium',
+        fontFamily: fonts.medium,
     },
     levelBadge: {
         alignSelf: 'flex-start',
@@ -851,15 +854,15 @@ const styles = StyleSheet.create({
         paddingVertical: spacing.xs,
         paddingHorizontal: 10,
         borderRadius: radius.pill,
-        backgroundColor: 'rgba(53,215,255,0.10)',
+        backgroundColor: 'rgba(141,201,246,0.10)',
         borderWidth: 1,
-        borderColor: 'rgba(53,215,255,0.25)',
+        borderColor: 'rgba(141,201,246,0.25)',
     },
     levelText: {
-        color: colors.primary,
-        fontSize: 10,
-        fontFamily: 'Poppins_800ExtraBold',
-        letterSpacing: 0.6,
+        color: landing.accent,
+        fontSize: typography.micro,
+        fontFamily: fonts.mono,
+        letterSpacing: tracking.eyebrow,
         textTransform: 'uppercase',
     },
     navSection: {
@@ -873,13 +876,13 @@ const styles = StyleSheet.create({
         paddingVertical: spacing.md,
         paddingHorizontal: spacing.md,
         borderRadius: radius.md,
-        backgroundColor: 'rgba(7,17,31,0.40)',
+        backgroundColor: landing.glass,
         borderWidth: 1,
-        borderColor: colors.border,
+        borderColor: landing.glassBorder,
     },
     navItemActive: {
-        backgroundColor: 'rgba(53,215,255,0.10)',
-        borderColor: 'rgba(53,215,255,0.35)',
+        backgroundColor: 'rgba(141,201,246,0.10)',
+        borderColor: 'rgba(141,201,246,0.35)',
     },
     navIconWrap: {
         width: 34,
@@ -887,35 +890,30 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         justifyContent: 'center',
         borderRadius: radius.sm,
-        backgroundColor: 'rgba(255,255,255,0.05)',
+        backgroundColor: landing.glassActive,
     },
     navIconWrapActive: {
-        backgroundColor: 'rgba(53,215,255,0.14)',
+        backgroundColor: 'rgba(141,201,246,0.14)',
     },
     navLabel: {
         flex: 1,
-        color: colors.text,
+        color: landing.text,
         fontSize: typography.body,
-        fontFamily: 'Poppins_600SemiBold',
+        fontFamily: fonts.medium,
     },
     navLabelActive: {
-        color: colors.primary,
+        color: landing.accent,
     },
     divider: {
         height: 1,
-        backgroundColor: colors.border,
+        backgroundColor: landing.glassBorder,
         marginBottom: spacing.lg,
     },
     section: {
         marginBottom: spacing.lg,
         gap: spacing.sm,
     },
-    sectionTitle: {
-        color: colors.textMuted,
-        fontSize: typography.small,
-        fontFamily: 'Poppins_600SemiBold',
-        textTransform: 'uppercase',
-        letterSpacing: 1,
+    sectionHeader: {
         marginBottom: spacing.sm,
     },
     connectionRow: {
@@ -925,9 +923,9 @@ const styles = StyleSheet.create({
         paddingVertical: spacing.sm + spacing.xs,
         paddingHorizontal: spacing.md,
         borderRadius: radius.md,
-        backgroundColor: 'rgba(7,17,31,0.40)',
+        backgroundColor: landing.glass,
         borderWidth: 1,
-        borderColor: colors.border,
+        borderColor: landing.glassBorder,
     },
     connectionIcon: {
         width: 38,
@@ -935,16 +933,16 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         justifyContent: 'center',
         borderRadius: radius.sm,
-        backgroundColor: 'rgba(255,255,255,0.06)',
+        backgroundColor: landing.glassActive,
     },
     connectionBody: {
         flex: 1,
         gap: 2,
     },
     connectionLabel: {
-        color: colors.text,
+        color: landing.text,
         fontSize: typography.body,
-        fontFamily: 'Poppins_600SemiBold',
+        fontFamily: fonts.semiBold,
     },
     connectionStatus: {
         flexDirection: 'row',
@@ -955,18 +953,18 @@ const styles = StyleSheet.create({
         width: 7,
         height: 7,
         borderRadius: radius.pill,
-        backgroundColor: colors.primary,
+        backgroundColor: colors.success,
     },
     statusDotOffline: {
-        backgroundColor: colors.textMuted,
+        backgroundColor: landing.textMuted,
     },
     statusText: {
-        color: colors.primary,
+        color: landing.textMuted,
         fontSize: typography.small,
-        fontFamily: 'Poppins_500Medium',
+        fontFamily: fonts.mono,
     },
     statusTextOffline: {
-        color: colors.textMuted,
+        color: landing.textMuted,
     },
     walletActions: {
         flexDirection: 'row',
@@ -977,27 +975,28 @@ const styles = StyleSheet.create({
         marginTop: spacing.sm,
         padding: spacing.md,
         borderRadius: radius.md,
-        backgroundColor: 'rgba(7,17,31,0.40)',
+        backgroundColor: landing.glass,
         borderWidth: 1,
-        borderColor: colors.border,
+        borderColor: landing.glassBorder,
     },
     balanceHeader: {
         gap: 2,
         paddingBottom: spacing.sm,
         borderBottomWidth: StyleSheet.hairlineWidth,
-        borderBottomColor: colors.border,
+        borderBottomColor: landing.glassBorder,
     },
     balanceHeaderLabel: {
-        color: colors.textMuted,
-        fontSize: 10,
-        fontFamily: 'Poppins_600SemiBold',
+        color: landing.textMuted,
+        fontSize: typography.micro,
+        fontFamily: fonts.mono,
         textTransform: 'uppercase',
-        letterSpacing: 1,
+        letterSpacing: tracking.eyebrow,
     },
     balanceHeaderValue: {
-        color: colors.text,
+        color: landing.text,
         fontSize: typography.title,
-        fontFamily: 'Poppins_700Bold',
+        fontFamily: fonts.monoBold,
+        letterSpacing: tracking.title,
         fontVariant: ['tabular-nums'],
     },
     balanceRow: {
@@ -1008,51 +1007,51 @@ const styles = StyleSheet.create({
     },
     balanceRowDivider: {
         borderTopWidth: StyleSheet.hairlineWidth,
-        borderTopColor: colors.border,
+        borderTopColor: landing.glassBorder,
     },
     balanceIcon: {
-        backgroundColor: colors.surfaceLight,
+        backgroundColor: landing.glassActive,
         alignItems: 'center',
         justifyContent: 'center',
     },
     balanceIconLetter: {
-        color: colors.textMuted,
-        fontFamily: 'Poppins_600SemiBold',
+        color: landing.textMuted,
+        fontFamily: fonts.semiBold,
     },
     balanceRowBody: {
         flex: 1,
         gap: 1,
     },
     balanceTicker: {
-        color: colors.text,
+        color: landing.text,
         fontSize: typography.small,
-        fontFamily: 'Poppins_600SemiBold',
+        fontFamily: fonts.semiBold,
     },
     balanceName: {
-        color: colors.textMuted,
-        fontSize: 11,
-        fontFamily: 'Poppins_400Regular',
+        color: landing.textMuted,
+        fontSize: typography.micro,
+        fontFamily: fonts.regular,
     },
     balanceRowValues: {
         alignItems: 'flex-end',
         gap: 1,
     },
     balanceUsd: {
-        color: colors.text,
+        color: landing.text,
         fontSize: typography.small,
-        fontFamily: 'Poppins_600SemiBold',
+        fontFamily: fonts.monoBold,
         fontVariant: ['tabular-nums'],
     },
     balanceAmount: {
-        color: colors.textMuted,
-        fontSize: 11,
-        fontFamily: 'Poppins_500Medium',
+        color: landing.textMuted,
+        fontSize: typography.micro,
+        fontFamily: fonts.mono,
         fontVariant: ['tabular-nums'],
     },
     balanceEmpty: {
-        color: colors.textMuted,
+        color: landing.textMuted,
         fontSize: typography.small,
-        fontFamily: 'Poppins_500Medium',
+        fontFamily: fonts.medium,
         paddingVertical: spacing.xs,
     },
     walletActionButton: {
@@ -1062,24 +1061,24 @@ const styles = StyleSheet.create({
         justifyContent: 'center',
         gap: spacing.sm,
         minHeight: 44,
-        borderRadius: radius.md,
-        backgroundColor: colors.primary,
+        borderRadius: radius.sm,
+        backgroundColor: landing.accent,
         ...shadows.glow,
     },
     disconnectButton: {
-        backgroundColor: 'rgba(255,100,124,0.10)',
+        backgroundColor: 'rgba(243,111,124,0.10)',
         borderWidth: 1,
-        borderColor: 'rgba(255,100,124,0.35)',
+        borderColor: 'rgba(243,111,124,0.35)',
         shadowOpacity: 0,
         elevation: 0,
     },
     walletActionText: {
-        color: colors.background,
+        color: landing.onAccent,
         fontSize: typography.small,
-        fontFamily: 'Poppins_700Bold',
+        fontFamily: fonts.semiBold,
     },
     disconnectText: {
-        color: colors.danger,
+        color: colors.heart,
     },
     exportButton: {
         flexDirection: 'row',
@@ -1088,21 +1087,21 @@ const styles = StyleSheet.create({
         gap: spacing.sm,
         minHeight: 40,
         marginTop: spacing.xs,
-        borderRadius: radius.md,
+        borderRadius: radius.sm,
         borderWidth: 1,
-        borderColor: colors.border,
-        backgroundColor: 'rgba(7,17,31,0.40)',
+        borderColor: landing.glassBorder,
+        backgroundColor: landing.glass,
     },
     exportText: {
-        color: colors.textMuted,
+        color: landing.textMuted,
         fontSize: typography.small,
-        fontFamily: 'Poppins_600SemiBold',
+        fontFamily: fonts.medium,
     },
     qrOverlay: {
         flex: 1,
         alignItems: 'center',
         justifyContent: 'center',
-        backgroundColor: 'rgba(0,0,0,0.70)',
+        backgroundColor: 'rgba(6,29,61,0.75)',
     },
     qrCard: {
         width: 300,
@@ -1110,14 +1109,16 @@ const styles = StyleSheet.create({
         gap: spacing.md,
         padding: spacing.lg,
         borderRadius: radius.lg,
-        backgroundColor: colors.surface,
+        backgroundColor: landing.navy,
         borderWidth: 1,
-        borderColor: colors.border,
+        borderColor: landing.glassBorderStrong,
+        ...shadows.popup,
     },
     qrTitle: {
-        color: colors.text,
+        color: landing.text,
         fontSize: typography.heading,
-        fontFamily: 'Poppins_700Bold',
+        fontFamily: fonts.bold,
+        letterSpacing: tracking.heading,
         textAlign: 'center',
     },
     qrCodeWrap: {
@@ -1126,9 +1127,9 @@ const styles = StyleSheet.create({
         backgroundColor: '#FFFFFF',
     },
     qrAddress: {
-        color: colors.textMuted,
+        color: landing.textMuted,
         fontSize: typography.small,
-        fontFamily: 'Poppins_500Medium',
+        fontFamily: fonts.mono,
         textAlign: 'center',
     },
     qrShareButton: {
@@ -1138,13 +1139,13 @@ const styles = StyleSheet.create({
         gap: spacing.sm,
         width: '100%',
         paddingVertical: spacing.sm,
-        borderRadius: radius.md,
-        backgroundColor: colors.primary,
+        borderRadius: radius.sm,
+        backgroundColor: landing.accent,
     },
     qrShareText: {
-        color: colors.background,
+        color: landing.onAccent,
         fontSize: typography.body,
-        fontFamily: 'Poppins_800ExtraBold',
+        fontFamily: fonts.semiBold,
     },
     qrCloseButton: {
         alignItems: 'center',
@@ -1152,8 +1153,8 @@ const styles = StyleSheet.create({
         paddingVertical: spacing.sm,
     },
     qrCloseText: {
-        color: colors.textMuted,
+        color: landing.textMuted,
         fontSize: typography.body,
-        fontFamily: 'Poppins_600SemiBold',
+        fontFamily: fonts.semiBold,
     },
 });

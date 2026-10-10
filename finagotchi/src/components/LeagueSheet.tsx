@@ -4,8 +4,9 @@ import { Ionicons } from '@expo/vector-icons';
 
 import { LEAGUE_TIERS, useLeagueStore } from '../features/league/store';
 import { useWalletStore } from '../features/wallet/store';
-import { colors, radius, spacing, typography } from '../theme/tokens';
+import { colors, fonts, landing, radius, spacing, tracking, typography } from '../theme/tokens';
 import { PressableScale } from './PressableScale';
+import { SectionLabel } from './SectionLabel';
 
 interface Props {
     visible: boolean;
@@ -36,14 +37,14 @@ export function LeagueSheet({ visible, onClose }: Props) {
                         </PressableScale>
                     </View>
 
-                    <View style={[styles.currentCard, { borderColor: tier.color }]}>
+                    <View style={styles.currentCard}>
                         <Text style={[styles.tierName, { color: tier.color }]}>{currentTier}</Text>
                         <Text style={styles.score}>{score} XP</Text>
                         <View style={styles.progressTrack}>
                             <View
                                 style={[
                                     styles.progressFill,
-                                    { width: `${progress.percent}%`, backgroundColor: tier.color },
+                                    { width: `${progress.percent}%` },
                                 ]}
                             />
                         </View>
@@ -52,14 +53,24 @@ export function LeagueSheet({ visible, onClose }: Props) {
                         </Text>
                     </View>
 
-                    <Text style={styles.sectionTitle}>Tiers</Text>
-                    {LEAGUE_TIERS.map((t) => (
-                        <View key={t.name} style={styles.tierRow}>
-                            <View style={[styles.tierDot, { backgroundColor: t.color }]} />
-                            <Text style={styles.tierRowName}>{t.name}</Text>
-                            <Text style={styles.tierRowScore}>≥ {t.minScore} XP</Text>
-                        </View>
-                    ))}
+                    <View style={styles.sectionHeader}>
+                        <SectionLabel>Tiers</SectionLabel>
+                    </View>
+                    <View style={styles.tierList}>
+                        {LEAGUE_TIERS.map((t) => (
+                            <View
+                                key={t.name}
+                                style={[
+                                    styles.tierRow,
+                                    t.name === currentTier && styles.tierRowCurrent,
+                                ]}
+                            >
+                                <View style={[styles.tierDot, { backgroundColor: t.color }]} />
+                                <Text style={styles.tierRowName}>{t.name}</Text>
+                                <Text style={styles.tierRowScore}>≥ {t.minScore} XP</Text>
+                            </View>
+                        ))}
+                    </View>
                 </View>
             </View>
         </Modal>
@@ -70,14 +81,16 @@ const styles = StyleSheet.create({
     overlay: {
         flex: 1,
         justifyContent: 'flex-end',
-        backgroundColor: 'rgba(2,6,12,0.72)',
+        backgroundColor: 'rgba(6,29,61,0.72)',
     },
     sheet: {
         padding: spacing.md,
         paddingBottom: 32,
         borderTopLeftRadius: radius.lg,
         borderTopRightRadius: radius.lg,
-        backgroundColor: colors.surface,
+        backgroundColor: landing.navy,
+        borderTopWidth: 1,
+        borderTopColor: landing.glassBorderStrong,
     },
     header: {
         flexDirection: 'row',
@@ -87,56 +100,68 @@ const styles = StyleSheet.create({
     },
     title: {
         fontSize: typography.heading,
-        fontFamily: 'Poppins_800ExtraBold',
-        color: colors.text,
+        fontFamily: fonts.bold,
+        color: colors.textStrong,
+        letterSpacing: tracking.heading,
     },
     currentCard: {
         alignItems: 'center',
-        padding: spacing.md,
-        borderRadius: radius.md,
-        backgroundColor: 'rgba(255,255,255,0.05)',
+        padding: spacing.lg,
+        borderRadius: radius.lg,
+        backgroundColor: 'rgba(141,201,246,0.08)',
         borderWidth: 1,
+        borderColor: colors.primary,
         marginBottom: spacing.md,
     },
     tierName: {
-        fontSize: 28,
-        fontFamily: 'Poppins_800ExtraBold',
+        fontSize: typography.heading,
+        fontFamily: fonts.bold,
+        letterSpacing: tracking.heading,
     },
     score: {
-        fontSize: typography.body,
-        fontFamily: 'Poppins_600SemiBold',
-        color: colors.textMuted,
+        fontSize: typography.title,
+        fontFamily: fonts.monoBold,
+        color: colors.textStrong,
         marginTop: 4,
     },
     progressTrack: {
         width: '100%',
         height: 8,
         borderRadius: 4,
-        backgroundColor: 'rgba(255,255,255,0.10)',
+        backgroundColor: colors.surfaceLight,
         overflow: 'hidden',
         marginTop: spacing.sm,
     },
     progressFill: {
         height: '100%',
         borderRadius: 4,
+        backgroundColor: colors.primary,
     },
     progressText: {
         fontSize: typography.small,
-        fontFamily: 'Poppins_600SemiBold',
+        fontFamily: fonts.mono,
         color: colors.textMuted,
         marginTop: spacing.xs,
     },
-    sectionTitle: {
-        fontSize: typography.body,
-        fontFamily: 'Poppins_800ExtraBold',
-        color: colors.text,
+    sectionHeader: {
         marginBottom: spacing.sm,
+    },
+    tierList: {
+        gap: spacing.sm,
     },
     tierRow: {
         flexDirection: 'row',
         alignItems: 'center',
         gap: spacing.sm,
-        paddingVertical: 8,
+        padding: spacing.md,
+        borderRadius: radius.md,
+        backgroundColor: colors.surface,
+        borderWidth: 1,
+        borderColor: colors.border,
+    },
+    tierRowCurrent: {
+        borderColor: colors.primary,
+        backgroundColor: 'rgba(141,201,246,0.08)',
     },
     tierDot: {
         width: 12,
@@ -146,12 +171,12 @@ const styles = StyleSheet.create({
     tierRowName: {
         flex: 1,
         fontSize: typography.small,
-        fontFamily: 'Poppins_700Bold',
-        color: colors.text,
+        fontFamily: fonts.medium,
+        color: colors.textStrong,
     },
     tierRowScore: {
         fontSize: typography.small,
-        fontFamily: 'Poppins_600SemiBold',
+        fontFamily: fonts.mono,
         color: colors.textMuted,
     },
 });

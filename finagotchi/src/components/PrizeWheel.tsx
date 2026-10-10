@@ -23,7 +23,15 @@ import {
     type WheelSegment,
 } from '../features/wheel/prizes';
 import { localDayKey, useWheelStore } from '../features/wheel/store';
-import { colors, radius, spacing, typography } from '../theme/tokens';
+import {
+    colors,
+    fonts,
+    landing,
+    radius,
+    spacing,
+    tracking,
+    typography,
+} from '../theme/tokens';
 
 type Props = {
     visible: boolean;
@@ -65,13 +73,13 @@ function segmentColors(segment: WheelSegment): { fill: string; stroke: string } 
     switch (segment.prize.type) {
         case 'points':
             return {
-                fill: 'rgba(255,209,102,0.14)',
-                stroke: 'rgba(255,209,102,0.32)',
+                fill: 'rgba(233,184,70,0.14)',
+                stroke: 'rgba(233,184,70,0.32)',
             };
         case 'xp':
             return {
-                fill: 'rgba(53,215,255,0.12)',
-                stroke: 'rgba(53,215,255,0.30)',
+                fill: 'rgba(141,201,246,0.12)',
+                stroke: 'rgba(141,201,246,0.30)',
             };
         case 'background': {
             const [fill, stroke] = BACKGROUND_COLORS[segment.prize.id];
@@ -79,8 +87,8 @@ function segmentColors(segment: WheelSegment): { fill: string; stroke: string } 
         }
         case 'accessory':
             return {
-                fill: 'rgba(153,69,255,0.16)',
-                stroke: 'rgba(153,69,255,0.40)',
+                fill: 'rgba(248,180,60,0.16)',
+                stroke: 'rgba(248,180,60,0.40)',
             };
     }
 }
@@ -351,14 +359,15 @@ const styles = StyleSheet.create({
         fontSize: 40,
     },
     emptyTitle: {
-        color: colors.text,
+        color: colors.textStrong,
         fontSize: typography.heading,
-        fontFamily: 'Poppins_700Bold',
+        fontFamily: fonts.bold,
+        letterSpacing: tracking.heading,
     },
     emptyBody: {
         color: colors.textMuted,
         fontSize: typography.body,
-        fontFamily: 'Poppins_400Regular',
+        fontFamily: fonts.regular,
         textAlign: 'center',
         lineHeight: 24,
         maxWidth: 300,
@@ -367,19 +376,23 @@ const styles = StyleSheet.create({
         paddingVertical: spacing.sm,
         paddingHorizontal: spacing.md,
         borderRadius: radius.md,
-        backgroundColor: 'rgba(255,142,74,0.10)',
+        backgroundColor: 'rgba(248,180,60,0.10)',
         borderWidth: 1,
-        borderColor: 'rgba(255,142,74,0.25)',
+        borderColor: 'rgba(248,180,60,0.25)',
     },
     milestoneText: {
         color: colors.text,
         fontSize: typography.small,
-        fontFamily: 'Poppins_700Bold',
+        fontFamily: fonts.semiBold,
         textAlign: 'center',
     },
     wheelWrap: {
         alignItems: 'center',
         justifyContent: 'center',
+        backgroundColor: landing.glassActive,
+        borderRadius: radius.pill,
+        borderWidth: 1,
+        borderColor: colors.borderSoft,
     },
     pointerWrap: {
         position: 'absolute',
@@ -397,7 +410,7 @@ const styles = StyleSheet.create({
         borderBottomWidth: 16,
         borderLeftColor: 'transparent',
         borderRightColor: 'transparent',
-        borderBottomColor: colors.warning,
+        borderBottomColor: colors.amber,
     },
     wheel: {
         width: '100%',
@@ -425,7 +438,7 @@ const styles = StyleSheet.create({
     labelText: {
         color: colors.text,
         fontSize: 10,
-        fontFamily: 'Poppins_700Bold',
+        fontFamily: fonts.semiBold,
         maxWidth: 64,
     },
     hub: {
@@ -439,9 +452,7 @@ const styles = StyleSheet.create({
         borderRadius: 36,
         alignItems: 'center',
         justifyContent: 'center',
-        backgroundColor: colors.surface,
-        borderWidth: 2,
-        borderColor: colors.primary,
+        backgroundColor: colors.primary,
         shadowColor: colors.primary,
         shadowOffset: { width: 0, height: 0 },
         shadowOpacity: 0.35,
@@ -452,10 +463,11 @@ const styles = StyleSheet.create({
         opacity: 0.6,
     },
     hubText: {
-        color: colors.primary,
+        color: colors.onPrimary,
         fontSize: typography.small,
-        fontFamily: 'Poppins_800ExtraBold',
+        fontFamily: fonts.extraBold,
         letterSpacing: 1,
+        textTransform: 'uppercase',
     },
     resultCard: {
         alignItems: 'center',
@@ -466,15 +478,16 @@ const styles = StyleSheet.create({
         fontSize: 44,
     },
     resultLabel: {
-        color: colors.text,
+        color: colors.textStrong,
         fontSize: typography.heading,
-        fontFamily: 'Poppins_700Bold',
+        fontFamily: fonts.bold,
+        letterSpacing: tracking.heading,
         textAlign: 'center',
     },
     resultDetail: {
         color: colors.textMuted,
         fontSize: typography.small,
-        fontFamily: 'Poppins_400Regular',
+        fontFamily: fonts.regular,
         textAlign: 'center',
         lineHeight: 20,
         maxWidth: 300,
@@ -487,14 +500,14 @@ const styles = StyleSheet.create({
         backgroundColor: colors.primary,
     },
     collectText: {
-        color: colors.background,
+        color: colors.onPrimary,
         fontSize: typography.body,
-        fontFamily: 'Poppins_800ExtraBold',
+        fontFamily: fonts.extraBold,
     },
     hint: {
         color: colors.textMuted,
         fontSize: typography.small,
-        fontFamily: 'Poppins_400Regular',
+        fontFamily: fonts.regular,
         textAlign: 'center',
         lineHeight: 20,
         maxWidth: 300,

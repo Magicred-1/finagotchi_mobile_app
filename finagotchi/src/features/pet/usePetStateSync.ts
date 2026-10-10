@@ -50,6 +50,11 @@ export function usePetStateSync() {
         const flush = () => {
             const pet = usePetStore.getState();
             const checkin = useCheckinStore.getState();
+            // Nothing meaningful to sync before a creature exists. This also
+            // closes the wallet-switch race: after a reset, a debounced push
+            // must not write fresh state over the new wallet's server row
+            // before restoreCreatureFromServer lands.
+            if (!pet.mintAddress) return;
             const mood = getMood(
                 new Date().getHours(),
                 checkin.hasCheckedInToday(),

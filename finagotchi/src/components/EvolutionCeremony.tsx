@@ -20,7 +20,7 @@ import {
   type PetStage as NumericStage,
   STAGE_NAMES,
 } from '../features/pet/store';
-import { colors, spacing, typography } from '../theme/tokens';
+import { colors, fonts, landing, radius, shadows, spacing, tracking, typography } from '../theme/tokens';
 import CurtainOverlay from './CurtainOverlay';
 import { PetBody } from './PetBody';
 import { PetEyes } from './PetEyes';
@@ -178,7 +178,6 @@ export default function EvolutionCeremony({ visible, stage, petName, onDismiss }
         active={showCurtain}
         onComplete={() => setShowCurtain(false)}
         onCovered={() => {}}
-        color={colors.primary}
       />
       <View style={[styles.backdrop, { width, height }]}>
         <View style={styles.spotlight} />
@@ -242,7 +241,7 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(7,17,31,0.92)',
+    backgroundColor: 'rgba(6,29,61,0.94)',
     paddingHorizontal: 28,
   },
   spotlight: {
@@ -250,7 +249,7 @@ const styles = StyleSheet.create({
     width: 260,
     height: 260,
     borderRadius: 130,
-    backgroundColor: 'rgba(114,228,90,0.08)',
+    backgroundColor: 'rgba(141,201,246,0.08)',
   },
   content: {
     width: '100%',
@@ -260,21 +259,25 @@ const styles = StyleSheet.create({
   evolved: {
     color: colors.primary,
     fontSize: typography.heading,
-    fontFamily: 'Poppins_800ExtraBold',
+    fontFamily: fonts.bold,
+    letterSpacing: tracking.heading,
     marginBottom: spacing.lg,
   },
   shareCard: {
     alignSelf: 'stretch',
     alignItems: 'center',
-    backgroundColor: colors.background,
-    borderRadius: 24,
+    backgroundColor: landing.glass,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
     paddingVertical: spacing.lg,
     paddingHorizontal: spacing.md,
+    ...shadows.popup,
   },
   petName: {
     color: colors.textMuted,
     fontSize: typography.body,
-    fontFamily: 'Poppins_700Bold',
+    fontFamily: fonts.semiBold,
     textAlign: 'center',
   },
   petWrap: {
@@ -287,16 +290,17 @@ const styles = StyleSheet.create({
     backgroundColor: 'transparent',
   },
   stageName: {
-    color: colors.text,
+    color: colors.textStrong,
     fontSize: typography.title,
-    fontFamily: 'Poppins_700Bold',
+    fontFamily: fonts.bold,
+    letterSpacing: tracking.title,
     textAlign: 'center',
   },
   hashtag: {
     marginTop: spacing.sm,
     color: colors.primary,
     fontSize: typography.body,
-    fontFamily: 'Poppins_500Medium',
+    fontFamily: fonts.medium,
     textAlign: 'center',
   },
   buttonRow: {
@@ -307,24 +311,24 @@ const styles = StyleSheet.create({
   shareButton: {
     paddingVertical: spacing.md,
     paddingHorizontal: spacing.xl,
-    borderRadius: 999,
+    borderRadius: radius.sm,
     borderWidth: 1,
     borderColor: colors.primary,
   },
   shareButtonText: {
     color: colors.primary,
     fontSize: typography.body,
-    fontFamily: 'Poppins_700Bold',
+    fontFamily: fonts.semiBold,
   },
   button: {
     paddingVertical: spacing.md,
     paddingHorizontal: spacing.xl,
-    borderRadius: 999,
+    borderRadius: radius.sm,
     backgroundColor: colors.primary,
   },
   buttonText: {
-    color: colors.background,
+    color: colors.onPrimary,
     fontSize: typography.body,
-    fontFamily: 'Poppins_700Bold',
+    fontFamily: fonts.semiBold,
   },
 });

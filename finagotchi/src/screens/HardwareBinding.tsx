@@ -17,8 +17,9 @@ import NetInfo from '@react-native-community/netinfo';
 
 import { Button } from '../components/Button';
 import { PressableScale } from '../components/PressableScale';
+import { ScreenGradient } from '../components/ScreenGradient';
 import { SearchingRadar } from '../components/SearchingRadar';
-import { colors, radius, spacing, typography } from '../theme/tokens';
+import { colors, fonts, landing, radius, spacing, tracking, typography } from '../theme/tokens';
 import {
     FINAGOTCHI_CHARACTERISTIC_UUID,
     FINAGOTCHI_SERVICE_UUID,
@@ -46,6 +47,25 @@ const PROBE_TIMEOUT_MS = 60_000;
 type Step = 'scan' | 'pair' | 'provision' | 'done';
 
 type PairState = 'probing' | 'waiting' | 'error';
+
+const STEPS: Step[] = ['scan', 'pair', 'provision', 'done'];
+
+function StepIndicator({ step }: { step: Step }) {
+    const currentIndex = STEPS.indexOf(step);
+    return (
+        <View style={styles.stepIndicator}>
+            {STEPS.map((id, index) => (
+                <View
+                    key={id}
+                    style={[
+                        styles.stepSegment,
+                        index <= currentIndex && styles.stepSegmentActive,
+                    ]}
+                />
+            ))}
+        </View>
+    );
+}
 
 export default function HardwareBinding() {
     const ble = useFinagotchiDevice();
@@ -245,6 +265,7 @@ export default function HardwareBinding() {
 
     return (
         <SafeAreaView style={styles.safe}>
+            <ScreenGradient />
             <KeyboardAvoidingView
                 behavior={KEYBOARD_BEHAVIOR}
                 style={styles.keyboard}
@@ -264,6 +285,8 @@ export default function HardwareBinding() {
                             'Give your device Wi-Fi so it can sync on its own.'}
                         {step === 'done' && 'Your Finagotchi is ready.'}
                     </Text>
+
+                    <StepIndicator step={step} />
 
                     {!syncStatus.connected && syncStatus.offlineLabel && (
                         <Text style={styles.syncLabel}>
@@ -296,7 +319,7 @@ export default function HardwareBinding() {
                                     <Ionicons
                                         name="hardware-chip-outline"
                                         size={18}
-                                        color={colors.primary}
+                                        color={landing.accent}
                                     />
                                     <View style={styles.deviceRowInfo}>
                                         <Text style={styles.deviceName}>
@@ -336,7 +359,7 @@ export default function HardwareBinding() {
                             <View style={styles.pairRow}>
                                 <ActivityIndicator
                                     size="small"
-                                    color={colors.primary}
+                                    color={landing.accent}
                                 />
                                 <Text style={styles.prompt}>
                                     {pairState === 'waiting'
@@ -364,7 +387,7 @@ export default function HardwareBinding() {
                                 value={ssid}
                                 onChangeText={setSsid}
                                 placeholder="Wi-Fi name (SSID)"
-                                placeholderTextColor={colors.textMuted}
+                                placeholderTextColor={landing.placeholder}
                                 style={styles.input}
                                 autoCapitalize="none"
                                 autoCorrect={false}
@@ -373,7 +396,7 @@ export default function HardwareBinding() {
                                 value={password}
                                 onChangeText={setPassword}
                                 placeholder="Wi-Fi password"
-                                placeholderTextColor={colors.textMuted}
+                                placeholderTextColor={landing.placeholder}
                                 style={styles.input}
                                 autoCapitalize="none"
                                 autoCorrect={false}
@@ -399,8 +422,8 @@ export default function HardwareBinding() {
                                     value={rememberNetwork}
                                     onValueChange={handleRememberToggle}
                                     trackColor={{
-                                        false: colors.border,
-                                        true: colors.primary,
+                                        false: landing.glassBorderStrong,
+                                        true: landing.accent,
                                     }}
                                 />
                             </View>
@@ -444,7 +467,7 @@ export default function HardwareBinding() {
                                     <Ionicons
                                         name="checkmark"
                                         size={24}
-                                        color={colors.primary}
+                                        color={colors.success}
                                     />
                                 </View>
                                 <View style={styles.successInfo}>
@@ -482,7 +505,7 @@ export default function HardwareBinding() {
 const styles = StyleSheet.create({
     safe: {
         flex: 1,
-        backgroundColor: colors.background,
+        backgroundColor: 'transparent',
     },
     keyboard: {
         flex: 1,
@@ -496,39 +519,53 @@ const styles = StyleSheet.create({
         gap: spacing.md,
     },
     title: {
-        color: colors.text,
+        color: landing.text,
         fontSize: typography.heading,
-        fontFamily: 'Poppins_700Bold',
+        fontFamily: fonts.medium,
+        letterSpacing: tracking.heading,
         marginTop: spacing.lg,
     },
     subtitle: {
-        color: colors.textMuted,
+        color: landing.textMuted,
         fontSize: typography.body,
-        fontFamily: 'Poppins_400Regular',
+        fontFamily: fonts.regular,
         lineHeight: 24,
     },
+    stepIndicator: {
+        flexDirection: 'row',
+        gap: spacing.sm,
+    },
+    stepSegment: {
+        flex: 1,
+        height: 3,
+        borderRadius: radius.pill,
+        backgroundColor: landing.glassBorder,
+    },
+    stepSegmentActive: {
+        backgroundColor: landing.accent,
+    },
     syncLabel: {
-        color: colors.textMuted,
+        color: landing.textMuted,
         fontSize: typography.small,
-        fontFamily: 'Poppins_600SemiBold',
+        fontFamily: fonts.mono,
     },
     section: {
         gap: spacing.md,
         marginTop: spacing.sm,
     },
     statusText: {
-        color: colors.textMuted,
+        color: landing.textMuted,
         fontSize: typography.small,
-        fontFamily: 'Poppins_600SemiBold',
+        fontFamily: fonts.mono,
     },
     statusTextCentered: {
         textAlign: 'center',
     },
     prompt: {
         flex: 1,
-        color: colors.text,
+        color: landing.text,
         fontSize: typography.body,
-        fontFamily: 'Poppins_600SemiBold',
+        fontFamily: fonts.medium,
     },
     pairRow: {
         flexDirection: 'row',
@@ -536,20 +573,20 @@ const styles = StyleSheet.create({
         gap: spacing.sm,
     },
     input: {
-        backgroundColor: colors.surface,
-        color: colors.text,
+        backgroundColor: landing.frostSurface,
+        color: landing.ink,
         borderWidth: 1,
-        borderColor: colors.border,
-        borderRadius: radius.md,
+        borderColor: landing.frostBorder,
+        borderRadius: radius.sm,
         paddingVertical: spacing.md,
-        paddingHorizontal: spacing.lg,
+        paddingHorizontal: spacing.md,
         fontSize: typography.body,
-        fontFamily: 'Poppins_500Medium',
+        fontFamily: fonts.mono,
     },
     errorText: {
-        color: colors.danger,
+        color: colors.heart,
         fontSize: typography.small,
-        fontFamily: 'Poppins_600SemiBold',
+        fontFamily: fonts.semiBold,
     },
     rememberRow: {
         flexDirection: 'row',
@@ -557,23 +594,23 @@ const styles = StyleSheet.create({
         gap: spacing.md,
         padding: spacing.md,
         borderRadius: radius.md,
-        backgroundColor: colors.surfaceLight,
+        backgroundColor: landing.glass,
         borderWidth: 1,
-        borderColor: colors.border,
+        borderColor: landing.glassBorder,
     },
     rememberInfo: {
         flex: 1,
         gap: spacing.xs,
     },
     rememberLabel: {
-        color: colors.text,
+        color: landing.text,
         fontSize: typography.small,
-        fontFamily: 'Poppins_600SemiBold',
+        fontFamily: fonts.semiBold,
     },
     rememberHint: {
-        color: colors.textMuted,
+        color: landing.textMuted,
         fontSize: typography.small,
-        fontFamily: 'Poppins_400Regular',
+        fontFamily: fonts.regular,
         lineHeight: 18,
     },
     deviceRow: {
@@ -582,9 +619,9 @@ const styles = StyleSheet.create({
         gap: spacing.sm,
         padding: spacing.md,
         borderRadius: radius.md,
-        backgroundColor: colors.surfaceLight,
+        backgroundColor: landing.glass,
         borderWidth: 1,
-        borderColor: colors.border,
+        borderColor: landing.glassBorder,
     },
     deviceRowDisabled: {
         opacity: 0.5,
@@ -593,19 +630,19 @@ const styles = StyleSheet.create({
         flex: 1,
     },
     deviceName: {
-        color: colors.text,
+        color: landing.text,
         fontSize: typography.body,
-        fontFamily: 'Poppins_700Bold',
+        fontFamily: fonts.semiBold,
     },
     deviceMeta: {
-        color: colors.textMuted,
+        color: landing.textMuted,
         fontSize: typography.small,
-        fontFamily: 'Poppins_600SemiBold',
+        fontFamily: fonts.mono,
     },
     connectLabel: {
-        color: colors.primary,
+        color: landing.accent,
         fontSize: typography.small,
-        fontFamily: 'Poppins_700Bold',
+        fontFamily: fonts.semiBold,
     },
     successCard: {
         flexDirection: 'row',
@@ -613,9 +650,9 @@ const styles = StyleSheet.create({
         gap: spacing.md,
         padding: spacing.md,
         borderRadius: radius.md,
-        backgroundColor: colors.surfaceLight,
+        backgroundColor: landing.glass,
         borderWidth: 1,
-        borderColor: colors.border,
+        borderColor: 'rgba(126,214,167,0.35)',
     },
     successIconWrap: {
         width: 40,
@@ -623,14 +660,14 @@ const styles = StyleSheet.create({
         borderRadius: radius.md,
         alignItems: 'center',
         justifyContent: 'center',
-        backgroundColor: 'rgba(53,215,255,0.12)',
+        backgroundColor: 'rgba(126,214,167,0.12)',
     },
     successInfo: {
         flex: 1,
     },
     successLabel: {
-        color: colors.primary,
+        color: colors.success,
         fontSize: typography.small,
-        fontFamily: 'Poppins_600SemiBold',
+        fontFamily: fonts.medium,
     },
 });

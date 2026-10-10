@@ -24,8 +24,11 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 
-import { PetCanvas } from '../../src/components/PetCanvas';
+import { PetCanvas, PetStageProgress } from '../../src/components/PetCanvas';
 import { PressableScale } from '../../src/components/PressableScale';
+import { ActionsDialog } from '../../src/components/ActionsDialog';
+import { GradientFill } from '../../src/components/GradientFill';
+import { ScreenGradient } from '../../src/components/ScreenGradient';
 import { StreakInfo } from '../../src/components/StreakInfo';
 import { StreakFreezeSheet } from '../../src/components/StreakFreezeSheet';
 import { LeagueSheet } from '../../src/components/LeagueSheet';
@@ -50,8 +53,6 @@ import { localDayKey, useWheelStore } from '../../src/features/wheel/store';
 import {
   BACKGROUND_COLORS,
   REVIVE_INVITES_REQUIRED,
-  STAGE_NAMES,
-  STAGE_THRESHOLDS,
   usePetStore,
   xpForNextLevel,
   type PetStage,
@@ -67,42 +68,30 @@ import { usePetStateSync } from '../../src/features/pet/usePetStateSync';
 import { getMood } from '../../src/features/pet/mood';
 import { WaitingForSync } from '../../src/components/WaitingForSync';
 import type { PetMood as EngineMood } from '../../src/engine/expressions';
-import { colors, radius, spacing, typography } from '../../src/theme/tokens';
+import {
+  colors,
+  fonts,
+  gradients,
+  landing,
+  radius,
+  spacing,
+  tracking,
+  typography,
+} from '../../src/theme/tokens';
 import type { PetMood, PetReaction } from '../../src/components/PetCanvas';
+
+/** Point costs from the reference app-screen mock's Actions panel. */
+const ACTION_COSTS = {
+  caress: 0,
+  treat: 50,
+  play: 100,
+  train: 250,
+} as const;
 
 function formatNumber(num: number): string {
   return Math.round(num)
     .toString()
     .replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
-}
-
-function happinessColor(value: number): string {
-  if (value >= 70) return colors.success;
-  if (value >= 40) return colors.warning;
-  return colors.danger;
-}
-
-function HappinessBar({ value }: { value: number }) {
-  const pct = Math.min(100, Math.max(0, value));
-  const color = happinessColor(pct);
-  const iconName = pct >= 70 ? 'heart' : pct >= 40 ? 'heart-half-outline' : 'heart-dislike-outline';
-  return (
-    <View style={styles.happinessBar}>
-      <Ionicons name={iconName} size={12} color={color} />
-      <View style={styles.happinessTrack}>
-        <View
-          style={[
-            styles.happinessFill,
-            {
-              width: `${pct}%`,
-              backgroundColor: color,
-            },
-          ]}
-        />
-      </View>
-      <Text style={[styles.happinessText, { color }]}>{pct}%</Text>
-    </View>
-  );
 }
 
 function formatCountdown(ms: number): string {
@@ -140,8 +129,38 @@ function GuardianBadge() {
 
   return (
     <View style={styles.guardianBadge}>
-      <Ionicons name="shield-checkmark" size={12} color={colors.purple} />
+      <Ionicons name="shield-checkmark" size={12} color={colors.amber} />
       <Text style={styles.guardianText}>Guardian {timeLeft}</Text>
+    </View>
+  );
+}
+
+/**
+ * Self-ticking Care Clock countdown ("2d 18h left"). Ticks locally so the
+ * home screen doesn't re-render just to update this label.
+ */
+function LifeTimerText() {
+  const getRemaining = usePetStore((state) => state.getLifeTimerRemainingMs);
+  const [text, setText] = useState('');
+
+  useEffect(() => {
+    const update = () => {
+      const ms = Math.max(0, getRemaining());
+      const days = Math.floor(ms / 86400000);
+      const hours = Math.floor((ms % 86400000) / 3600000);
+      const minutes = Math.floor((ms % 3600000) / 60000);
+      setText(days > 0 ? `${days}d ${hours}h left` : `${hours}h ${minutes}m left`);
+    };
+
+    update();
+    const interval = setInterval(update, 30000);
+    return () => clearInterval(interval);
+  }, [getRemaining]);
+
+  return (
+    <View style={styles.lifeTimerRow}>
+      <Ionicons name="heart-outline" size={11} color={colors.heart} />
+      <Text style={styles.lifeTimerText}>{text}</Text>
     </View>
   );
 }
@@ -169,6 +188,7 @@ export default function HomeScreen() {
   const [reviveVisible, setReviveVisible] = useState(false);
   const [communityResurrectVisible, setCommunityResurrectVisible] = useState(false);
   const [wheelVisible, setWheelVisible] = useState(false);
+  const [actionsVisible, setActionsVisible] = useState(false);
   const [reaction, setReaction] = useState<PetReaction | undefined>(undefined);
   const [reactionKey, setReactionKey] = useState(0);
   const [actionMood, setActionMood] = useState<PetMood | undefined>(undefined);
@@ -195,8 +215,6 @@ export default function HomeScreen() {
   const checkIn = useCheckinStore((state) => state.checkIn);
   const hasCheckedInToday = useCheckinStore((state) => state.hasCheckedInToday());
   const streak = useCheckinStore((state) => state.streak);
-  const longestStreak = useCheckinStore((state) => state.longestStreak);
-  const totalCheckins = useCheckinStore((state) => state.totalCheckins);
   const resetStreak = useCheckinStore((state) => state.resetStreak);
   const lastSpinDay = useWheelStore((state) => state.lastSpinDay);
 
@@ -227,7 +245,6 @@ export default function HomeScreen() {
   const isReviveWindowActive = usePetStore((state) => state.isReviveWindowActive);
   const checkLifeTimer = usePetStore((state) => state.checkLifeTimer);
   const hireGuardian = usePetStore((state) => state.hireGuardian);
-  const useFreeAction = usePetStore((state) => state.useFreeAction);
   const deathCount = usePetStore((state) => state.deathCount);
 
   const [celebratingStage, setCelebratingStage] = useState<PetStage | null>(
@@ -246,6 +263,7 @@ export default function HomeScreen() {
     reviveVisible ||
     communityResurrectVisible ||
     wheelVisible ||
+    actionsVisible ||
     celebratingStage !== null ||
     streakFreezeVisible ||
     leagueVisible ||
@@ -272,9 +290,6 @@ export default function HomeScreen() {
 
   const xpNeeded = xpForNextLevel(level);
   const xpPercent = Math.min(100, Math.max(0, (xp / xpNeeded) * 100));
-
-  const nextStageName =
-    stage < 12 ? STAGE_NAMES[(stage + 1) as 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12] : 'Max';
 
   const effectiveMood = actionMood ?? (overdueSad ? 'sad' : mood);
 
@@ -407,6 +422,10 @@ export default function HomeScreen() {
         setWheelVisible(false);
         return true;
       }
+      if (actionsVisible) {
+        setActionsVisible(false);
+        return true;
+      }
       if (streakFreezeVisible) {
         setStreakFreezeVisible(false);
         return true;
@@ -452,7 +471,7 @@ export default function HomeScreen() {
 
     const subscription = BackHandler.addEventListener('hardwareBackPress', onBackPress);
     return () => subscription.remove();
-  }, [sidebarVisible, bleVisible, collectiblesVisible, questsVisible, waitlistVisible, foodVisible, communityResurrectVisible, wheelVisible, streakFreezeVisible, leagueVisible, leaderboardVisible, celebratingStage, stage]);
+  }, [sidebarVisible, bleVisible, collectiblesVisible, questsVisible, waitlistVisible, foodVisible, communityResurrectVisible, wheelVisible, actionsVisible, streakFreezeVisible, leagueVisible, leaderboardVisible, celebratingStage, stage]);
 
   const REACTION_EMOJIS: Record<PetReaction, string> = {
     jump: '❤️',
@@ -514,6 +533,49 @@ export default function HomeScreen() {
     addXp(10);
     triggerEmotion(food.reaction, food.mood);
     setFoodVisible(false);
+  }
+
+  /** Free care action (reference mock: Caress — Free). */
+  function handleCaress() {
+    if (isDead) return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    triggerEmotion('jump', 'happy');
+  }
+
+  /** Paid play session (reference mock: Play — 100 points). */
+  function handlePlay() {
+    if (isDead) return;
+    if (balance < ACTION_COSTS.play) {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      Alert.alert(
+        'Not enough points',
+        `Playing costs ${ACTION_COSTS.play} points.`
+      );
+      return;
+    }
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    spendBalance(ACTION_COSTS.play);
+    boostHappiness(15);
+    addXp(10);
+    triggerEmotion('dance', 'happy');
+  }
+
+  /** Paid training session (reference mock: Train — 250 points). */
+  function handleTrain() {
+    if (isDead) return;
+    if (balance < ACTION_COSTS.train) {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      Alert.alert(
+        'Not enough points',
+        `Training costs ${ACTION_COSTS.train} points.`
+      );
+      return;
+    }
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    spendBalance(ACTION_COSTS.train);
+    boostHappiness(5);
+    addXp(25);
+    triggerEmotion('spin', 'proud');
   }
 
   function handleCollectibles() {
@@ -659,6 +721,7 @@ export default function HomeScreen() {
         },
       ]}
     >
+      <ScreenGradient />
       <GestureDetector gesture={sidebarOpenGesture}>
         <View
           style={[
@@ -668,7 +731,7 @@ export default function HomeScreen() {
             },
           ]}
         >
-          {/* TOP BAR */}
+          {/* HEADER: brand glyph left, device + quests circles right */}
           <Animated.View
             style={styles.topBar}
             entering={FadeIn.duration(200).reduceMotion(ReduceMotion.System)}
@@ -695,43 +758,50 @@ export default function HomeScreen() {
                   setBleVisible(true);
                 }}
                 hitSlop={8}
-                style={styles.headerIconButton}
+                style={styles.headerCircleButton}
                 accessibilityLabel="Connect device"
               >
                 <Ionicons
                   name="bluetooth"
-                  size={18}
-                  color={ble.connectedDevice ? colors.primary : colors.text}
+                  size={16}
+                  color={ble.connectedDevice ? landing.accent : landing.textMuted}
                 />
                 <View
                   style={[
                     styles.bleStatusDot,
                     {
                       backgroundColor: ble.connectedDevice
-                        ? '#5DE2A6'
+                        ? colors.success
                         : ble.status === 'reconnecting' || ble.status === 'error'
                           ? colors.danger
-                          : colors.textMuted,
+                          : landing.textMuted,
                     },
                   ]}
                 />
               </PressableScale>
 
-              <View style={styles.headerStatPill}>
-                <Ionicons name="flame" size={14} color={colors.warning} />
+              <PressableScale
+                onPress={() => {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  setStreakFreezeVisible(true);
+                }}
+                style={styles.headerStatPill}
+                accessibilityLabel={`${streak} day streak, open streak details`}
+              >
+                <Ionicons name="flame" size={14} color={colors.gold} />
                 <Text style={styles.headerStatText}>{streak}</Text>
-              </View>
+              </PressableScale>
 
-              <View style={styles.headerStatPill}>
-                <Ionicons name="diamond" size={14} color={colors.cyan} />
+              <View style={styles.headerStatPill} accessibilityLabel={`${formatNumber(balance)} points`}>
+                <Ionicons name="diamond" size={13} color={landing.accent} />
                 <Text style={styles.headerStatText}>{formatNumber(balance)}</Text>
               </View>
             </View>
           </Animated.View>
 
-          {/* PET CARD */}
+          {/* MAIN CARD */}
           <Animated.View
-            style={styles.petCard}
+            style={styles.mainCard}
             entering={FadeInDown.withInitialValues({
               opacity: 0,
               transform: [{ translateY: 12 }],
@@ -740,43 +810,47 @@ export default function HomeScreen() {
               .duration(380)
               .reduceMotion(ReduceMotion.System)}
           >
-            <View style={styles.petCardHeader}>
-              <View>
+            {/* Card header: name / level / XP / happiness */}
+            <View style={styles.cardHeader}>
+              <View style={styles.cardHeaderText}>
                 <Text style={styles.petName}>{displayName}</Text>
                 <View style={styles.levelRow}>
                   <Text style={styles.levelText}>Lv {level}</Text>
-                  <View style={styles.xpTrackMini}>
-                    <View style={[styles.xpFillMini, { width: `${xpPercent}%` }]} />
+                  <View style={styles.xpTrack}>
+                    <View style={[styles.xpFill, { width: `${xpPercent}%` }]} />
                   </View>
-                  <Text style={styles.xpTextMini}>
+                  <Text style={styles.xpText}>
                     {xp}/{xpNeeded}
                   </Text>
                 </View>
-                <HappinessBar value={happiness} />
+                <View style={styles.happinessRow}>
+                  <Ionicons name="heart-outline" size={11} color={colors.heart} />
+                  <Text style={styles.happinessText}>
+                    {Math.round(happiness)}% happiness
+                  </Text>
+                </View>
               </View>
-
-              <PressableScale
-                onPress={openFoodSheet}
-                style={styles.feedButton}
-                accessibilityLabel={`Feed ${displayName}`}
-              >
-                <Text style={styles.fruitIcon}>🍎</Text>
-              </PressableScale>
             </View>
 
-            <View
-              style={[
-                styles.scene,
-                { backgroundColor: BACKGROUND_COLORS[background][0] },
-              ]}
+            {/* Portrait panel */}
+            <GradientFill
+              colors={gradients.portrait}
+              borderRadius={26}
+              style={styles.portrait}
             >
+              {/* Owned background cosmetic tints the portrait scene. */}
               <View
                 style={[
-                  styles.sky,
+                  styles.portraitSky,
+                  { backgroundColor: BACKGROUND_COLORS[background][0] },
+                ]}
+              />
+              <View
+                style={[
+                  styles.portraitGround,
                   { backgroundColor: BACKGROUND_COLORS[background][1] },
                 ]}
               />
-              <View style={styles.ground} />
 
               {spinAvailable && !isDead && (
                 <PressableScale
@@ -786,12 +860,28 @@ export default function HomeScreen() {
                   }}
                   style={styles.spinPill}
                 >
-                  <Ionicons name="gift" size={12} color={colors.warning} />
+                  <Ionicons name="gift" size={12} color={colors.gold} />
                   <Text style={styles.spinPillText}>Spin</Text>
                 </PressableScale>
               )}
 
-              <View style={styles.petCenter}>
+              {/* Status cluster: feed + mood; the streak and points live in
+                  the header pills. */}
+              <View style={styles.statusCluster}>
+                <PressableScale
+                  onPress={openFoodSheet}
+                  style={styles.statusClusterButton}
+                  accessibilityLabel={`Feed ${displayName}`}
+                >
+                  <Text style={styles.fruitIcon}>🍎</Text>
+                </PressableScale>
+                <View style={styles.statusClusterDivider} />
+                <View style={styles.statusClusterButton} pointerEvents="none">
+                  <Ionicons name="heart" size={15} color={colors.heart} />
+                </View>
+              </View>
+
+              <View style={styles.petCircle}>
                 {celebratingStage === null && (
                   <PetCanvas
                     mood={effectiveMood}
@@ -804,6 +894,7 @@ export default function HomeScreen() {
                     onEvolve={handleEvolve}
                     onLook={handlePetLook}
                     onLookEnd={handlePetLookEnd}
+                    showChrome={false}
                   />
                 )}
                 {waitingForSync && <WaitingForSync />}
@@ -815,23 +906,45 @@ export default function HomeScreen() {
               </View>
 
               <GuardianBadge />
-            </View>
+
+              {/* Stage progress band: dots + stage name + countdown anchored
+                  to the bottom of the portrait panel, over the ground tint. */}
+              <View style={styles.portraitStageBand} pointerEvents="box-none">
+                <PetStageProgress />
+                <LifeTimerText />
+              </View>
+            </GradientFill>
+
+            {/* Actions entry — opens the bubbly actions dialog */}
+            <PressableScale
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                setActionsVisible(true);
+              }}
+              style={styles.actionsEntry}
+              accessibilityLabel="Open actions"
+              accessibilityRole="button"
+            >
+              <Ionicons name="paw-outline" size={16} color={landing.accent} />
+              <Text style={styles.actionsEntryText}>Actions</Text>
+              <Ionicons name="chevron-up" size={14} color={landing.textMuted} />
+            </PressableScale>
           </Animated.View>
 
-          {/* STREAK ROW */}
+          {/* STREAK WEEK ROW */}
           <Animated.View
             entering={FadeInDown.withInitialValues({
               opacity: 0,
               transform: [{ translateY: 8 }],
             })
-              .delay(140)
+              .delay(160)
               .duration(260)
               .reduceMotion(ReduceMotion.System)}
           >
             <StreakInfo onOpenFreeze={() => setStreakFreezeVisible(true)} />
           </Animated.View>
 
-          {/* LEAGUE / LEADERBOARD ROW */}
+          {/* LEAGUE / LEADERBOARD */}
           <Animated.View
             style={styles.socialRow}
             entering={FadeInDown.withInitialValues({
@@ -843,11 +956,11 @@ export default function HomeScreen() {
               .reduceMotion(ReduceMotion.System)}
           >
             <PressableScale onPress={() => setLeagueVisible(true)} style={styles.socialButton}>
-              <Ionicons name="trophy" size={18} color={colors.warning} />
+              <Ionicons name="trophy" size={15} color={colors.gold} />
               <Text style={styles.socialButtonText}>League</Text>
             </PressableScale>
             <PressableScale onPress={() => setLeaderboardVisible(true)} style={styles.socialButton}>
-              <Ionicons name="podium" size={18} color={colors.purple} />
+              <Ionicons name="podium" size={15} color={colors.amber} />
               <Text style={styles.socialButtonText}>Leaderboard</Text>
             </PressableScale>
           </Animated.View>
@@ -866,7 +979,11 @@ export default function HomeScreen() {
             <DCAHome />
           </Animated.View>
 
-          {/* ACTION BAR */}
+          {/* ACTION BAR: icon buttons flanking the big Check in CTA.
+              CTA wiring restored from the repo's original action bar
+              (commit 2c4aa86): spin if one is claimable, otherwise the
+              daily check-in runs through the food sheet (first feed of the
+              day = check-in), and once done it's a free caress. */}
           <Animated.View
             style={styles.actionBar}
             entering={FadeInDown.withInitialValues({
@@ -877,12 +994,20 @@ export default function HomeScreen() {
               .duration(260)
               .reduceMotion(ReduceMotion.System)}
           >
-            <PressableScale onPress={handleCollectibles} style={styles.actionBarIcon} accessibilityLabel="Open collectibles">
-              <Ionicons name="color-palette-outline" size={22} color={colors.text} />
+            <PressableScale
+              onPress={handleCollectibles}
+              style={styles.actionBarIcon}
+              accessibilityLabel="Open collectibles"
+            >
+              <Ionicons name="color-palette-outline" size={20} color={landing.text} />
             </PressableScale>
 
-            <PressableScale onPress={handleHardware} style={styles.actionBarIcon} accessibilityLabel="Hardware">
-              <Ionicons name="hardware-chip-outline" size={22} color={colors.text} />
+            <PressableScale
+              onPress={handleHardware}
+              style={styles.actionBarIcon}
+              accessibilityLabel="Hardware waitlist"
+            >
+              <Ionicons name="hardware-chip-outline" size={20} color={landing.text} />
             </PressableScale>
 
             <PressableScale
@@ -894,23 +1019,40 @@ export default function HomeScreen() {
                   Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
                   setFoodVisible(true);
                 } else {
-                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                  triggerEmotion('jump', 'happy');
+                  handleCaress();
                 }
               }}
               style={styles.primaryAction}
+              accessibilityLabel={
+                spinAvailable
+                  ? 'Spin the prize wheel'
+                  : !isDoneToday
+                    ? `Check in ${displayName}`
+                    : `Caress ${displayName}`
+              }
             >
               <Text style={styles.primaryActionText}>
                 {spinAvailable ? 'Spin wheel' : !isDoneToday ? 'Check in' : 'Caress'}
               </Text>
             </PressableScale>
 
-            <PressableScale onPress={() => setQuestsVisible(true)} style={styles.actionBarIcon} accessibilityLabel="Open quests">
-              <Ionicons name="flag-outline" size={22} color={colors.text} />
+            <PressableScale
+              onPress={() => setQuestsVisible(true)}
+              style={styles.actionBarIcon}
+              accessibilityLabel="Open quests"
+            >
+              <Ionicons name="flag-outline" size={19} color={landing.text} />
             </PressableScale>
 
-            <PressableScale onPress={handleGames} style={styles.actionBarIcon} accessibilityLabel="Mini-games, coming soon">
-              <Ionicons name="game-controller-outline" size={22} color={colors.textMuted} />
+            <PressableScale
+              onPress={handleGames}
+              style={styles.actionBarIcon}
+              accessibilityLabel="Mini-games, coming soon"
+            >
+              <Ionicons name="game-controller-outline" size={20} color={landing.textMuted} />
+              <View style={styles.soonBadge}>
+                <Text style={styles.soonBadgeText}>Soon</Text>
+              </View>
             </PressableScale>
           </Animated.View>
         </View>
@@ -923,6 +1065,43 @@ export default function HomeScreen() {
         onOpenWaitlist={() => setWaitlistVisible(true)}
         translateX={sidebarTranslateX}
         opacity={sidebarOpacity}
+      />
+
+      <ActionsDialog
+        visible={actionsVisible}
+        onClose={() => setActionsVisible(false)}
+        actions={[
+          {
+            icon: 'hand-left-outline',
+            label: 'Caress',
+            badge: 'Free',
+            badgeVariant: 'free',
+            onPress: handleCaress,
+          },
+          {
+            icon: 'restaurant-outline',
+            label: 'Treat',
+            badge: isDoneToday ? `${ACTION_COSTS.treat}+` : 'Free',
+            badgeVariant: isDoneToday ? 'cost' : 'free',
+            highlighted: !isDoneToday,
+            onPress: openFoodSheet,
+            accessibilityLabel: isDoneToday
+              ? `Treat ${displayName}, from ${ACTION_COSTS.treat} points`
+              : `Check in and feed ${displayName}, free today`,
+          },
+          {
+            icon: 'game-controller-outline',
+            label: 'Play',
+            badge: `${ACTION_COSTS.play}`,
+            onPress: handlePlay,
+          },
+          {
+            icon: 'barbell-outline',
+            label: 'Train',
+            badge: `${ACTION_COSTS.train}`,
+            onPress: handleTrain,
+          },
+        ]}
       />
 
       <EvolutionCeremony
@@ -1051,7 +1230,7 @@ export default function HomeScreen() {
 const styles = StyleSheet.create({
   safe: {
     flex: 1,
-    backgroundColor: colors.background,
+    backgroundColor: landing.navy,
   },
   container: {
     flex: 1,
@@ -1064,18 +1243,18 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.sm,
     paddingHorizontal: spacing.lg,
     borderRadius: radius.pill,
-    backgroundColor: 'rgba(14,27,46,0.92)',
+    backgroundColor: landing.glassActive,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: landing.glassBorderStrong,
     zIndex: 3000,
   },
   exitToastText: {
-    color: colors.text,
+    color: landing.text,
     fontSize: typography.small,
-    fontFamily: 'Poppins_600SemiBold',
+    fontFamily: fonts.semiBold,
   },
 
-  /* TOP BAR */
+  /* HEADER */
   topBar: {
     width: '100%',
     flexDirection: 'row',
@@ -1084,8 +1263,8 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   appIcon: {
-    width: 32,
-    height: 32,
+    width: 34,
+    height: 34,
     borderRadius: radius.sm,
   },
   topBarRight: {
@@ -1093,31 +1272,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: spacing.sm,
   },
-  headerIconButton: {
+  headerCircleButton: {
     width: 40,
     height: 40,
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: radius.md,
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  headerStatPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    paddingVertical: 7,
-    paddingHorizontal: 12,
     borderRadius: radius.pill,
-    backgroundColor: colors.surface,
+    backgroundColor: landing.glass,
     borderWidth: 1,
-    borderColor: colors.border,
-  },
-  headerStatText: {
-    color: colors.text,
-    fontSize: 12,
-    fontFamily: 'Poppins_800ExtraBold',
+    borderColor: landing.glassBorder,
   },
   bleStatusDot: {
     position: 'absolute',
@@ -1127,132 +1290,114 @@ const styles = StyleSheet.create({
     height: 7,
     borderRadius: radius.pill,
     borderWidth: 1,
-    borderColor: colors.surface,
+    borderColor: landing.navy,
+  },
+  headerStatPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    minHeight: 40,
+    paddingVertical: 7,
+    paddingHorizontal: 12,
+    borderRadius: radius.pill,
+    backgroundColor: landing.glass,
+    borderWidth: 1,
+    borderColor: landing.glassBorder,
+  },
+  headerStatText: {
+    color: landing.text,
+    fontSize: typography.small,
+    fontFamily: fonts.semiBold,
   },
 
-  /* PET CARD */
-  petCard: {
+  /* MAIN CARD */
+  mainCard: {
     flex: 1,
     width: '100%',
-    borderRadius: radius.lg,
-    backgroundColor: colors.surface,
+    borderRadius: radius.xl,
+    backgroundColor: landing.glassActive,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: landing.glassBorder,
     overflow: 'hidden',
+    paddingTop: spacing.sm,
+    gap: spacing.sm,
   },
-  petCardHeader: {
+  cardHeader: {
     width: '100%',
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: spacing.sm,
-    paddingVertical: 8,
-    paddingHorizontal: spacing.sm,
+    paddingHorizontal: spacing.md,
+  },
+  cardHeaderText: {
+    flexShrink: 1,
   },
   petName: {
-    color: colors.text,
-    fontSize: typography.heading,
-    fontFamily: 'Poppins_700Bold',
+    color: landing.text,
+    fontSize: 18,
+    fontFamily: fonts.medium,
+    letterSpacing: -0.3,
   },
   levelRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
-    marginTop: 2,
+    marginTop: 3,
   },
   levelText: {
-    color: colors.textMuted,
-    fontSize: 11,
-    fontFamily: 'Poppins_700Bold',
+    color: landing.textMuted,
+    fontSize: typography.micro,
+    fontFamily: fonts.medium,
   },
-  xpTrackMini: {
+  xpTrack: {
     width: 70,
     height: 5,
     borderRadius: radius.pill,
-    backgroundColor: 'rgba(255,255,255,0.10)',
+    backgroundColor: landing.glassBorder,
     overflow: 'hidden',
   },
-  xpFillMini: {
+  xpFill: {
     height: '100%',
     borderRadius: radius.pill,
-    backgroundColor: colors.purple,
+    backgroundColor: landing.accent,
   },
-  xpTextMini: {
-    color: colors.textMuted,
+  xpText: {
+    color: landing.textMuted,
     fontSize: 10,
-    fontFamily: 'Poppins_700Bold',
+    fontFamily: fonts.medium,
   },
-  socialRow: {
-    flexDirection: 'row',
-    gap: spacing.sm,
-  },
-  socialButton: {
-    flex: 1,
+  happinessRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    paddingVertical: 10,
-    borderRadius: radius.md,
-    backgroundColor: 'rgba(255,255,255,0.05)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
-  },
-  socialButtonText: {
-    fontSize: 11,
-    fontFamily: 'Poppins_700Bold',
-    color: colors.text,
-  },
-  happinessBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginTop: 8,
-    paddingHorizontal: 2,
-  },
-  happinessTrack: {
-    flex: 1,
-    height: 3,
-    borderRadius: 2,
-    backgroundColor: 'rgba(255,255,255,0.10)',
-    overflow: 'hidden',
-  },
-  happinessFill: {
-    height: '100%',
-    borderRadius: 2,
+    gap: 5,
+    marginTop: 4,
   },
   happinessText: {
-    fontSize: 10,
-    fontFamily: 'Poppins_800ExtraBold',
-    minWidth: 28,
-    textAlign: 'right',
-  },
-  feedButton: {
-    width: 44,
-    height: 44,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: radius.md,
-    backgroundColor: colors.background,
-    borderWidth: 1,
-    borderColor: colors.border,
+    color: landing.textMuted,
+    fontSize: typography.micro,
+    fontFamily: fonts.medium,
   },
   fruitIcon: {
-    fontSize: 22,
+    fontSize: 20,
   },
 
-  /* SCENE */
-  scene: {
+  /* PORTRAIT PANEL */
+  portrait: {
     flex: 1,
     width: '100%',
-    minHeight: 160,
-    borderRadius: radius.lg,
+    minHeight: 150,
+    borderRadius: 26,
+    borderWidth: 1,
+    borderColor: landing.glassBorder,
     overflow: 'hidden',
     alignItems: 'center',
     justifyContent: 'center',
     position: 'relative',
+    // Lifts the pet circle clear of the stage-progress band at the bottom.
+    paddingBottom: 100,
   },
-  sky: {
+  portraitSky: {
     position: 'absolute',
     top: 0,
     left: 0,
@@ -1260,17 +1405,65 @@ const styles = StyleSheet.create({
     height: '65%',
     opacity: 0.7,
   },
-  ground: {
+  portraitGround: {
     position: 'absolute',
     bottom: 0,
     left: 0,
     right: 0,
     height: '28%',
-    backgroundColor: 'rgba(93,226,166,0.12)',
     borderTopLeftRadius: 60,
     borderTopRightRadius: 60,
   },
-  petCenter: {
+  statusCluster: {
+    position: 'absolute',
+    top: 11,
+    right: 11,
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: radius.pill,
+    backgroundColor: landing.glass,
+    borderWidth: 1,
+    borderColor: landing.glassBorder,
+    zIndex: 5,
+  },
+  statusClusterButton: {
+    width: 44,
+    height: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  statusClusterDivider: {
+    width: 1,
+    height: 20,
+    backgroundColor: landing.glassBorder,
+  },
+  spinPill: {
+    position: 'absolute',
+    top: 11,
+    left: 11,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingVertical: 5,
+    paddingHorizontal: 10,
+    borderRadius: radius.pill,
+    backgroundColor: landing.glassActive,
+    borderWidth: 1,
+    borderColor: 'rgba(233,184,70,0.45)',
+    zIndex: 5,
+  },
+  spinPillText: {
+    color: landing.text,
+    fontSize: 10,
+    fontFamily: fonts.semiBold,
+  },
+  petCircle: {
+    width: '62%',
+    aspectRatio: 1,
+    maxWidth: 240,
+    maxHeight: 240,
+    borderRadius: radius.pill,
+    backgroundColor: landing.navy,
     alignItems: 'center',
     justifyContent: 'center',
     zIndex: 2,
@@ -1286,7 +1479,7 @@ const styles = StyleSheet.create({
   },
   guardianBadge: {
     position: 'absolute',
-    top: 10,
+    bottom: 10,
     right: 10,
     flexDirection: 'row',
     alignItems: 'center',
@@ -1294,35 +1487,84 @@ const styles = StyleSheet.create({
     paddingVertical: 5,
     paddingHorizontal: 10,
     borderRadius: radius.pill,
-    backgroundColor: 'rgba(153,69,255,0.14)',
+    backgroundColor: 'rgba(248,180,60,0.12)',
     borderWidth: 1,
-    borderColor: 'rgba(153,69,255,0.32)',
+    borderColor: 'rgba(248,180,60,0.32)',
     zIndex: 5,
   },
   guardianText: {
-    color: colors.purple,
+    color: colors.amber,
     fontSize: 10,
-    fontFamily: 'Poppins_700Bold',
+    fontFamily: fonts.semiBold,
   },
-  spinPill: {
+
+  /* STAGE PROGRESS BAND (bottom of the portrait panel) */
+  portraitStageBand: {
     position: 'absolute',
-    top: 10,
-    right: 10,
+    bottom: 4,
+    left: 0,
+    right: 0,
+    paddingHorizontal: spacing.md,
+    zIndex: 3,
+  },
+  lifeTimerRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
     gap: 5,
-    paddingVertical: 5,
-    paddingHorizontal: 10,
-    borderRadius: radius.pill,
-    backgroundColor: 'rgba(7,17,31,0.55)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,209,102,0.45)',
-    zIndex: 5,
   },
-  spinPillText: {
-    color: colors.text,
-    fontSize: 10,
-    fontFamily: 'Poppins_700Bold',
+  lifeTimerText: {
+    color: landing.textMuted,
+    fontSize: typography.micro,
+    fontFamily: fonts.medium,
+  },
+
+  /* ACTIONS ENTRY (opens ActionsDialog) */
+  actionsEntry: {
+    marginHorizontal: spacing.md,
+    marginBottom: spacing.md,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.sm,
+    minHeight: 48,
+    borderRadius: radius.lg,
+    backgroundColor: landing.glass,
+    borderWidth: 1,
+    borderColor: landing.glassBorder,
+  },
+  actionsEntryText: {
+    color: landing.eyebrow,
+    fontSize: typography.micro,
+    fontFamily: fonts.medium,
+    letterSpacing: tracking.eyebrow,
+    textTransform: 'uppercase',
+  },
+
+  /* SOCIAL ROW */
+  socialRow: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
+  socialButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    minHeight: 44,
+    paddingVertical: 9,
+    borderRadius: radius.md,
+    backgroundColor: landing.frostSurface,
+    borderWidth: 1,
+    borderColor: landing.frostBorder,
+  },
+  socialButtonText: {
+    fontSize: typography.micro,
+    fontFamily: fonts.semiBold,
+    color: landing.ink,
+    letterSpacing: 0.4,
+    textTransform: 'uppercase',
   },
 
   /* DCA PROMO */
@@ -1335,33 +1577,52 @@ const styles = StyleSheet.create({
     width: '100%',
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
     gap: spacing.sm,
-    padding: spacing.xs,
-    borderRadius: radius.lg,
-    backgroundColor: colors.surface,
+    paddingVertical: spacing.xs,
+    paddingHorizontal: spacing.sm,
+    borderRadius: radius.pill,
+    backgroundColor: landing.glassActive,
     borderWidth: 1,
-    borderColor: colors.border,
-    marginBottom: 0,
+    borderColor: landing.glassBorderStrong,
   },
   actionBarIcon: {
     width: 44,
     height: 44,
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: radius.md,
-    backgroundColor: colors.background,
+    borderRadius: radius.pill,
+    backgroundColor: landing.glass,
+    borderWidth: 1,
+    borderColor: landing.glassBorder,
   },
   primaryAction: {
     flex: 1,
-    height: 44,
+    minHeight: 48,
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: radius.md,
-    backgroundColor: colors.primary,
+    borderRadius: radius.pill,
+    backgroundColor: landing.accent,
+    paddingHorizontal: spacing.lg,
   },
   primaryActionText: {
-    color: colors.background,
-    fontSize: 15,
-    fontFamily: 'Poppins_800ExtraBold',
+    color: landing.onAccent,
+    fontSize: typography.body,
+    fontFamily: fonts.semiBold,
+    letterSpacing: 0.2,
+  },
+  soonBadge: {
+    position: 'absolute',
+    top: -6,
+    right: -6,
+    paddingVertical: 2,
+    paddingHorizontal: 8,
+    borderRadius: radius.pill,
+    backgroundColor: landing.accent,
+  },
+  soonBadgeText: {
+    color: landing.onAccent,
+    fontSize: 9,
+    fontFamily: fonts.semiBold,
   },
 });

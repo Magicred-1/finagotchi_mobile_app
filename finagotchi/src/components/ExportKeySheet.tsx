@@ -5,7 +5,7 @@ import * as Haptics from 'expo-haptics';
 
 import { BottomSheet } from './BottomSheet';
 import { Button } from './Button';
-import { colors, radius, spacing, typography } from '../theme/tokens';
+import { colors, fonts, radius, spacing, typography } from '../theme/tokens';
 
 type Props = {
     visible: boolean;
@@ -43,7 +43,7 @@ export function ExportKeySheet({ visible, onClose, onReveal }: Props) {
                     <Ionicons
                         name="key-outline"
                         size={36}
-                        color={colors.danger}
+                        color={colors.heart}
                     />
                 </View>
 
@@ -79,7 +79,7 @@ export function ExportKeySheet({ visible, onClose, onReveal }: Props) {
                         <Ionicons
                             name="warning-outline"
                             size={16}
-                            color={colors.danger}
+                            color={colors.heart}
                         />
                         <Text style={styles.warningText}>
                             Never share it or store it in screenshots, notes, or
@@ -111,17 +111,17 @@ const styles = StyleSheet.create({
     iconWrap: {
         width: 72,
         height: 72,
-        borderRadius: 36,
+        borderRadius: radius.pill,
         alignItems: 'center',
         justifyContent: 'center',
-        backgroundColor: 'rgba(255,100,124,0.10)',
+        backgroundColor: 'rgba(243,111,124,0.12)',
         borderWidth: 1,
-        borderColor: 'rgba(255,100,124,0.30)',
+        borderColor: 'rgba(243,111,124,0.30)',
     },
     body: {
         color: colors.textMuted,
         fontSize: typography.body,
-        fontFamily: 'Poppins_400Regular',
+        fontFamily: fonts.regular,
         textAlign: 'center',
         lineHeight: 24,
         maxWidth: 300,
@@ -129,8 +129,10 @@ const styles = StyleSheet.create({
     warningCard: {
         width: '100%',
         padding: spacing.lg,
-        borderRadius: radius.lg,
-        backgroundColor: colors.background,
+        borderRadius: radius.md,
+        backgroundColor: colors.surface,
+        borderWidth: 1,
+        borderColor: colors.border,
         gap: spacing.md,
     },
     warningRow: {
@@ -142,13 +144,13 @@ const styles = StyleSheet.create({
         flex: 1,
         color: colors.text,
         fontSize: typography.small,
-        fontFamily: 'Poppins_500Medium',
+        fontFamily: fonts.medium,
         lineHeight: 20,
     },
     error: {
-        color: colors.danger,
+        color: colors.heart,
         fontSize: typography.small,
-        fontFamily: 'Poppins_600SemiBold',
+        fontFamily: fonts.semiBold,
         textAlign: 'center',
     },
     actions: {

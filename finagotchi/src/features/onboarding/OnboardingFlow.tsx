@@ -29,6 +29,7 @@ import { login } from '../quest-engine';
 import { registerNftCreature } from '../nft/client';
 import { restoreCreatureFromServer } from '../pet/creatureSync';
 import { generateDemoMintAddress } from '../../utils/generateDemoMintAddress';
+import { landing } from '../../theme/tokens';
 
 type Step =
     | 'splash'
@@ -416,7 +417,12 @@ export default function OnboardingFlow({
 
     return (
         <>
-            <Animated.View style={[{ flex: 1 }, contentStyle]}>
+            <Animated.View
+                style={[
+                    { flex: 1, backgroundColor: landing.navy },
+                    contentStyle,
+                ]}
+            >
                 {restoreChecking ? null : renderStep(displayedStep)}
             </Animated.View>
             <WalletPickerSheet

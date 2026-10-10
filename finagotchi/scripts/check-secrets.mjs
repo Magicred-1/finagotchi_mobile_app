@@ -71,13 +71,16 @@ function scanFile(file) {
     }
 
     // (b) api-key= / api_key= with a real value inside a string literal.
-    for (let i = 0; i < lines.length; i++) {
-        const re = /api[-_]key=([^\s"'&)\]]*)/gi;
-        let m;
-        while ((m = re.exec(lines[i])) !== null) {
-            const value = m[1];
-            if (value === '' || PLACEHOLDER_RE.test(value)) continue;
-            flag(file, i + 1, 'API key embedded in URL literal', lines[i]);
+    // The scanner documents this pattern itself, so skip SELF like rule (c).
+    if (file !== SELF) {
+        for (let i = 0; i < lines.length; i++) {
+            const re = /api[-_]key=([^\s"'&)\]]*)/gi;
+            let m;
+            while ((m = re.exec(lines[i])) !== null) {
+                const value = m[1];
+                if (value === '' || PLACEHOLDER_RE.test(value)) continue;
+                flag(file, i + 1, 'API key embedded in URL literal', lines[i]);
+            }
         }
     }
 

@@ -12,7 +12,7 @@ import { BottomSheet } from './BottomSheet';
 import { PressableScale } from './PressableScale';
 import type { PetMood, PetReaction } from './PetCanvas';
 import { useFoodStore } from '../features/food/store';
-import { colors, radius, spacing, typography } from '../theme/tokens';
+import { colors, fonts, radius, spacing, typography } from '../theme/tokens';
 
 export type FoodItem = {
     id: string;
@@ -117,7 +117,7 @@ export default function FoodSheet({
                                 <Text style={styles.name}>{food.name}</Text>
 
                                 <View style={styles.happinessPill}>
-                                    <Ionicons name="happy-outline" size={9} color="#FF8E9E" />
+                                    <Ionicons name="heart-outline" size={9} color={colors.heart} />
                                     <Text style={styles.happinessText}>+{food.happiness}</Text>
                                 </View>
 
@@ -158,7 +158,7 @@ const styles = StyleSheet.create({
     intro: {
         color: colors.textMuted,
         fontSize: typography.body,
-        fontFamily: 'Poppins_400Regular',
+        fontFamily: fonts.regular,
         lineHeight: 24,
         marginBottom: spacing.lg,
     },
@@ -172,14 +172,14 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         paddingVertical: spacing.md,
         paddingHorizontal: spacing.sm,
-        borderRadius: radius.lg,
-        backgroundColor: colors.background,
+        borderRadius: radius.md,
+        backgroundColor: colors.surface,
         borderWidth: 1,
         borderColor: colors.border,
         gap: spacing.sm,
     },
     tileDisabled: {
-        opacity: 0.5,
+        opacity: 0.45,
     },
     emoji: {
         fontSize: 32,
@@ -187,9 +187,9 @@ const styles = StyleSheet.create({
         textAlignVertical: 'center',
     },
     name: {
-        color: colors.text,
+        color: colors.textStrong,
         fontSize: typography.small,
-        fontFamily: 'Poppins_700Bold',
+        fontFamily: fonts.semiBold,
         textAlign: 'center',
     },
     happinessPill: {
@@ -199,29 +199,29 @@ const styles = StyleSheet.create({
         paddingVertical: 3,
         paddingHorizontal: 6,
         borderRadius: 6,
-        backgroundColor: 'rgba(255,142,158,0.12)',
+        backgroundColor: 'rgba(243,111,124,0.12)',
     },
     happinessText: {
-        color: '#FF8E9E',
+        color: colors.heart,
         fontSize: 9,
-        fontFamily: 'Poppins_800ExtraBold',
+        fontFamily: fonts.monoBold,
     },
     pricePill: {
         paddingVertical: 3,
         paddingHorizontal: 6,
         borderRadius: 6,
-        backgroundColor: 'rgba(255,209,102,0.12)',
+        backgroundColor: colors.chip,
     },
     freePill: {
-        backgroundColor: 'rgba(93,226,166,0.12)',
+        backgroundColor: colors.badgeFree,
     },
     pricePillDisabled: {
-        backgroundColor: 'rgba(255,255,255,0.05)',
+        backgroundColor: colors.surfaceLight,
     },
     priceText: {
-        color: colors.warning,
+        color: colors.gold,
         fontSize: 9,
-        fontFamily: 'Poppins_800ExtraBold',
+        fontFamily: fonts.monoBold,
     },
     freeText: {
         color: colors.primary,

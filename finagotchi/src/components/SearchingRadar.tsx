@@ -82,7 +82,7 @@ const styles = StyleSheet.create({
         borderRadius: RING_SIZE / 2,
         alignItems: 'center',
         justifyContent: 'center',
-        backgroundColor: 'rgba(53,215,255,0.12)',
+        backgroundColor: 'rgba(141,201,246,0.12)',
         borderWidth: 1,
         borderColor: colors.primary,
     },

@@ -14,7 +14,8 @@ import * as Haptics from 'expo-haptics';
 import { BottomSheet } from './BottomSheet';
 import { Button } from './Button';
 import { PressableScale } from './PressableScale';
-import { colors, radius, spacing, typography } from '../theme/tokens';
+import { SectionLabel } from './SectionLabel';
+import { colors, fonts, radius, spacing, typography } from '../theme/tokens';
 
 const COMMUNITY_REVIVE_COST = 250;
 
@@ -87,7 +88,7 @@ export default function CommunityResurrectSheet({
                 </Text>
 
                 <View style={styles.section}>
-                    <Text style={styles.sectionTitle}>Share a request</Text>
+                    <SectionLabel>Share a request</SectionLabel>
                     <Button
                         title="Share revive request"
                         onPress={handleShare}
@@ -103,7 +104,7 @@ export default function CommunityResurrectSheet({
                 </View>
 
                 <View style={styles.section}>
-                    <Text style={styles.sectionTitle}>Pay a helper</Text>
+                    <SectionLabel>Pay a helper</SectionLabel>
                     <Text style={styles.hint}>
                         Send {COMMUNITY_REVIVE_COST} points to a helper and they will resurrect your companion.
                     </Text>
@@ -124,7 +125,7 @@ export default function CommunityResurrectSheet({
                 </View>
 
                 <View style={styles.section}>
-                    <Text style={styles.sectionTitle}>Friends</Text>
+                    <SectionLabel>Friends</SectionLabel>
                     {FAKE_FRIENDS.map((friend) => (
                         <PressableScale
                             key={friend.id}
@@ -166,22 +167,17 @@ const styles = StyleSheet.create({
     body: {
         color: colors.textMuted,
         fontSize: typography.body,
-        fontFamily: 'Poppins_400Regular',
+        fontFamily: fonts.regular,
         textAlign: 'center',
         lineHeight: 24,
     },
     section: {
         gap: spacing.sm,
     },
-    sectionTitle: {
-        color: colors.text,
-        fontSize: typography.body,
-        fontFamily: 'Poppins_700Bold',
-    },
     hint: {
         color: colors.textMuted,
         fontSize: typography.small,
-        fontFamily: 'Poppins_400Regular',
+        fontFamily: fonts.regular,
         lineHeight: 20,
     },
     input: {
@@ -189,11 +185,11 @@ const styles = StyleSheet.create({
         minHeight: 48,
         borderRadius: radius.sm,
         paddingHorizontal: spacing.md,
-        backgroundColor: colors.background,
+        backgroundColor: colors.surfaceLight,
         borderWidth: 1,
         borderColor: colors.border,
         color: colors.text,
-        fontFamily: 'Poppins_400Regular',
+        fontFamily: fonts.regular,
         fontSize: typography.body,
     },
     friendRow: {
@@ -201,10 +197,10 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         gap: spacing.md,
         padding: spacing.md,
-        borderRadius: radius.lg,
+        borderRadius: radius.md,
         backgroundColor: colors.surface,
         borderWidth: 1,
-        borderColor: 'rgba(255,255,255,0.06)',
+        borderColor: colors.border,
     },
     friendRowDisabled: {
         opacity: 0.5,
@@ -215,33 +211,33 @@ const styles = StyleSheet.create({
         borderRadius: 18,
         alignItems: 'center',
         justifyContent: 'center',
-        backgroundColor: 'rgba(93,226,166,0.15)',
+        backgroundColor: 'rgba(141,201,246,0.12)',
     },
     friendInitial: {
         color: colors.primary,
         fontSize: typography.body,
-        fontFamily: 'Poppins_800ExtraBold',
+        fontFamily: fonts.semiBold,
     },
     friendName: {
         flex: 1,
-        color: colors.text,
+        color: colors.textStrong,
         fontSize: typography.body,
-        fontFamily: 'Poppins_600SemiBold',
+        fontFamily: fonts.medium,
     },
     friendStatus: {
-        color: colors.primary,
+        color: colors.success,
         fontSize: typography.small,
-        fontFamily: 'Poppins_700Bold',
+        fontFamily: fonts.medium,
     },
     friendStatusOffline: {
         color: colors.textMuted,
         fontSize: typography.small,
-        fontFamily: 'Poppins_700Bold',
+        fontFamily: fonts.medium,
     },
     disclaimer: {
         color: colors.textMuted,
         fontSize: typography.small,
-        fontFamily: 'Poppins_400Regular',
+        fontFamily: fonts.regular,
         textAlign: 'center',
         lineHeight: 20,
     },

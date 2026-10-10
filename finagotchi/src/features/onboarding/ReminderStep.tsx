@@ -11,12 +11,14 @@ import * as Haptics from 'expo-haptics';
 import { Button } from '../../components/Button';
 import { PressableScale } from '../../components/PressableScale';
 import { RadialPet } from '../../components/RadialPet';
+import { LandingGradient } from '../../components/LandingGradient';
+import { FadeInUp } from './FadeInUp';
 import {
     requestNotificationPermissions,
     scheduleDailyReminder,
     scheduleLastChanceReminder,
 } from '../../lib/notifications';
-import { colors, radius, spacing, typography } from '../../theme/tokens';
+import { fonts, landing, radius, spacing, tracking, typography } from '../../theme/tokens';
 
 type Props = {
     onFinished: () => void;
@@ -61,6 +63,7 @@ export default function ReminderStep({ onFinished }: Props) {
 
     return (
         <SafeAreaView style={styles.safe}>
+            <LandingGradient />
             <View
                 style={[
                     styles.container,
@@ -73,7 +76,7 @@ export default function ReminderStep({ onFinished }: Props) {
                     },
                 ]}
             >
-                <View style={styles.content}>
+                <FadeInUp style={styles.content}>
                     <View style={styles.petWrap}>
                         <RadialPet stage="egg" mood="calm" size={128} />
                     </View>
@@ -90,9 +93,9 @@ export default function ReminderStep({ onFinished }: Props) {
                     <Text style={styles.body}>
                         A daily nudge helps you keep your streak alive.
                     </Text>
-                </View>
+                </FadeInUp>
 
-                <View style={styles.footer}>
+                <FadeInUp delay={160} style={styles.footer}>
                     <View style={styles.chips}>
                         {TIME_OPTIONS.map((option, index) => (
                             <PressableScale
@@ -124,8 +127,9 @@ export default function ReminderStep({ onFinished }: Props) {
                         }
                         onPress={handleEnable}
                         disabled={loading}
+                        tone="landing"
                     />
-                </View>
+                </FadeInUp>
             </View>
         </SafeAreaView>
     );
@@ -134,7 +138,7 @@ export default function ReminderStep({ onFinished }: Props) {
 const styles = StyleSheet.create({
     safe: {
         flex: 1,
-        backgroundColor: colors.background,
+        backgroundColor: landing.navy,
     },
     container: {
         flex: 1,
@@ -155,9 +159,10 @@ const styles = StyleSheet.create({
         justifyContent: 'center',
     },
     title: {
-        color: colors.text,
+        color: landing.text,
         fontSize: typography.title,
-        fontFamily: 'Poppins_700Bold',
+        fontFamily: fonts.medium,
+        letterSpacing: tracking.title,
         textAlign: 'center',
         marginBottom: spacing.md,
     },
@@ -165,9 +170,9 @@ const styles = StyleSheet.create({
         fontSize: 28,
     },
     body: {
-        color: colors.textMuted,
+        color: landing.textMuted,
         fontSize: typography.body,
-        fontFamily: 'Poppins_400Regular',
+        fontFamily: fonts.regular,
         textAlign: 'center',
         lineHeight: 24,
         maxWidth: 320,
@@ -187,20 +192,22 @@ const styles = StyleSheet.create({
         paddingVertical: spacing.sm,
         paddingHorizontal: spacing.md,
         borderRadius: radius.pill,
-        backgroundColor: colors.surface,
+        backgroundColor: landing.frostSurface,
         borderWidth: 1,
-        borderColor: colors.border,
+        borderColor: landing.frostBorder,
+        minHeight: 44,
+        justifyContent: 'center',
     },
     chipActive: {
-        backgroundColor: 'rgba(114,228,90,0.15)',
-        borderColor: colors.primary,
+        backgroundColor: landing.accent,
+        borderColor: landing.accent,
     },
     chipText: {
-        color: colors.textMuted,
+        color: landing.ink,
         fontSize: typography.small,
-        fontFamily: 'Poppins_600SemiBold',
+        fontFamily: fonts.semiBold,
     },
     chipTextActive: {
-        color: colors.primary,
+        color: landing.onAccent,
     },
 });

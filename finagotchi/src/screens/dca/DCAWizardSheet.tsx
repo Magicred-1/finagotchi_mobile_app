@@ -24,6 +24,7 @@ import Animated, {
 import { BottomSheet } from '../../components/BottomSheet';
 import { Button } from '../../components/Button';
 import { PressableScale } from '../../components/PressableScale';
+import { SectionLabel } from '../../components/SectionLabel';
 import {
     CADENCE_OPTIONS,
     SUPPORTED_TOKENS,
@@ -39,6 +40,7 @@ import { useClaimQueue, useQuestsStore } from '../../features/quest-engine';
 import { useWallet } from '../../wallet/useWallet';
 import {
     colors,
+    landing,
     radius,
     spacing,
     springs,
@@ -544,7 +546,12 @@ export function DCAWizardSheet({
                 <View style={styles.headerButton} />
             </View>
 
-            <StepDots step={step} />
+            <View style={styles.stepMeta}>
+                <SectionLabel>
+                    {`Step ${step + 1} of ${STEP_TITLES.length}`}
+                </SectionLabel>
+                <StepDots step={step} />
+            </View>
 
             <Text style={styles.stepSubtitle}>{STEP_SUBTITLES[step]}</Text>
 
@@ -844,16 +851,20 @@ const styles = StyleSheet.create({
         justifyContent: 'center',
     },
     headerTitle: {
-        color: colors.text,
+        color: colors.textStrong,
         fontSize: typography.heading,
-        fontFamily: 'Poppins_700Bold',
-        letterSpacing: tracking.heading * typography.heading,
+        fontFamily: 'DMSans_700Bold',
+        letterSpacing: tracking.heading,
+    },
+    stepMeta: {
+        alignItems: 'center',
+        gap: spacing.xs,
+        paddingBottom: spacing.md,
     },
     dots: {
         flexDirection: 'row',
         justifyContent: 'center',
         gap: spacing.sm,
-        paddingBottom: spacing.md,
     },
     dot: {
         height: 8,
@@ -874,7 +885,7 @@ const styles = StyleSheet.create({
     stepSubtitle: {
         color: colors.textMuted,
         fontSize: typography.small,
-        fontFamily: 'Poppins_400Regular',
+        fontFamily: 'DMSans_400Regular',
         textAlign: 'center',
         paddingBottom: spacing.sm,
     },
@@ -883,15 +894,15 @@ const styles = StyleSheet.create({
     },
     sectionLabel: {
         color: colors.textMuted,
-        fontSize: typography.small,
-        fontFamily: 'Poppins_600SemiBold',
+        fontSize: typography.micro,
+        fontFamily: 'DMSans_500Medium',
         textTransform: 'uppercase',
-        letterSpacing: 1,
+        letterSpacing: tracking.eyebrow,
         marginTop: spacing.xs,
     },
     groupCard: {
-        backgroundColor: colors.surfaceLight,
-        borderRadius: radius.lg,
+        backgroundColor: colors.surface,
+        borderRadius: radius.md,
         borderWidth: 1,
         borderColor: colors.border,
         overflow: 'hidden',
@@ -910,7 +921,7 @@ const styles = StyleSheet.create({
     },
     groupSeparator: {
         height: StyleSheet.hairlineWidth,
-        backgroundColor: colors.border,
+        backgroundColor: colors.borderSoft,
         marginLeft: spacing.md,
     },
     summaryRow: {
@@ -925,31 +936,30 @@ const styles = StyleSheet.create({
     summaryLabel: {
         color: colors.textMuted,
         fontSize: typography.body,
-        fontFamily: 'Poppins_400Regular',
+        fontFamily: 'DMSans_400Regular',
     },
     summaryValue: {
-        color: colors.text,
+        color: colors.textStrong,
         fontSize: typography.body,
-        fontFamily: 'Poppins_600SemiBold',
+        fontFamily: 'DMSans_700Bold',
         fontVariant: ['tabular-nums'],
         flexShrink: 1,
         textAlign: 'right',
     },
     summaryTicker: {
-        color: colors.text,
+        color: colors.textStrong,
         fontSize: typography.body,
-        fontFamily: 'Poppins_700Bold',
+        fontFamily: 'DMSans_700Bold',
     },
     summaryName: {
         color: colors.textMuted,
         fontSize: typography.small,
-        fontFamily: 'Poppins_400Regular',
+        fontFamily: 'DMSans_400Regular',
     },
     amountValue: {
-        color: colors.text,
+        color: colors.textStrong,
         fontSize: typography.heading,
-        fontFamily: 'Poppins_700Bold',
-        letterSpacing: tracking.heading * typography.heading,
+        fontFamily: 'DMSans_700Bold',
         fontVariant: ['tabular-nums'],
         textAlign: 'center',
         marginTop: spacing.xs,
@@ -957,16 +967,16 @@ const styles = StyleSheet.create({
     amountCaption: {
         color: colors.textMuted,
         fontSize: typography.small,
-        fontFamily: 'Poppins_500Medium',
+        fontFamily: 'DMSans_500Medium',
         textAlign: 'center',
         marginTop: 2,
     },
     segmented: {
         flexDirection: 'row',
-        backgroundColor: colors.background,
-        borderRadius: radius.md,
+        backgroundColor: landing.glass,
+        borderRadius: radius.sm,
         borderWidth: 1,
-        borderColor: colors.border,
+        borderColor: landing.glassBorder,
         padding: SEGMENTED_PAD,
     },
     segmentIndicator: {
@@ -974,8 +984,8 @@ const styles = StyleSheet.create({
         top: SEGMENTED_PAD,
         bottom: SEGMENTED_PAD,
         left: SEGMENTED_PAD,
-        borderRadius: radius.md - 4,
-        backgroundColor: 'rgba(53,215,255,0.14)',
+        borderRadius: radius.sm - SEGMENTED_PAD,
+        backgroundColor: 'rgba(141,201,246,0.14)',
         borderWidth: 1,
         borderColor: colors.primary,
     },
@@ -991,20 +1001,20 @@ const styles = StyleSheet.create({
     segmentText: {
         color: colors.textMuted,
         fontSize: typography.small,
-        fontFamily: 'Poppins_500Medium',
+        fontFamily: 'DMSans_500Medium',
     },
     segmentTextSelected: {
         color: colors.primary,
-        fontFamily: 'Poppins_600SemiBold',
+        fontFamily: 'DMSans_600SemiBold',
     },
     mathCard: {
         flexDirection: 'row',
         alignItems: 'center',
         gap: spacing.sm,
-        backgroundColor: 'rgba(53,215,255,0.08)',
+        backgroundColor: 'rgba(141,201,246,0.08)',
         borderRadius: radius.md,
         borderWidth: 1,
-        borderColor: 'rgba(53,215,255,0.25)',
+        borderColor: 'rgba(141,201,246,0.25)',
         paddingVertical: spacing.sm,
         paddingHorizontal: spacing.md,
     },
@@ -1012,30 +1022,30 @@ const styles = StyleSheet.create({
         flex: 1,
         color: colors.text,
         fontSize: typography.small,
-        fontFamily: 'Poppins_500Medium',
+        fontFamily: 'DMSans_500Medium',
         fontVariant: ['tabular-nums'],
     },
     reviewText: {
         color: colors.textMuted,
         fontSize: typography.body,
-        fontFamily: 'Poppins_400Regular',
+        fontFamily: 'DMSans_400Regular',
         lineHeight: 24,
     },
     reviewValue: {
-        color: colors.text,
-        fontFamily: 'Poppins_700Bold',
+        color: colors.textStrong,
+        fontFamily: 'DMSans_700Bold',
     },
     recreateText: {
         color: colors.warning,
         fontSize: typography.small,
-        fontFamily: 'Poppins_500Medium',
+        fontFamily: 'DMSans_500Medium',
         lineHeight: 20,
     },
     factText: {
         flex: 1,
         color: colors.textMuted,
         fontSize: typography.small,
-        fontFamily: 'Poppins_400Regular',
+        fontFamily: 'DMSans_400Regular',
         lineHeight: 20,
     },
     errorRow: {
@@ -1047,12 +1057,12 @@ const styles = StyleSheet.create({
         flex: 1,
         color: colors.danger,
         fontSize: typography.small,
-        fontFamily: 'Poppins_500Medium',
+        fontFamily: 'DMSans_500Medium',
     },
     approvalsText: {
         color: colors.textMuted,
-        fontSize: 11,
-        fontFamily: 'Poppins_400Regular',
+        fontSize: typography.micro,
+        fontFamily: 'DMSans_400Regular',
         textAlign: 'center',
     },
     submittingRow: {
@@ -1063,7 +1073,7 @@ const styles = StyleSheet.create({
     submittingText: {
         color: colors.textMuted,
         fontSize: typography.small,
-        fontFamily: 'Poppins_400Regular',
+        fontFamily: 'DMSans_400Regular',
     },
     connectRow: {
         alignItems: 'center',
@@ -1073,7 +1083,7 @@ const styles = StyleSheet.create({
     connectText: {
         color: colors.textMuted,
         fontSize: typography.body,
-        fontFamily: 'Poppins_500Medium',
+        fontFamily: 'DMSans_500Medium',
         textAlign: 'center',
     },
     footer: {
