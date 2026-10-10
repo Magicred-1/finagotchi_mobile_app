@@ -12,7 +12,9 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import Animated, { useSharedValue, withSpring } from 'react-native-reanimated';
 
-import { colors, radius, spacing, typography } from '../theme/tokens';
+import { fonts, gradients, gradientStops, landing, radius, spacing, tracking, typography } from '../theme/tokens';
+import { GradientFill } from './GradientFill';
+import { SoftGlow } from './SoftGlow';
 
 /**
  * Bundled logos for the wallets the picker offers (the Dynamic catalogue only
@@ -93,10 +95,25 @@ export function WalletPickerSheet({
             <Animated.View style={[styles.overlay, { opacity }]}>
                 <Pressable style={styles.backdrop} onPress={onClose} />
                 <Animated.View style={[styles.sheet, { transform: [{ translateY }] }]}>
+                    <GradientFill
+                        colors={gradients.landingDialog}
+                        locations={gradientStops.landingDialog}
+                        start={{ x: 0.2, y: 0 }}
+                        end={{ x: 0.8, y: 1 }}
+                        style={StyleSheet.absoluteFill}
+                    />
+                    <SoftGlow
+                        color={landing.dialogHighlight}
+                        style={styles.dialogHighlight}
+                    />
                     <View style={styles.header}>
                         <Text style={styles.title}>Connect wallet</Text>
-                        <Pressable onPress={onClose}>
-                            <Ionicons name="close" size={24} color={colors.text} />
+                        <Pressable
+                            onPress={onClose}
+                            style={styles.closeButton}
+                            accessibilityLabel="Close wallet picker"
+                        >
+                            <Ionicons name="close" size={24} color={landing.text} />
                         </Pressable>
                     </View>
 
@@ -115,7 +132,7 @@ export function WalletPickerSheet({
                                     {item.name}
                                 </Text>
                                 {loading ? (
-                                    <ActivityIndicator size="small" color={colors.text} />
+                                    <ActivityIndicator size="small" color={landing.text} />
                                 ) : null}
                             </Pressable>
                         ))}
@@ -134,17 +151,27 @@ const styles = StyleSheet.create({
     overlay: {
         flex: 1,
         justifyContent: 'flex-end',
-        backgroundColor: 'rgba(0,0,0,0.5)',
+        backgroundColor: landing.backdrop,
     },
     backdrop: {
         ...StyleSheet.absoluteFillObject,
     },
     sheet: {
-        backgroundColor: colors.background,
+        backgroundColor: landing.navy,
         borderTopLeftRadius: radius.lg,
         borderTopRightRadius: radius.lg,
+        borderTopWidth: 1,
+        borderColor: landing.glassBorderStrong,
+        overflow: 'hidden',
         padding: spacing.lg,
         paddingBottom: spacing.xl,
+    },
+    dialogHighlight: {
+        position: 'absolute',
+        top: '-18%',
+        right: '-25%',
+        width: '70%',
+        height: '55%',
     },
     header: {
         flexDirection: 'row',
@@ -152,10 +179,18 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         marginBottom: spacing.md,
     },
+    closeButton: {
+        width: 44,
+        height: 44,
+        alignItems: 'center',
+        justifyContent: 'center',
+        marginRight: -spacing.sm,
+    },
     title: {
-        color: colors.text,
+        color: landing.text,
         fontSize: typography.heading,
-        fontFamily: 'Poppins_800ExtraBold',
+        fontFamily: fonts.medium,
+        letterSpacing: tracking.heading,
     },
     row: {
         flexDirection: 'row',
@@ -172,7 +207,9 @@ const styles = StyleSheet.create({
         width: 64,
         height: 64,
         borderRadius: radius.md,
-        backgroundColor: colors.surface,
+        backgroundColor: landing.glass,
+        borderWidth: 1,
+        borderColor: landing.glassBorder,
         alignItems: 'center',
         justifyContent: 'center',
         padding: spacing.sm,
@@ -185,26 +222,26 @@ const styles = StyleSheet.create({
         width: 40,
         height: 40,
         borderRadius: radius.sm,
-        backgroundColor: colors.surfaceLight,
+        backgroundColor: landing.glassActive,
         alignItems: 'center',
         justifyContent: 'center',
     },
     fallbackLetter: {
-        color: colors.text,
+        color: landing.text,
         fontSize: 20,
-        fontFamily: 'Poppins_700Bold',
+        fontFamily: fonts.semiBold,
     },
     walletName: {
-        color: colors.text,
+        color: landing.text,
         fontSize: typography.small,
-        fontFamily: 'Poppins_500Medium',
+        fontFamily: fonts.medium,
         textAlign: 'center',
         maxWidth: 72,
     },
     empty: {
-        color: colors.textMuted,
+        color: landing.textMuted,
         textAlign: 'center',
-        fontFamily: 'Poppins_400Regular',
+        fontFamily: fonts.regular,
         marginTop: spacing.md,
     },
 });

@@ -17,7 +17,7 @@ import { ScrollView } from 'react-native-gesture-handler';
 import { BottomSheet } from './BottomSheet';
 import { Button } from './Button';
 import { PressableScale } from './PressableScale';
-import { colors, radius, spacing, typography } from '../theme/tokens';
+import { colors, fonts, radius, spacing, typography } from '../theme/tokens';
 import {
     getExpoLocation,
     hasLocationPermission,
@@ -509,12 +509,12 @@ const styles = StyleSheet.create({
     subtitle: {
         color: colors.textMuted,
         fontSize: typography.small,
-        fontFamily: 'Poppins_400Regular',
+        fontFamily: fonts.regular,
         lineHeight: 20,
     },
     groupCard: {
-        backgroundColor: colors.surfaceLight,
-        borderRadius: radius.lg,
+        backgroundColor: colors.surface,
+        borderRadius: radius.md,
         borderWidth: 1,
         borderColor: colors.border,
         overflow: 'hidden',
@@ -534,12 +534,12 @@ const styles = StyleSheet.create({
         flex: 1,
         color: colors.textMuted,
         fontSize: typography.small,
-        fontFamily: 'Poppins_500Medium',
+        fontFamily: fonts.medium,
     },
     autoSyncNote: {
         color: colors.textMuted,
         fontSize: typography.small,
-        fontFamily: 'Poppins_500Medium',
+        fontFamily: fonts.medium,
     },
     formRow: {
         flexDirection: 'row',
@@ -553,13 +553,13 @@ const styles = StyleSheet.create({
         width: 76,
         color: colors.textMuted,
         fontSize: typography.body,
-        fontFamily: 'Poppins_400Regular',
+        fontFamily: fonts.regular,
     },
     formInput: {
         flex: 1,
         color: colors.text,
         fontSize: typography.body,
-        fontFamily: 'Poppins_500Medium',
+        fontFamily: fonts.mono,
         paddingVertical: 10,
     },
     detectRow: {
@@ -567,8 +567,8 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         gap: spacing.sm,
         padding: spacing.md,
-        borderRadius: radius.lg,
-        backgroundColor: colors.surfaceLight,
+        borderRadius: radius.md,
+        backgroundColor: colors.surface,
         borderWidth: 1,
         borderColor: colors.border,
     },
@@ -580,12 +580,12 @@ const styles = StyleSheet.create({
         flex: 1,
         color: colors.primary,
         fontSize: typography.small,
-        fontFamily: 'Poppins_600SemiBold',
+        fontFamily: fonts.semiBold,
     },
     detectHint: {
         color: colors.textMuted,
         fontSize: typography.small,
-        fontFamily: 'Poppins_400Regular',
+        fontFamily: fonts.regular,
         lineHeight: 18,
     },
     rememberRow: {
@@ -593,8 +593,8 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         gap: spacing.md,
         padding: spacing.md,
-        borderRadius: radius.lg,
-        backgroundColor: colors.surfaceLight,
+        borderRadius: radius.md,
+        backgroundColor: colors.surface,
         borderWidth: 1,
         borderColor: colors.border,
     },
@@ -605,12 +605,12 @@ const styles = StyleSheet.create({
     rememberLabel: {
         color: colors.text,
         fontSize: typography.small,
-        fontFamily: 'Poppins_600SemiBold',
+        fontFamily: fonts.semiBold,
     },
     rememberHint: {
         color: colors.textMuted,
         fontSize: typography.small,
-        fontFamily: 'Poppins_400Regular',
+        fontFamily: fonts.regular,
         lineHeight: 18,
     },
     pairingCard: {
@@ -618,10 +618,10 @@ const styles = StyleSheet.create({
         alignItems: 'flex-start',
         gap: spacing.sm,
         padding: spacing.md,
-        borderRadius: radius.lg,
-        backgroundColor: 'rgba(255,209,102,0.10)',
+        borderRadius: radius.md,
+        backgroundColor: 'rgba(233,184,70,0.10)',
         borderWidth: 1,
-        borderColor: 'rgba(255,209,102,0.35)',
+        borderColor: 'rgba(233,184,70,0.35)',
     },
     joiningRow: {
         flexDirection: 'row',
@@ -633,7 +633,7 @@ const styles = StyleSheet.create({
     joiningText: {
         color: colors.textMuted,
         fontSize: typography.small,
-        fontFamily: 'Poppins_500Medium',
+        fontFamily: fonts.medium,
     },
     apostropheHint: {
         flexDirection: 'row',
@@ -645,19 +645,19 @@ const styles = StyleSheet.create({
         flex: 1,
         color: colors.textMuted,
         fontSize: typography.small,
-        fontFamily: 'Poppins_400Regular',
+        fontFamily: fonts.regular,
     },
     pairingText: {
         flex: 1,
-        color: colors.warning,
+        color: colors.gold,
         fontSize: typography.small,
-        fontFamily: 'Poppins_500Medium',
+        fontFamily: fonts.medium,
         lineHeight: 20,
     },
     errorText: {
-        color: colors.danger,
+        color: colors.heart,
         fontSize: typography.small,
-        fontFamily: 'Poppins_600SemiBold',
+        fontFamily: fonts.semiBold,
     },
     connectedRow: {
         flexDirection: 'row',
@@ -673,18 +673,18 @@ const styles = StyleSheet.create({
         borderRadius: radius.sm,
         alignItems: 'center',
         justifyContent: 'center',
-        backgroundColor: 'rgba(53,215,255,0.12)',
+        backgroundColor: 'rgba(126,214,167,0.12)',
     },
     connectedName: {
         flex: 1,
-        color: colors.text,
+        color: colors.textStrong,
         fontSize: typography.body,
-        fontFamily: 'Poppins_700Bold',
+        fontFamily: fonts.monoBold,
     },
     doneNote: {
         color: colors.textMuted,
         fontSize: typography.small,
-        fontFamily: 'Poppins_400Regular',
+        fontFamily: fonts.regular,
         paddingVertical: 12,
         paddingHorizontal: spacing.md,
     },

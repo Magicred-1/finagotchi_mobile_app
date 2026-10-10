@@ -3,9 +3,10 @@ import { SafeAreaView, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
 import { Button } from '../../components/Button';
-import { PressableScale } from '../../components/PressableScale';
 import { RadialPet } from '../../components/RadialPet';
-import { colors, radius, spacing, typography } from '../../theme/tokens';
+import { LandingGradient } from '../../components/LandingGradient';
+import { FadeInUp } from './FadeInUp';
+import { fonts, landing, radius, spacing, tracking, typography } from '../../theme/tokens';
 
 type Props = {
     walletAddress: string;
@@ -60,8 +61,9 @@ export default function AuthConsentStep({
 
     return (
         <SafeAreaView style={styles.safe}>
+            <LandingGradient />
             <View style={styles.container}>
-                <View style={styles.hero}>
+                <FadeInUp style={styles.hero}>
                     <View style={styles.creatureWrap}>
                         <RadialPet stage="egg" mood="calm" size={96} />
                     </View>
@@ -71,41 +73,48 @@ export default function AuthConsentStep({
                         you to sign a message to connect to the Finagotchi
                         server.
                     </Text>
-                </View>
+                </FadeInUp>
 
-                <View style={styles.points}>
-                    {POINTS.map((point) => (
-                        <View key={point.icon} style={styles.pointRow}>
+                <FadeInUp delay={140} style={styles.points}>
+                    {POINTS.map((point, index) => (
+                        <View
+                            key={point.icon}
+                            style={[
+                                styles.pointRow,
+                                index > 0 && styles.pointRowDivider,
+                            ]}
+                        >
                             <Ionicons
                                 name={point.icon}
                                 size={20}
-                                color={colors.textMuted}
+                                color={landing.accent}
                             />
                             <Text style={styles.pointText}>{point.text}</Text>
                         </View>
                     ))}
-                </View>
+                </FadeInUp>
 
-                <View style={styles.footer}>
+                <FadeInUp delay={280} style={styles.footer}>
                     <Button
                         title="Sign & continue"
                         onPress={handleConsent}
                         loading={busy}
                         disabled={busy}
+                        tone="landing"
                     />
-                    <PressableScale
+                    <Button
+                        title="Not now"
                         onPress={onSkip}
                         disabled={busy}
-                        style={styles.textButton}
-                    >
-                        <Text style={styles.textButtonLabel}>Not now</Text>
-                    </PressableScale>
+                        variant="secondary"
+                        tone="landing"
+                    />
                     <Text style={styles.hint}>
                         You can enable sync later from this device. Skipping
                         keeps quests and XP local only.
                     </Text>
                     {error ? <Text style={styles.error}>{error}</Text> : null}
-                </View>
+                </FadeInUp>
             </View>
         </SafeAreaView>
     );
@@ -114,7 +123,7 @@ export default function AuthConsentStep({
 const styles = StyleSheet.create({
     safe: {
         flex: 1,
-        backgroundColor: colors.background,
+        backgroundColor: landing.navy,
     },
     container: {
         flex: 1,
@@ -134,27 +143,27 @@ const styles = StyleSheet.create({
         justifyContent: 'center',
     },
     title: {
-        color: colors.text,
-        fontSize: typography.heading,
-        fontFamily: 'Poppins_800ExtraBold',
+        color: landing.text,
+        fontSize: typography.title,
+        fontFamily: fonts.medium,
+        letterSpacing: tracking.title,
         textAlign: 'center',
         marginBottom: spacing.xs,
     },
     body: {
-        color: colors.textMuted,
+        color: landing.textMuted,
         fontSize: typography.body,
-        fontFamily: 'Poppins_400Regular',
+        fontFamily: fonts.regular,
         textAlign: 'center',
         lineHeight: 22,
         maxWidth: 300,
     },
     points: {
-        gap: spacing.md,
         padding: spacing.md,
         borderRadius: radius.md,
-        backgroundColor: colors.surface,
+        backgroundColor: landing.glass,
         borderWidth: 1,
-        borderColor: 'rgba(255,255,255,0.06)',
+        borderColor: landing.glassBorder,
         maxWidth: 340,
         alignSelf: 'center',
         width: '100%',
@@ -163,12 +172,17 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         alignItems: 'flex-start',
         gap: spacing.sm,
+        paddingVertical: spacing.sm,
+    },
+    pointRowDivider: {
+        borderTopWidth: 1,
+        borderTopColor: landing.glassBorder,
     },
     pointText: {
         flex: 1,
-        color: colors.text,
+        color: landing.textMuted,
         fontSize: typography.small,
-        fontFamily: 'Poppins_400Regular',
+        fontFamily: fonts.regular,
         lineHeight: 20,
     },
     footer: {
@@ -177,28 +191,17 @@ const styles = StyleSheet.create({
         alignSelf: 'center',
         gap: spacing.sm,
     },
-    textButton: {
-        alignItems: 'center',
-        paddingVertical: spacing.sm,
-        minHeight: 44,
-        justifyContent: 'center',
-    },
-    textButtonLabel: {
-        color: colors.textMuted,
-        fontSize: typography.body,
-        fontFamily: 'Poppins_600SemiBold',
-    },
     hint: {
-        color: colors.textMuted,
-        fontSize: 11,
-        fontFamily: 'Poppins_400Regular',
+        color: landing.textMuted,
+        fontSize: typography.micro,
+        fontFamily: fonts.regular,
         textAlign: 'center',
         lineHeight: 18,
     },
     error: {
-        color: colors.danger,
+        color: landing.error,
         fontSize: typography.small,
-        fontFamily: 'Poppins_500Medium',
+        fontFamily: fonts.medium,
         textAlign: 'center',
     },
 });

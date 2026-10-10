@@ -4,7 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 
 import { useCheckinStore } from '../features/checkin/store';
 import { useStreakFreezeStore } from '../features/freeze/store';
-import { colors, radius, spacing, typography } from '../theme/tokens';
+import { colors, fonts, landing, radius, spacing } from '../theme/tokens';
 import { PressableScale } from './PressableScale';
 
 const DAY_LABELS = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
@@ -56,7 +56,7 @@ export function StreakInfo({ onOpenFreeze }: { onOpenFreeze?: () => void }) {
     return (
         <View style={styles.container}>
             <View style={styles.left}>
-                <Ionicons name="flame" size={18} color={colors.warning} />
+                <Ionicons name="flame" size={16} color={colors.gold} />
                 <Text style={styles.streakNumber}>{streak}</Text>
                 <Text style={styles.streakLabel}>day streak</Text>
             </View>
@@ -76,7 +76,7 @@ export function StreakInfo({ onOpenFreeze }: { onOpenFreeze?: () => void }) {
                 ))}
             </View>
 
-            <PressableScale onPress={onOpenFreeze}>
+            <PressableScale onPress={onOpenFreeze} accessibilityLabel="Open streak freeze">
                 <View
                     style={[
                         styles.freezePill,
@@ -86,7 +86,7 @@ export function StreakInfo({ onOpenFreeze }: { onOpenFreeze?: () => void }) {
                     <Ionicons
                         name="snow"
                         size={10}
-                        color={freezeAvailable ? colors.cyan : colors.textMuted}
+                        color={freezeAvailable ? landing.accent : landing.textMuted}
                     />
                     <Text
                         style={[
@@ -108,11 +108,11 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         gap: spacing.sm,
         paddingVertical: spacing.sm,
-        paddingHorizontal: spacing.sm,
+        paddingHorizontal: 12,
         borderRadius: radius.md,
-        backgroundColor: 'rgba(14,27,46,0.60)',
+        backgroundColor: landing.glassActive,
         borderWidth: 1,
-        borderColor: colors.border,
+        borderColor: landing.glassBorder,
     },
     left: {
         flexDirection: 'row',
@@ -120,14 +120,14 @@ const styles = StyleSheet.create({
         gap: 4,
     },
     streakNumber: {
-        color: colors.text,
-        fontSize: 16,
-        fontFamily: 'Poppins_800ExtraBold',
+        color: landing.text,
+        fontSize: 15,
+        fontFamily: fonts.bold,
     },
     streakLabel: {
-        color: colors.textMuted,
+        color: landing.textMuted,
         fontSize: 11,
-        fontFamily: 'Poppins_600SemiBold',
+        fontFamily: fonts.medium,
     },
     weekChart: {
         flex: 1,
@@ -141,20 +141,20 @@ const styles = StyleSheet.create({
         gap: 3,
     },
     dayDot: {
-        width: 10,
-        height: 10,
+        width: 9,
+        height: 9,
         borderRadius: 5,
     },
     dayDotChecked: {
-        backgroundColor: colors.warning,
+        backgroundColor: colors.gold,
     },
     dayDotEmpty: {
-        backgroundColor: 'rgba(255,255,255,0.10)',
+        backgroundColor: landing.glass,
     },
     dayLabel: {
-        color: colors.textMuted,
+        color: landing.textMuted,
         fontSize: 9,
-        fontFamily: 'Poppins_700Bold',
+        fontFamily: fonts.semiBold,
     },
     freezePill: {
         flexDirection: 'row',
@@ -166,21 +166,21 @@ const styles = StyleSheet.create({
         borderWidth: 1,
     },
     freezePillReady: {
-        backgroundColor: 'rgba(53,215,255,0.12)',
-        borderColor: 'rgba(53,215,255,0.30)',
+        backgroundColor: landing.glassHover,
+        borderColor: landing.glassBorderStrong,
     },
     freezePillUsed: {
-        backgroundColor: 'rgba(143,162,184,0.12)',
-        borderColor: colors.border,
+        backgroundColor: landing.glass,
+        borderColor: landing.glassBorder,
     },
     freezeText: {
         fontSize: 10,
-        fontFamily: 'Poppins_800ExtraBold',
+        fontFamily: fonts.semiBold,
     },
     freezeTextReady: {
-        color: colors.cyan,
+        color: landing.accent,
     },
     freezeTextUsed: {
-        color: colors.textMuted,
+        color: landing.textMuted,
     },
 });

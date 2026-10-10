@@ -15,7 +15,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { PublicKey } from '@solana/web3.js';
 
 import { useLeagueStore, type LeaderboardEntry } from '../features/league/store';
-import { colors, radius, spacing, typography } from '../theme/tokens';
+import { colors, fonts, landing, radius, spacing, tracking, typography } from '../theme/tokens';
 import { PressableScale } from './PressableScale';
 import {
     addFriend,
@@ -284,15 +284,23 @@ export function LeaderboardSheet({ visible, onClose }: Props) {
     }
 
     function renderRow({ item, index }: { item: LeaderboardEntry; index: number }) {
+        const rankColor =
+            index === 0
+                ? colors.gold
+                : index === 1
+                  ? colors.primary
+                  : index === 2
+                    ? colors.amber
+                    : colors.textMuted;
         return (
             <View style={styles.row}>
-                <Text style={styles.rank}>{index + 1}</Text>
+                <Text style={[styles.rank, { color: rankColor }]}>{index + 1}</Text>
                 <View
                     style={[
                         styles.avatar,
                         {
                             backgroundColor: item.isFriend
-                                ? colors.purple
+                                ? colors.amber
                                 : colors.surfaceLight,
                         },
                     ]}
@@ -314,7 +322,7 @@ export function LeaderboardSheet({ visible, onClose }: Props) {
                         accessibilityLabel={`Remove ${item.name}`}
                         style={styles.removeButton}
                     >
-                        <Ionicons name="close" size={14} color={colors.textMuted} />
+                        <Ionicons name="close" size={14} color={colors.heart} />
                     </PressableScale>
                 )}
             </View>
@@ -383,13 +391,13 @@ export function LeaderboardSheet({ visible, onClose }: Props) {
                                     {mutating ? (
                                         <ActivityIndicator
                                             size="small"
-                                            color={colors.background}
+                                            color={colors.onPrimary}
                                         />
                                     ) : (
                                         <Ionicons
                                             name="add"
                                             size={18}
-                                            color={colors.background}
+                                            color={colors.onPrimary}
                                         />
                                     )}
                                 </PressableScale>
@@ -441,13 +449,13 @@ export function LeaderboardSheet({ visible, onClose }: Props) {
                                         {mutating ? (
                                             <ActivityIndicator
                                                 size="small"
-                                                color={colors.background}
+                                                color={colors.onPrimary}
                                             />
                                         ) : (
                                             <Ionicons
                                                 name="add"
                                                 size={18}
-                                                color={colors.background}
+                                                color={colors.onPrimary}
                                             />
                                         )}
                                     </PressableScale>
@@ -516,7 +524,7 @@ export function LeaderboardSheet({ visible, onClose }: Props) {
                         <View style={[styles.row, styles.rowOwn]}>
                             <Text style={styles.rank}>{ownRank ?? '–'}</Text>
                             <View style={[styles.avatar, { backgroundColor: colors.primary }]}>
-                                <Text style={[styles.avatarText, { color: colors.background }]}>
+                                <Text style={[styles.avatarText, { color: colors.onPrimary }]}>
                                     Y
                                 </Text>
                             </View>
@@ -622,14 +630,16 @@ const styles = StyleSheet.create({
     overlay: {
         flex: 1,
         justifyContent: 'flex-end',
-        backgroundColor: 'rgba(2,6,12,0.72)',
+        backgroundColor: 'rgba(6,29,61,0.72)',
     },
     sheet: {
         padding: spacing.md,
         paddingBottom: 32,
         borderTopLeftRadius: radius.lg,
         borderTopRightRadius: radius.lg,
-        backgroundColor: colors.surface,
+        backgroundColor: landing.navy,
+        borderTopWidth: 1,
+        borderTopColor: landing.glassBorderStrong,
     },
     header: {
         flexDirection: 'row',
@@ -639,8 +649,9 @@ const styles = StyleSheet.create({
     },
     title: {
         fontSize: typography.heading,
-        fontFamily: 'Poppins_800ExtraBold',
-        color: colors.text,
+        fontFamily: fonts.bold,
+        color: colors.textStrong,
+        letterSpacing: tracking.heading,
     },
     scopeRow: {
         flexDirection: 'row',
@@ -652,18 +663,22 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         paddingVertical: 8,
         borderRadius: radius.pill,
-        backgroundColor: 'rgba(255,255,255,0.05)',
+        backgroundColor: colors.surfaceLight,
+        borderWidth: 1,
+        borderColor: colors.border,
     },
     scopeActive: {
         backgroundColor: colors.primary,
+        borderColor: colors.primary,
     },
     scopeText: {
         fontSize: typography.small,
-        fontFamily: 'Poppins_800ExtraBold',
+        fontFamily: fonts.medium,
         color: colors.textMuted,
     },
     scopeTextActive: {
-        color: colors.background,
+        color: colors.onPrimary,
+        fontFamily: fonts.semiBold,
     },
     list: {
         flexGrow: 0,
@@ -678,16 +693,18 @@ const styles = StyleSheet.create({
         gap: spacing.sm,
         padding: spacing.sm,
         borderRadius: radius.md,
-        backgroundColor: 'rgba(255,255,255,0.05)',
+        backgroundColor: colors.surface,
+        borderWidth: 1,
+        borderColor: colors.border,
     },
     rowOwn: {
-        borderWidth: 1,
         borderColor: colors.primary,
+        backgroundColor: 'rgba(141,201,246,0.08)',
         marginBottom: 8,
     },
     emptyText: {
         fontSize: typography.small,
-        fontFamily: 'Poppins_600SemiBold',
+        fontFamily: fonts.medium,
         color: colors.textMuted,
         textAlign: 'center',
         paddingVertical: spacing.md,
@@ -695,7 +712,7 @@ const styles = StyleSheet.create({
     rank: {
         width: 28,
         fontSize: typography.body,
-        fontFamily: 'Poppins_800ExtraBold',
+        fontFamily: fonts.monoBold,
         color: colors.textMuted,
         textAlign: 'center',
     },
@@ -708,7 +725,7 @@ const styles = StyleSheet.create({
     },
     avatarText: {
         fontSize: typography.body,
-        fontFamily: 'Poppins_800ExtraBold',
+        fontFamily: fonts.semiBold,
         color: colors.text,
     },
     nameCol: {
@@ -725,25 +742,28 @@ const styles = StyleSheet.create({
     nameInput: {
         color: colors.text,
         fontSize: typography.small,
-        fontFamily: 'Poppins_600SemiBold',
-        borderBottomWidth: 1,
-        borderBottomColor: colors.primary,
-        paddingVertical: 4,
+        fontFamily: fonts.regular,
+        backgroundColor: colors.surfaceLight,
+        borderWidth: 1,
+        borderColor: colors.border,
+        borderRadius: radius.sm,
+        paddingVertical: spacing.xs,
+        paddingHorizontal: spacing.sm,
     },
     name: {
         fontSize: typography.small,
-        fontFamily: 'Poppins_700Bold',
-        color: colors.text,
+        fontFamily: fonts.medium,
+        color: colors.textStrong,
     },
     tier: {
-        fontSize: 11,
-        fontFamily: 'Poppins_600SemiBold',
+        fontSize: typography.micro,
+        fontFamily: fonts.mono,
         color: colors.textMuted,
     },
     score: {
         fontSize: typography.small,
-        fontFamily: 'Poppins_800ExtraBold',
-        color: colors.text,
+        fontFamily: fonts.monoBold,
+        color: colors.textStrong,
     },
     removeButton: {
         width: 24,
@@ -763,16 +783,18 @@ const styles = StyleSheet.create({
         flex: 1,
         color: colors.text,
         fontSize: typography.small,
-        fontFamily: 'Poppins_500Medium',
-        backgroundColor: 'rgba(255,255,255,0.05)',
-        borderRadius: radius.md,
+        fontFamily: fonts.regular,
+        backgroundColor: colors.surfaceLight,
+        borderWidth: 1,
+        borderColor: colors.border,
+        borderRadius: radius.sm,
         paddingVertical: spacing.sm,
         paddingHorizontal: spacing.md,
     },
     addFriendButton: {
         width: 36,
         height: 36,
-        borderRadius: radius.md,
+        borderRadius: radius.sm,
         alignItems: 'center',
         justifyContent: 'center',
         backgroundColor: colors.primary,
@@ -786,13 +808,13 @@ const styles = StyleSheet.create({
     },
     searchHint: {
         fontSize: typography.small,
-        fontFamily: 'Poppins_500Medium',
+        fontFamily: fonts.regular,
         color: colors.textMuted,
         paddingVertical: spacing.xs,
     },
     fieldError: {
-        fontSize: 11,
-        fontFamily: 'Poppins_600SemiBold',
+        fontSize: typography.micro,
+        fontFamily: fonts.medium,
         color: colors.danger,
         marginTop: 6,
     },

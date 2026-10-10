@@ -34,7 +34,7 @@ export type WheelItem = {
     leading?: React.ReactNode;
     /** Right-aligned primary line (e.g. a price). */
     trailingTitle?: string;
-    /** Right-aligned second line, tinted success/danger by `trailingUp`. */
+    /** Right-aligned second line, tinted success/heart by `trailingUp`. */
     trailingSubtitle?: string;
     trailingUp?: boolean;
 };
@@ -319,11 +319,11 @@ const styles = StyleSheet.create({
         right: spacing.xs,
         height: ROW_HEIGHT,
         // Stands on its own now that there is no container box: fully rounded
-        // pill with the primary tint and cyan rule all around.
+        // pill with the accent tint and accent rule all around.
         borderWidth: 1,
         borderRadius: radius.pill,
         borderColor: colors.primary,
-        backgroundColor: 'rgba(53,215,255,0.08)',
+        backgroundColor: 'rgba(141,201,246,0.08)',
         zIndex: 1,
     },
     scroll: {
@@ -345,35 +345,36 @@ const styles = StyleSheet.create({
         gap: 1,
     },
     rowTitle: {
-        color: colors.text,
+        color: colors.textMuted,
         fontSize: typography.body,
-        fontFamily: 'Poppins_700Bold',
+        fontFamily: 'DMSans_500Medium',
     },
     rowTitleSelected: {
         color: colors.primary,
+        fontFamily: 'DMSans_600SemiBold',
     },
     rowSubtitle: {
         color: colors.textMuted,
         fontSize: typography.small,
-        fontFamily: 'Poppins_400Regular',
+        fontFamily: 'DMSans_400Regular',
     },
     rowTrailingCol: {
         alignItems: 'flex-end',
         gap: 1,
     },
     rowTrailingTitle: {
-        color: colors.text,
+        color: colors.textStrong,
         fontSize: typography.small,
-        fontFamily: 'Poppins_500Medium',
+        fontFamily: 'DMSans_700Bold',
     },
     rowTrailingSubtitle: {
         fontSize: 11,
-        fontFamily: 'Poppins_500Medium',
+        fontFamily: 'DMSans_700Bold',
     },
     rowTrailingUp: {
         color: colors.success,
     },
     rowTrailingDown: {
-        color: colors.danger,
+        color: colors.heart,
     },
 });

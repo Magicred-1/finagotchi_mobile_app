@@ -31,7 +31,7 @@ import {
 } from '../../services/dca';
 import { BottomSheet } from '../../components/BottomSheet';
 import { PressableScale } from '../../components/PressableScale';
-import { colors, radius, spacing, typography } from '../../theme/tokens';
+import { colors, landing, radius, spacing, typography } from '../../theme/tokens';
 import { DCADetail } from './DCADetail';
 import { DCAWizardSheet } from './DCAWizardSheet';
 import { TokenLogo } from './TokenLogo';
@@ -95,7 +95,7 @@ function PlanChip({
                 <Ionicons
                     name="chevron-forward"
                     size={14}
-                    color={overdue ? colors.warning : colors.textMuted}
+                    color={overdue ? colors.warning : landing.textMuted}
                 />
             </PressableScale>
         </Animated.View>
@@ -282,7 +282,7 @@ export function DCAHome() {
                     <Ionicons
                         name="hardware-chip-outline"
                         size={12}
-                        color={colors.text}
+                        color={landing.text}
                     />
                     <Text style={styles.deviceToastText}>
                         {deviceToastText}
@@ -309,7 +309,7 @@ export function DCAHome() {
                         <Ionicons
                             name="chevron-forward"
                             size={16}
-                            color={colors.primary}
+                            color={landing.accent}
                         />
                     </View>
                 </PressableScale>
@@ -350,7 +350,7 @@ export function DCAHome() {
                             <Ionicons
                                 name="add"
                                 size={14}
-                                color={colors.primary}
+                                color={landing.accent}
                             />
                             <Text style={styles.newChipText}>New plan</Text>
                         </PressableScale>
@@ -403,63 +403,63 @@ const styles = StyleSheet.create({
         paddingVertical: spacing.xs,
         paddingHorizontal: spacing.md,
         borderRadius: radius.pill,
-        backgroundColor: 'rgba(14,27,46,0.92)',
+        backgroundColor: landing.glassActive,
         borderWidth: 1,
-        borderColor: colors.border,
+        borderColor: landing.glassBorderStrong,
         zIndex: 10,
     },
     deviceToastText: {
-        color: colors.text,
+        color: landing.text,
         fontSize: typography.small,
-        fontFamily: 'Poppins_600SemiBold',
+        fontFamily: 'DMSans_600SemiBold',
     },
     banner: {
         flexDirection: 'row',
         alignItems: 'center',
         gap: spacing.md,
-        backgroundColor: colors.surface,
-        borderRadius: radius.lg,
+        backgroundColor: landing.glassActive,
+        borderRadius: radius.md,
         borderWidth: 1,
-        borderColor: colors.border,
+        borderColor: landing.glassBorder,
         padding: spacing.md,
         overflow: 'hidden',
     },
     bannerTint: {
         ...StyleSheet.absoluteFillObject,
-        backgroundColor: 'rgba(53,215,255,0.07)',
+        backgroundColor: 'rgba(141,201,246,0.07)',
     },
     logoOrb: {
         width: 40,
         height: 40,
-        borderRadius: 20,
+        borderRadius: radius.pill,
     },
     bannerText: {
         flex: 1,
         gap: 2,
     },
     bannerTitle: {
-        color: colors.text,
+        color: landing.text,
         fontSize: typography.small,
-        fontFamily: 'Poppins_700Bold',
+        fontFamily: 'DMSans_600SemiBold',
     },
     bannerBody: {
-        color: colors.textMuted,
+        color: landing.textMuted,
         fontSize: typography.small,
-        fontFamily: 'Poppins_400Regular',
+        fontFamily: 'DMSans_400Regular',
     },
     bannerChevron: {
         width: 26,
         height: 26,
-        borderRadius: 13,
+        borderRadius: radius.pill,
         alignItems: 'center',
         justifyContent: 'center',
-        backgroundColor: 'rgba(53,215,255,0.12)',
+        backgroundColor: 'rgba(141,201,246,0.14)',
     },
     card: {
-        backgroundColor: colors.surface,
-        borderRadius: radius.lg,
+        backgroundColor: landing.glassActive,
+        borderRadius: radius.md,
         borderWidth: 1,
-        borderColor: colors.border,
+        borderColor: landing.glassBorder,
         padding: spacing.md,
         gap: spacing.sm,
     },
@@ -468,17 +468,17 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         gap: spacing.xs,
         alignSelf: 'flex-start',
-        backgroundColor: 'rgba(255,209,102,0.10)',
+        backgroundColor: 'rgba(233,184,70,0.10)',
         borderRadius: radius.pill,
         borderWidth: 1,
-        borderColor: 'rgba(255,209,102,0.35)',
+        borderColor: 'rgba(233,184,70,0.35)',
         paddingVertical: spacing.xs,
         paddingHorizontal: spacing.sm,
     },
     overdueBannerText: {
         color: colors.warning,
         fontSize: typography.small,
-        fontFamily: 'Poppins_500Medium',
+        fontFamily: 'DMSans_500Medium',
     },
     chipRow: {
         alignItems: 'center',
@@ -489,35 +489,35 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         alignItems: 'center',
         gap: spacing.sm,
-        backgroundColor: colors.surfaceLight,
+        backgroundColor: landing.glass,
         borderRadius: radius.md,
         borderWidth: 1,
-        borderColor: colors.border,
+        borderColor: landing.glassBorder,
         paddingVertical: spacing.sm,
         paddingHorizontal: spacing.md,
     },
     chipOverdue: {
-        borderColor: 'rgba(255,209,102,0.5)',
-        backgroundColor: 'rgba(255,209,102,0.08)',
+        borderColor: 'rgba(233,184,70,0.5)',
+        backgroundColor: 'rgba(233,184,70,0.08)',
     },
     chipTextCol: {
         gap: 1,
     },
     chipTitle: {
-        color: colors.text,
+        color: landing.text,
         fontSize: typography.small,
-        fontFamily: 'Poppins_600SemiBold',
+        fontFamily: 'DMSans_700Bold',
         fontVariant: ['tabular-nums'],
     },
     chipSubtitle: {
-        color: colors.textMuted,
+        color: landing.accent,
         fontSize: 11,
-        fontFamily: 'Poppins_400Regular',
+        fontFamily: 'DMSans_700Bold',
         fontVariant: ['tabular-nums'],
     },
     chipSubtitleOverdue: {
         color: colors.warning,
-        fontFamily: 'Poppins_500Medium',
+        fontFamily: 'DMSans_500Medium',
     },
     newChip: {
         flexDirection: 'row',
@@ -525,13 +525,13 @@ const styles = StyleSheet.create({
         gap: spacing.xs,
         borderRadius: radius.pill,
         borderWidth: 1,
-        borderColor: colors.primary,
+        borderColor: landing.accent,
         paddingVertical: spacing.sm,
         paddingHorizontal: spacing.md,
     },
     newChipText: {
-        color: colors.primary,
+        color: landing.accent,
         fontSize: typography.small,
-        fontFamily: 'Poppins_600SemiBold',
+        fontFamily: 'DMSans_600SemiBold',
     },
 });

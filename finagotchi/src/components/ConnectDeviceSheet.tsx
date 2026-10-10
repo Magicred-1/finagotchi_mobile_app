@@ -7,8 +7,9 @@ import { BottomSheet } from './BottomSheet';
 import { Button } from './Button';
 import { PetSyncHero } from './PetSyncHero';
 import { PressableScale } from './PressableScale';
+import { SearchingRadar } from './SearchingRadar';
 import { WifiSetupSheet } from './WifiSetupSheet';
-import { colors, radius, spacing, typography } from '../theme/tokens';
+import { colors, fonts, radius, spacing, typography } from '../theme/tokens';
 import { useWifiAutoSyncStore } from '../features/ble';
 import type { FinagotchiBle } from '../features/ble/types';
 
@@ -83,7 +84,10 @@ export function ConnectDeviceSheet({ visible, onClose, ble }: Props) {
                             <Text style={styles.deviceName}>
                                 {connectedDevice.name ?? 'Finagotchi'}
                             </Text>
-                            <Text style={styles.connectedLabel}>Connected</Text>
+                            <View style={styles.connectedStatus}>
+                                <View style={styles.connectedDot} />
+                                <Text style={styles.connectedLabel}>Connected</Text>
+                            </View>
                         </View>
                     </View>
 
@@ -110,7 +114,7 @@ export function ConnectDeviceSheet({ visible, onClose, ble }: Props) {
                 </View>
             ) : (
                 <View style={styles.section}>
-                    <PetSyncHero />
+                    {scanning ? <SearchingRadar /> : <PetSyncHero />}
                     <Text
                         style={[
                             styles.statusText,
@@ -193,7 +197,7 @@ const styles = StyleSheet.create({
     statusText: {
         color: colors.textMuted,
         fontSize: typography.small,
-        fontFamily: 'Poppins_600SemiBold',
+        fontFamily: fonts.mono,
     },
     statusTextCentered: {
         textAlign: 'center',
@@ -215,19 +219,19 @@ const styles = StyleSheet.create({
         flex: 1,
     },
     deviceName: {
-        color: colors.text,
+        color: colors.textStrong,
         fontSize: typography.body,
-        fontFamily: 'Poppins_700Bold',
+        fontFamily: fonts.semiBold,
     },
     deviceMeta: {
         color: colors.textMuted,
         fontSize: typography.small,
-        fontFamily: 'Poppins_600SemiBold',
+        fontFamily: fonts.mono,
     },
     connectLabel: {
         color: colors.primary,
         fontSize: typography.small,
-        fontFamily: 'Poppins_700Bold',
+        fontFamily: fonts.semiBold,
     },
     connectedCard: {
         flexDirection: 'row',
@@ -237,7 +241,7 @@ const styles = StyleSheet.create({
         borderRadius: radius.md,
         backgroundColor: colors.surfaceLight,
         borderWidth: 1,
-        borderColor: colors.border,
+        borderColor: 'rgba(141,201,246,0.35)',
     },
     connectedIconWrap: {
         width: 40,
@@ -245,14 +249,26 @@ const styles = StyleSheet.create({
         borderRadius: radius.md,
         alignItems: 'center',
         justifyContent: 'center',
-        backgroundColor: 'rgba(53,215,255,0.12)',
+        backgroundColor: 'rgba(141,201,246,0.12)',
     },
     connectedInfo: {
         flex: 1,
+        gap: 2,
+    },
+    connectedStatus: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+    },
+    connectedDot: {
+        width: 7,
+        height: 7,
+        borderRadius: radius.pill,
+        backgroundColor: colors.success,
     },
     connectedLabel: {
-        color: colors.primary,
+        color: colors.success,
         fontSize: typography.small,
-        fontFamily: 'Poppins_600SemiBold',
+        fontFamily: fonts.medium,
     },
 });

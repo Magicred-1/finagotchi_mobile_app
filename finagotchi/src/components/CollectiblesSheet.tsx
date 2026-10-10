@@ -11,6 +11,7 @@ import * as Haptics from 'expo-haptics';
 import { AccessoryPreview } from './PetAccessory';
 import { BottomSheet } from './BottomSheet';
 import { PressableScale } from './PressableScale';
+import { SectionLabel } from './SectionLabel';
 import {
     COSMETIC_ACCESSORIES,
     COSMETIC_BACKGROUNDS,
@@ -22,7 +23,14 @@ import {
     usePetStore,
 } from '../features/pet/store';
 import { useCheckinStore } from '../features/checkin/store';
-import { colors, radius, spacing, typography } from '../theme/tokens';
+import {
+    colors,
+    fonts,
+    radius,
+    spacing,
+    tracking,
+    typography,
+} from '../theme/tokens';
 
 type Props = {
     visible: boolean;
@@ -117,7 +125,7 @@ export default function CollectiblesSheet({ visible, onClose }: Props) {
             <View style={styles.header}>
                 <Text style={styles.title}>Collectibles</Text>
                 <View style={styles.balancePill}>
-                    <Ionicons name="wallet-outline" size={12} color={colors.warning} />
+                    <Ionicons name="wallet-outline" size={12} color={colors.gold} />
                     <Text style={styles.balanceText}>{formatNumber(balance)}</Text>
                 </View>
             </View>
@@ -131,7 +139,9 @@ export default function CollectiblesSheet({ visible, onClose }: Props) {
                     daily check-in wheel — or buy them with points.
                 </Text>
 
-                <Text style={styles.sectionTitle}>Backgrounds</Text>
+                <View style={styles.sectionLabelWrap}>
+                    <SectionLabel>Backgrounds</SectionLabel>
+                </View>
                 <View style={styles.grid}>
                     {COSMETIC_BACKGROUNDS.map((item) => {
                         const isOwned = ownedBackgrounds.includes(item.id);
@@ -176,7 +186,7 @@ export default function CollectiblesSheet({ visible, onClose }: Props) {
                                         styles.priceBadge,
                                         !canAfford && styles.priceBadgeDisabled,
                                     ]}>
-                                        <Ionicons name="wallet-outline" size={9} color={canAfford ? colors.warning : colors.textMuted} />
+                                        <Ionicons name="wallet-outline" size={9} color={canAfford ? colors.gold : colors.textMuted} />
                                         <Text style={[
                                             styles.priceText,
                                             !canAfford && styles.priceTextDisabled,
@@ -207,7 +217,7 @@ export default function CollectiblesSheet({ visible, onClose }: Props) {
                                         <Ionicons
                                             name="checkmark"
                                             size={10}
-                                            color={colors.background}
+                                            color={colors.onPrimary}
                                         />
                                     </View>
                                 )}
@@ -216,7 +226,9 @@ export default function CollectiblesSheet({ visible, onClose }: Props) {
                     })}
                 </View>
 
-                <Text style={styles.sectionTitle}>Accessories</Text>
+                <View style={styles.sectionLabelWrap}>
+                    <SectionLabel>Accessories</SectionLabel>
+                </View>
                 <View style={styles.grid}>
                     {COSMETIC_ACCESSORIES.map((item) => {
                         const isOwned = ownedAccessories.includes(item.id);
@@ -256,7 +268,7 @@ export default function CollectiblesSheet({ visible, onClose }: Props) {
                                         styles.priceBadge,
                                         !canAfford && styles.priceBadgeDisabled,
                                     ]}>
-                                        <Ionicons name="wallet-outline" size={9} color={canAfford ? colors.warning : colors.textMuted} />
+                                        <Ionicons name="wallet-outline" size={9} color={canAfford ? colors.gold : colors.textMuted} />
                                         <Text style={[
                                             styles.priceText,
                                             !canAfford && styles.priceTextDisabled,
@@ -287,7 +299,7 @@ export default function CollectiblesSheet({ visible, onClose }: Props) {
                                         <Ionicons
                                             name="checkmark"
                                             size={10}
-                                            color={colors.background}
+                                            color={colors.onPrimary}
                                         />
                                     </View>
                                 )}
@@ -297,7 +309,7 @@ export default function CollectiblesSheet({ visible, onClose }: Props) {
                 </View>
 
                 <View style={styles.streakBanner}>
-                    <Ionicons name="flame-outline" size={18} color="#FF8E4A" />
+                    <Ionicons name="flame-outline" size={18} color={colors.amber} />
                     <Text style={styles.streakText}>
                         Your streak: {streak} 🔥
                     </Text>
@@ -315,9 +327,10 @@ const styles = StyleSheet.create({
         marginBottom: spacing.md,
     },
     title: {
-        color: colors.text,
+        color: colors.textStrong,
         fontSize: typography.heading,
-        fontFamily: 'Poppins_700Bold',
+        fontFamily: fonts.bold,
+        letterSpacing: tracking.heading,
     },
     balancePill: {
         flexDirection: 'row',
@@ -325,15 +338,15 @@ const styles = StyleSheet.create({
         gap: 5,
         paddingVertical: 6,
         paddingHorizontal: 10,
-        borderRadius: 12,
-        backgroundColor: 'rgba(255,209,102,0.10)',
+        borderRadius: radius.pill,
+        backgroundColor: colors.chip,
         borderWidth: 1,
-        borderColor: 'rgba(255,209,102,0.20)',
+        borderColor: colors.border,
     },
     balanceText: {
-        color: colors.warning,
-        fontSize: 13,
-        fontFamily: 'Poppins_700Bold',
+        color: colors.gold,
+        fontSize: typography.small,
+        fontFamily: fonts.monoBold,
     },
     closeButton: {
         position: 'absolute',
@@ -343,10 +356,10 @@ const styles = StyleSheet.create({
         height: 36,
         alignItems: 'center',
         justifyContent: 'center',
-        borderRadius: 12,
+        borderRadius: radius.sm,
         backgroundColor: colors.surfaceLight,
         borderWidth: 1,
-        borderColor: 'rgba(255,255,255,0.10)',
+        borderColor: colors.border,
         zIndex: 10,
     },
     container: {
@@ -355,14 +368,11 @@ const styles = StyleSheet.create({
     intro: {
         color: colors.textMuted,
         fontSize: typography.body,
-        fontFamily: 'Poppins_400Regular',
+        fontFamily: fonts.regular,
         lineHeight: 24,
         marginBottom: spacing.lg,
     },
-    sectionTitle: {
-        color: colors.text,
-        fontSize: typography.heading,
-        fontFamily: 'Poppins_700Bold',
+    sectionLabelWrap: {
         marginBottom: spacing.md,
     },
     grid: {
@@ -376,26 +386,26 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         paddingVertical: spacing.md,
         paddingHorizontal: spacing.sm,
-        borderRadius: radius.lg,
-        backgroundColor: colors.background,
+        borderRadius: radius.md,
+        backgroundColor: colors.surface,
         borderWidth: 1,
         borderColor: colors.border,
         gap: spacing.sm,
     },
     tileActive: {
         borderColor: colors.primary,
-        backgroundColor: 'rgba(93,226,166,0.08)',
+        backgroundColor: 'rgba(141,201,246,0.08)',
     },
     tileOwned: {
-        borderColor: 'rgba(255,209,102,0.35)',
+        borderColor: 'rgba(255,255,255,0.18)',
     },
     tileLocked: {
-        opacity: 0.5,
+        opacity: 0.45,
     },
     swatch: {
         width: 44,
         height: 44,
-        borderRadius: 14,
+        borderRadius: radius.md,
         borderWidth: 2,
     },
     accessoryPreview: {
@@ -407,7 +417,7 @@ const styles = StyleSheet.create({
     tileLabel: {
         color: colors.text,
         fontSize: typography.small,
-        fontFamily: 'Poppins_700Bold',
+        fontFamily: fonts.semiBold,
     },
     tileLabelLocked: {
         color: colors.textMuted,
@@ -419,15 +429,15 @@ const styles = StyleSheet.create({
         paddingVertical: 3,
         paddingHorizontal: 6,
         borderRadius: 8,
-        backgroundColor: 'rgba(255,209,102,0.12)',
+        backgroundColor: colors.chip,
     },
     priceBadgeDisabled: {
-        backgroundColor: 'rgba(255,255,255,0.05)',
+        backgroundColor: colors.surfaceLight,
     },
     priceText: {
-        color: colors.warning,
+        color: colors.gold,
         fontSize: 9,
-        fontFamily: 'Poppins_700Bold',
+        fontFamily: fonts.monoBold,
     },
     priceTextDisabled: {
         color: colors.textMuted,
@@ -439,23 +449,23 @@ const styles = StyleSheet.create({
         paddingVertical: 3,
         paddingHorizontal: 6,
         borderRadius: 8,
-        backgroundColor: 'rgba(255,255,255,0.05)',
+        backgroundColor: colors.surfaceLight,
     },
     lockText: {
         color: colors.textMuted,
         fontSize: 9,
-        fontFamily: 'Poppins_700Bold',
+        fontFamily: fonts.monoBold,
     },
     ownedBadge: {
         paddingVertical: 3,
         paddingHorizontal: 6,
         borderRadius: 8,
-        backgroundColor: 'rgba(93,226,166,0.12)',
+        backgroundColor: 'rgba(126,214,167,0.12)',
     },
     ownedText: {
-        color: colors.primary,
+        color: colors.success,
         fontSize: 9,
-        fontFamily: 'Poppins_700Bold',
+        fontFamily: fonts.semiBold,
     },
     checkBadge: {
         position: 'absolute',
@@ -475,13 +485,13 @@ const styles = StyleSheet.create({
         gap: spacing.sm,
         paddingVertical: spacing.md,
         borderRadius: radius.md,
-        backgroundColor: 'rgba(255,142,74,0.10)',
+        backgroundColor: 'rgba(248,180,60,0.10)',
         borderWidth: 1,
-        borderColor: 'rgba(255,142,74,0.20)',
+        borderColor: 'rgba(248,180,60,0.22)',
     },
     streakText: {
-        color: colors.text,
+        color: colors.textStrong,
         fontSize: typography.body,
-        fontFamily: 'Poppins_700Bold',
+        fontFamily: fonts.semiBold,
     },
 });

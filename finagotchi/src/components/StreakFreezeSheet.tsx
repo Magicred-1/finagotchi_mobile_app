@@ -4,7 +4,16 @@ import { Ionicons } from '@expo/vector-icons';
 
 import { useStreakFreezeStore } from '../features/freeze/store';
 import { usePetStore } from '../features/pet/store';
-import { colors, radius, spacing, typography } from '../theme/tokens';
+import {
+    colors,
+    fonts,
+    landing,
+    radius,
+    spacing,
+    tracking,
+    typography,
+} from '../theme/tokens';
+import { Button } from './Button';
 import { PressableScale } from './PressableScale';
 
 interface Props {
@@ -32,13 +41,17 @@ export function StreakFreezeSheet({ visible, onClose }: Props) {
                 <View style={styles.sheet}>
                     <View style={styles.header}>
                         <Text style={styles.title}>Streak Freezes</Text>
-                        <PressableScale onPress={onClose}>
+                        <PressableScale
+                            onPress={onClose}
+                            style={styles.closeButton}
+                            hitSlop={8}
+                        >
                             <Ionicons name="close" size={22} color={colors.textMuted} />
                         </PressableScale>
                     </View>
 
                     <View style={styles.card}>
-                        <Ionicons name="snow" size={32} color={colors.cyan} />
+                        <Ionicons name="snow" size={32} color={colors.primary} />
                         <Text style={styles.owned}>{streakFreezes}</Text>
                         <Text style={styles.label}>streak freezes owned</Text>
                     </View>
@@ -53,13 +66,11 @@ export function StreakFreezeSheet({ visible, onClose }: Props) {
                             <Text style={styles.buyTitle}>Buy 1 Streak Freeze</Text>
                             <Text style={styles.buyPrice}>{price} pts</Text>
                         </View>
-                        <PressableScale
+                        <Button
+                            title="Buy"
                             onPress={handleBuy}
                             disabled={balance < price}
-                            style={[styles.buyButton, balance < price && styles.buyButtonDisabled]}
-                        >
-                            <Text style={styles.buyButtonText}>Buy</Text>
-                        </PressableScale>
+                        />
                     </View>
                 </View>
             </View>
@@ -71,14 +82,16 @@ const styles = StyleSheet.create({
     overlay: {
         flex: 1,
         justifyContent: 'flex-end',
-        backgroundColor: 'rgba(2,6,12,0.72)',
+        backgroundColor: 'rgba(6,29,61,0.72)',
     },
     sheet: {
         padding: spacing.md,
         paddingBottom: 32,
         borderTopLeftRadius: radius.lg,
         borderTopRightRadius: radius.lg,
-        backgroundColor: colors.surface,
+        backgroundColor: landing.navy,
+        borderTopWidth: 1,
+        borderTopColor: landing.glassBorderStrong,
     },
     header: {
         flexDirection: 'row',
@@ -88,33 +101,46 @@ const styles = StyleSheet.create({
     },
     title: {
         fontSize: typography.heading,
-        fontFamily: 'Poppins_800ExtraBold',
-        color: colors.text,
+        fontFamily: fonts.bold,
+        color: colors.textStrong,
+        letterSpacing: tracking.heading,
+    },
+    closeButton: {
+        width: 36,
+        height: 36,
+        alignItems: 'center',
+        justifyContent: 'center',
+        borderRadius: radius.sm,
+        backgroundColor: colors.surfaceLight,
+        borderWidth: 1,
+        borderColor: colors.border,
     },
     card: {
         alignItems: 'center',
-        padding: spacing.md,
-        borderRadius: radius.md,
-        backgroundColor: 'rgba(53,215,255,0.12)',
+        padding: spacing.lg,
+        borderRadius: radius.lg,
+        backgroundColor: colors.badgeFree,
         borderWidth: 1,
-        borderColor: 'rgba(53,215,255,0.25)',
+        borderColor: 'rgba(141,201,246,0.30)',
         marginBottom: spacing.md,
     },
     owned: {
-        fontSize: 32,
-        fontFamily: 'Poppins_800ExtraBold',
-        color: colors.text,
+        fontSize: typography.title,
+        fontFamily: fonts.monoBold,
+        color: colors.textStrong,
         marginTop: spacing.xs,
     },
     label: {
-        fontSize: typography.small,
-        fontFamily: 'Poppins_600SemiBold',
+        fontSize: typography.micro,
+        fontFamily: fonts.mono,
         color: colors.textMuted,
-        marginTop: 2,
+        letterSpacing: tracking.eyebrow,
+        textTransform: 'uppercase',
+        marginTop: spacing.xs,
     },
     description: {
         fontSize: typography.small,
-        fontFamily: 'Poppins_600SemiBold',
+        fontFamily: fonts.regular,
         color: colors.textMuted,
         lineHeight: 20,
         marginBottom: spacing.md,
@@ -123,32 +149,21 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'space-between',
-        padding: spacing.sm,
+        padding: spacing.md,
         borderRadius: radius.md,
-        backgroundColor: 'rgba(255,255,255,0.05)',
+        backgroundColor: colors.surface,
+        borderWidth: 1,
+        borderColor: colors.border,
     },
     buyTitle: {
         fontSize: typography.body,
-        fontFamily: 'Poppins_700Bold',
-        color: colors.text,
+        fontFamily: fonts.semiBold,
+        color: colors.textStrong,
     },
     buyPrice: {
         fontSize: typography.small,
-        fontFamily: 'Poppins_600SemiBold',
-        color: colors.warning,
-    },
-    buyButton: {
-        paddingVertical: 8,
-        paddingHorizontal: 16,
-        borderRadius: radius.pill,
-        backgroundColor: colors.primary,
-    },
-    buyButtonDisabled: {
-        backgroundColor: colors.surfaceLight,
-    },
-    buyButtonText: {
-        fontSize: typography.small,
-        fontFamily: 'Poppins_800ExtraBold',
-        color: colors.background,
+        fontFamily: fonts.monoBold,
+        color: colors.gold,
+        marginTop: 2,
     },
 });

@@ -19,7 +19,8 @@ import * as Haptics from 'expo-haptics';
 import Svg, { Path } from 'react-native-svg';
 
 import { RadialPet } from '../../components/RadialPet';
-import { colors, spacing, typography } from '../../theme/tokens';
+import { LandingGradient } from '../../components/LandingGradient';
+import { fonts, landing, spacing, tracking, typography } from '../../theme/tokens';
 
 type Props = {
     creatureName: string;
@@ -177,6 +178,7 @@ export default function HatchStep({ creatureName, onFinished }: Props) {
 
     return (
         <SafeAreaView style={styles.safe}>
+            <LandingGradient />
             <View style={styles.container}>
                 <View style={styles.stage}>
                     <Pressable
@@ -260,7 +262,7 @@ export default function HatchStep({ creatureName, onFinished }: Props) {
 const styles = StyleSheet.create({
     safe: {
         flex: 1,
-        backgroundColor: colors.background,
+        backgroundColor: landing.navy,
     },
     container: {
         flex: 1,
@@ -301,16 +303,17 @@ const styles = StyleSheet.create({
         paddingHorizontal: 28,
     },
     title: {
-        color: colors.text,
+        color: landing.text,
         fontSize: typography.heading,
-        fontFamily: 'Poppins_700Bold',
+        fontFamily: fonts.medium,
+        letterSpacing: tracking.heading,
         textAlign: 'center',
     },
     subtitle: {
         marginTop: spacing.sm,
-        color: colors.textMuted,
+        color: landing.textMuted,
         fontSize: typography.body,
-        fontFamily: 'Poppins_400Regular',
+        fontFamily: fonts.regular,
         textAlign: 'center',
     },
     welcomeWrap: {
@@ -327,16 +330,17 @@ const styles = StyleSheet.create({
         justifyContent: 'center',
     },
     welcomeTitle: {
-        color: colors.text,
+        color: landing.text,
         fontSize: typography.heading,
-        fontFamily: 'Poppins_700Bold',
+        fontFamily: fonts.medium,
+        letterSpacing: tracking.heading,
         textAlign: 'center',
     },
     welcomeBody: {
         marginTop: spacing.sm,
-        color: colors.textMuted,
+        color: landing.textMuted,
         fontSize: typography.body,
-        fontFamily: 'Poppins_400Regular',
+        fontFamily: fonts.regular,
         textAlign: 'center',
     },
 });

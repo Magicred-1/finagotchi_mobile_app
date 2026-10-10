@@ -5,7 +5,7 @@ import { GLView, type ExpoWebGLRenderingContext } from 'expo-gl';
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 
-import { colors, radius } from '../theme/tokens';
+import { landing, radius } from '../theme/tokens';
 
 /**
  * The 3D teardrop hero — ONLY imported (lazily, by PetSyncHero) when the
@@ -46,19 +46,19 @@ export default function PetSyncHeroGL({ size = 140 }: { size?: number }) {
             context: gl as unknown as WebGL2RenderingContext,
         });
         renderer.setSize(width, height, false);
-        renderer.setClearColor(new THREE.Color(colors.background), 1);
+        renderer.setClearColor(new THREE.Color(landing.navy), 1);
 
         const scene = new THREE.Scene();
         const camera = new THREE.PerspectiveCamera(30, width / height, 0.1, 50);
         camera.position.set(0, 0.25, 3.4);
         camera.lookAt(0, 0, 0);
 
-        // Theme lighting: dim navy ambient, cyan key, purple rim.
-        scene.add(new THREE.AmbientLight(0x162640, 1.6));
-        const key = new THREE.DirectionalLight(0x35d7ff, 2.2);
+        // Theme lighting: datasheet surface ambient, light-blue key, warm amber rim.
+        scene.add(new THREE.AmbientLight(0x141b24, 1.6));
+        const key = new THREE.DirectionalLight(0x8dc9f6, 2.2);
         key.position.set(2, 3, 4);
         scene.add(key);
-        const rim = new THREE.PointLight(0x9945ff, 6, 20);
+        const rim = new THREE.PointLight(0xf8b43c, 6, 20);
         rim.position.set(-2.5, 1, -2);
         scene.add(rim);
 
@@ -82,7 +82,7 @@ export default function PetSyncHeroGL({ size = 140 }: { size?: number }) {
             // normalize its size, and give it the app's pearly finish.
             const mesh = gltf.scene;
             const material = new THREE.MeshStandardMaterial({
-                color: 0xf5f9ff,
+                color: 0xf6faff,
                 roughness: 0.3,
                 metalness: 0.15,
             });

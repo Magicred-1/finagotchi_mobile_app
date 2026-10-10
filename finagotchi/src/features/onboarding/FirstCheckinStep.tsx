@@ -24,7 +24,9 @@ import * as Haptics from 'expo-haptics';
 
 import { PressableScale } from '../../components/PressableScale';
 import { RadialPet } from '../../components/RadialPet';
-import { colors, radius, spacing, typography } from '../../theme/tokens';
+import { LandingGradient } from '../../components/LandingGradient';
+import { FadeInUp } from './FadeInUp';
+import { fonts, landing, radius, spacing, tracking, typography } from '../../theme/tokens';
 
 const KEYBOARD_BEHAVIOR = Platform.OS === 'ios' ? 'padding' : 'height';
 
@@ -136,6 +138,7 @@ export default function FirstCheckinStep({
 
     return (
         <SafeAreaView style={styles.safe}>
+            <LandingGradient />
             <KeyboardAvoidingView
                 behavior={KEYBOARD_BEHAVIOR}
                 style={styles.keyboard}
@@ -152,7 +155,7 @@ export default function FirstCheckinStep({
                         style={styles.dismissArea}
                         onPress={Keyboard.dismiss}
                     >
-                        <View style={[styles.content, { paddingHorizontal: horizontalPadding }]}>
+                        <FadeInUp style={[styles.content, { paddingHorizontal: horizontalPadding }]}>
                             <View style={styles.petWrap}>
                                 <RadialPet
                                     stage="egg"
@@ -173,9 +176,9 @@ export default function FirstCheckinStep({
                             <Text style={styles.body}>
                                 {creatureName} grows when you stick to your plan.
                             </Text>
-                        </View>
+                        </FadeInUp>
 
-                        <View style={[styles.footer, { paddingHorizontal: horizontalPadding }]}>
+                        <FadeInUp delay={160} style={[styles.footer, { paddingHorizontal: horizontalPadding }]}>
                             <Animated.View style={[styles.yesButtonWrap, pulseStyle]}>
                                 <PressableScale
                                     onPress={handleYes}
@@ -201,7 +204,7 @@ export default function FirstCheckinStep({
                                         value={amount}
                                         onChangeText={setAmount}
                                         placeholder="Amount (optional)"
-                                        placeholderTextColor={colors.textMuted}
+                                        placeholderTextColor={landing.placeholder}
                                         keyboardType="decimal-pad"
                                         style={styles.input}
                                         onFocus={scrollToForm}
@@ -240,7 +243,7 @@ export default function FirstCheckinStep({
                             >
                                 <Text style={styles.noText}>Not today</Text>
                             </PressableScale>
-                        </View>
+                        </FadeInUp>
                     </Pressable>
                 </ScrollView>
             </KeyboardAvoidingView>
@@ -251,7 +254,7 @@ export default function FirstCheckinStep({
 const styles = StyleSheet.create({
     safe: {
         flex: 1,
-        backgroundColor: colors.background,
+        backgroundColor: landing.navy,
     },
     keyboard: {
         flex: 1,
@@ -279,9 +282,10 @@ const styles = StyleSheet.create({
         justifyContent: 'center',
     },
     title: {
-        color: colors.text,
+        color: landing.text,
         fontSize: typography.title,
-        fontFamily: 'Poppins_700Bold',
+        fontFamily: fonts.medium,
+        letterSpacing: tracking.title,
         textAlign: 'center',
         marginBottom: spacing.md,
     },
@@ -289,9 +293,9 @@ const styles = StyleSheet.create({
         fontSize: 28,
     },
     body: {
-        color: colors.textMuted,
+        color: landing.textMuted,
         fontSize: typography.body,
-        fontFamily: 'Poppins_400Regular',
+        fontFamily: fonts.regular,
         textAlign: 'center',
         lineHeight: 24,
         maxWidth: 320,
@@ -309,37 +313,43 @@ const styles = StyleSheet.create({
         width: '100%',
         paddingVertical: spacing.md,
         paddingHorizontal: spacing.lg,
-        borderRadius: radius.md,
+        borderRadius: radius.sm,
         alignItems: 'center',
-        backgroundColor: colors.primary,
+        minHeight: 48,
+        backgroundColor: landing.accent,
     },
     yesText: {
-        color: colors.background,
-        fontSize: typography.heading,
-        fontFamily: 'Poppins_800ExtraBold',
+        color: landing.onAccent,
+        fontSize: typography.small,
+        fontFamily: fonts.semiBold,
+        letterSpacing: 0.8,
+        textTransform: 'uppercase',
     },
     detailsToggle: {
         paddingVertical: spacing.sm,
+        minHeight: 44,
+        justifyContent: 'center',
     },
     detailsToggleText: {
-        color: colors.textMuted,
+        color: landing.textMuted,
         fontSize: typography.small,
-        fontFamily: 'Poppins_500Medium',
+        fontFamily: fonts.medium,
     },
     detailsForm: {
         width: '100%',
         gap: spacing.md,
     },
     input: {
-        backgroundColor: colors.surface,
-        color: colors.text,
+        backgroundColor: landing.frostSurface,
+        color: landing.ink,
         borderWidth: 1,
-        borderColor: colors.border,
-        borderRadius: radius.md,
-        paddingVertical: spacing.md,
-        paddingHorizontal: spacing.lg,
+        borderColor: landing.frostBorder,
+        borderRadius: radius.sm,
+        minHeight: 54,
+        paddingVertical: 15,
+        paddingHorizontal: 16,
         fontSize: typography.body,
-        fontFamily: 'Poppins_500Medium',
+        fontFamily: fonts.medium,
     },
     chips: {
         flexDirection: 'row',
@@ -350,29 +360,33 @@ const styles = StyleSheet.create({
         paddingVertical: spacing.sm,
         paddingHorizontal: spacing.md,
         borderRadius: radius.pill,
-        backgroundColor: colors.surface,
+        backgroundColor: landing.frostSurface,
         borderWidth: 1,
-        borderColor: colors.border,
+        borderColor: landing.frostBorder,
         alignItems: 'center',
+        minHeight: 44,
+        justifyContent: 'center',
     },
     chipActive: {
-        backgroundColor: 'rgba(114,228,90,0.15)',
-        borderColor: colors.primary,
+        backgroundColor: landing.accent,
+        borderColor: landing.accent,
     },
     chipText: {
-        color: colors.textMuted,
+        color: landing.ink,
         fontSize: typography.small,
-        fontFamily: 'Poppins_500Medium',
+        fontFamily: fonts.medium,
     },
     chipTextActive: {
-        color: colors.primary,
+        color: landing.onAccent,
     },
     noButton: {
         paddingVertical: spacing.md,
+        minHeight: 44,
+        justifyContent: 'center',
     },
     noText: {
-        color: colors.textMuted,
+        color: landing.ink,
         fontSize: typography.body,
-        fontFamily: 'Poppins_600SemiBold',
+        fontFamily: fonts.semiBold,
     },
 });

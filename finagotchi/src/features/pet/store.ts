@@ -2,18 +2,20 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 
+import { useWalletStore } from '../wallet/store';
+
 export type PetStage = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12;
 
 export type PetBackground = 'default' | 'aurora' | 'sunset' | 'midnight' | 'galaxy' | 'gold';
 export type PetAccessory = 'none' | 'crown' | 'glasses' | 'bowtie' | 'halo' | 'diamond' | 'tshirt';
 
 export const BACKGROUND_COLORS: Record<PetBackground, readonly [string, string]> = {
-    default: ['rgba(93,226,166,0.06)', 'rgba(93,226,166,0.12)'],
-    aurora: ['rgba(53,215,255,0.08)', 'rgba(192,140,255,0.14)'],
-    sunset: ['rgba(255,142,158,0.08)', 'rgba(255,193,94,0.14)'],
-    midnight: ['rgba(30,41,59,0.5)', 'rgba(53,215,255,0.10)'],
-    galaxy: ['rgba(99,50,180,0.18)', 'rgba(53,215,255,0.14)'],
-    gold: ['rgba(255,193,94,0.14)', 'rgba(255,142,74,0.12)'],
+    default: ['rgba(141,201,246,0.05)', 'rgba(141,201,246,0.10)'],
+    aurora: ['rgba(141,201,246,0.10)', 'rgba(69,214,205,0.14)'],
+    sunset: ['rgba(243,111,124,0.10)', 'rgba(233,184,70,0.14)'],
+    midnight: ['rgba(10,20,34,0.55)', 'rgba(141,201,246,0.12)'],
+    galaxy: ['rgba(153,69,255,0.18)', 'rgba(141,201,246,0.14)'],
+    gold: ['rgba(233,184,70,0.14)', 'rgba(248,180,60,0.12)'],
 };
 
 export const STAGE_NAMES: Record<PetStage, string> = {
@@ -74,6 +76,8 @@ type PetState = {
     totalCheckins: number;
     name: string | null;
     mintAddress: string | null;
+    /** Wallet that owns this creature. Used to detect wallet switches so a different wallet never inherits another wallet's pet. */
+    ownerAddress: string | null;
     mintedAt: string | null;
     /** Tx signature of the mint, kept so the server registry can be healed if the mint-time registration was lost. */
     mintTxSignature: string | null;
@@ -125,6 +129,8 @@ type PetState = {
     getStage: () => PetStage;
     setCreatureName: (name: string) => void;
     mintCreature: (name: string, mintAddress: string, mintTxSignature?: string) => void;
+    /** Reset all creature state to a fresh install (used when the connected wallet changes). */
+    resetCreature: () => void;
     setLastCelebratedStage: (stage: PetStage) => void;
     setCosmetic: (patch: Partial<Pick<PetState, 'background' | 'accessory'>>) => void;
     /** Add to the spendable balance. */
@@ -217,6 +223,7 @@ export const usePetStore = create<PetState>()(
             totalCheckins: 0,
             name: null,
             mintAddress: null,
+            ownerAddress: null,
             mintedAt: null,
             mintTxSignature: null,
             lastCelebratedStage: 1,
@@ -256,6 +263,7 @@ export const usePetStore = create<PetState>()(
                 set({
                     name: name.trim() || null,
                     mintAddress,
+                    ownerAddress: useWalletStore.getState().address ?? null,
                     mintedAt: now,
                     mintTxSignature: mintTxSignature ?? null,
                     stage: 1,
@@ -274,6 +282,43 @@ export const usePetStore = create<PetState>()(
                     causeOfDeath: null,
                     reviveWindowEndsAt: null,
                     guardianExpiresAt: null,
+                });
+            },
+
+            resetCreature: () => {
+                set({
+                    stage: 1,
+                    totalCheckins: 0,
+                    name: null,
+                    mintAddress: null,
+                    ownerAddress: null,
+                    mintedAt: null,
+                    mintTxSignature: null,
+                    lastCelebratedStage: 1,
+                    evolvedAt: null,
+                    background: 'default',
+                    accessory: 'none',
+                    balance: 750,
+                    ownedBackgrounds: ['default'],
+                    ownedAccessories: ['none'],
+                    happiness: 100,
+                    lastFedAt: null,
+                    lastInteractionAt: null,
+                    lastHappinessDecayAt: null,
+                    isDead: false,
+                    isSpectral: false,
+                    deathCount: 0,
+                    deathAt: null,
+                    causeOfDeath: null,
+                    reviveWindowEndsAt: null,
+                    lifeTimerEndsAt: null,
+                    guardianExpiresAt: null,
+                    xp: 0,
+                    level: 1,
+                    reviveTokens: 1,
+                    streakFreezes: 1,
+                    reviveInvites: 0,
+                    dailyFreeUses: { date: todayKey(), count: 0 },
                 });
             },
 

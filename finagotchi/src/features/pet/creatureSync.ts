@@ -7,6 +7,7 @@ import {
     type PetStage,
 } from './store';
 import { useCheckinStore } from '../checkin/store';
+import { useLeagueStore } from '../league/store';
 import { useWalletStore } from '../wallet/store';
 import { useOnboardingStore } from '../onboarding/store';
 import {
@@ -90,6 +91,7 @@ export async function restoreCreatureFromServer(wallet: string): Promise<boolean
     usePetStore.setState({
         name: creature.name,
         mintAddress: creature.mintAddress,
+        ownerAddress: wallet,
         mintTxSignature: creature.mintTxSignature || null,
         mintedAt: new Date(creature.mintedAt).toISOString(),
         totalCheckins: sortedDates.length,
@@ -145,10 +147,34 @@ export async function healServerCreatureRegistration(
 }
 
 /**
+ * Drop all local per-wallet state when the connected wallet changes, so a
+ * different wallet never inherits the previous wallet's creature, streak,
+ * or league score. Server state is untouched; the new wallet's data is
+ * restored (or re-minted through onboarding) right after.
+ */
+function resetPerWalletState(): void {
+    usePetStore.getState().resetCreature();
+    useCheckinStore.setState({
+        history: {},
+        streak: 0,
+        longestStreak: 0,
+        totalCheckins: 0,
+        lastCheckin: null,
+    });
+    useLeagueStore.setState({ score: 0, currentTier: 'Bronze' });
+}
+
+/**
  * Keeps creature identity in sync with the server on wallet connect:
  * restores when local mint data is missing, heals the registry otherwise.
  * Restore during onboarding is handled by OnboardingFlow itself (it needs
  * to reroute the step flow); both paths are idempotent.
+ *
+ * Wallet switching: when the connected wallet differs from the creature's
+ * ownerAddress, local per-wallet state is reset and the new wallet's
+ * creature is restored from the server (or onboarding mints a fresh one).
+ * Legacy installs have no ownerAddress; ownership is verified once against
+ * the server registry before adopting the current wallet as owner.
  */
 export function useCreatureSync() {
     const wallet = useWalletStore((state) => state.address);
@@ -156,9 +182,42 @@ export function useCreatureSync() {
     const ranFor = useRef<string | null>(null);
 
     useEffect(() => {
-        if (!wallet || !consent || ranFor.current === wallet) return;
+        if (!wallet || !consent) return;
+        const pet = usePetStore.getState();
+
+        // The connected wallet is not the creature's owner: reset and
+        // restore for the new wallet.
+        if (pet.ownerAddress && pet.ownerAddress !== wallet) {
+            ranFor.current = wallet;
+            resetPerWalletState();
+            restoreCreatureFromServer(wallet).catch(() => {});
+            return;
+        }
+
+        if (ranFor.current === wallet) return;
         ranFor.current = wallet;
-        if (usePetStore.getState().mintAddress) {
+
+        // Legacy install with a mint but no recorded owner: adopt the
+        // current wallet only if the server registry confirms ownership;
+        // otherwise this wallet switched and local state must be reset.
+        if (pet.mintAddress && !pet.ownerAddress) {
+            fetchNftCreature(wallet, pet.mintAddress)
+                .then(() => {
+                    usePetStore.setState({ ownerAddress: wallet });
+                    healServerCreatureRegistration(wallet).catch(() => {});
+                })
+                .catch((err) => {
+                    if (err instanceof QuestClientError && err.status === 404) {
+                        resetPerWalletState();
+                        restoreCreatureFromServer(wallet).catch(() => {});
+                    }
+                    // Other errors (network): keep current state; the next
+                    // app launch retries the verification.
+                });
+            return;
+        }
+
+        if (pet.mintAddress) {
             healServerCreatureRegistration(wallet).catch(() => {});
         } else {
             restoreCreatureFromServer(wallet).catch(() => {

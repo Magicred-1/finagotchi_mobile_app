@@ -12,10 +12,10 @@ export const EVOLUTION_SCORE = 50;
 export const LEAGUE_TIERS = [
     { name: 'Bronze', rank: 1, color: '#CD7F32', minScore: 0, promotion: 100, demotion: 0 },
     { name: 'Silver', rank: 2, color: '#C0C0C0', minScore: 100, promotion: 250, demotion: 50 },
-    { name: 'Gold', rank: 3, color: '#FFD700', minScore: 250, promotion: 500, demotion: 150 },
-    { name: 'Platinum', rank: 4, color: '#3EB489', minScore: 500, promotion: 750, demotion: 300 },
-    { name: 'Diamond', rank: 5, color: '#B9F2FF', minScore: 750, promotion: 1000, demotion: 500 },
-    { name: 'Whale', rank: 6, color: '#9945FF', minScore: 1000, promotion: 0, demotion: 800 },
+    { name: 'Gold', rank: 3, color: '#E9B846', minScore: 250, promotion: 500, demotion: 150 },
+    { name: 'Platinum', rank: 4, color: '#7ED6A7', minScore: 500, promotion: 750, demotion: 300 },
+    { name: 'Diamond', rank: 5, color: '#8DC9F6', minScore: 750, promotion: 1000, demotion: 500 },
+    { name: 'Whale', rank: 6, color: '#F8B43C', minScore: 1000, promotion: 0, demotion: 800 },
 ] as const;
 
 export type LeagueTierName = (typeof LEAGUE_TIERS)[number]['name'];

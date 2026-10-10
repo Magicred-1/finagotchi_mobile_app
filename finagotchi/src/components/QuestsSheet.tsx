@@ -12,6 +12,7 @@ import type { QuestKind } from '../../../shared/quest-engine';
 import { BottomSheet } from './BottomSheet';
 import { Button } from './Button';
 import { PressableScale } from './PressableScale';
+import { SectionLabel } from './SectionLabel';
 import { useWalletStore } from '../features/wallet/store';
 import { usePetStore } from '../features/pet/store';
 import {
@@ -20,7 +21,14 @@ import {
     useQuestsStore,
     type QuestWithProgress,
 } from '../features/quest-engine';
-import { colors, radius, spacing, typography } from '../theme/tokens';
+import {
+    colors,
+    fonts,
+    radius,
+    spacing,
+    tracking,
+    typography,
+} from '../theme/tokens';
 
 type FilterKind = 'All' | QuestKind;
 
@@ -35,9 +43,9 @@ const KIND_META: Record<
     QuestKind,
     { label: string; icon: string; accent: string }
 > = {
-    count: { label: 'Habit', icon: 'repeat-outline', accent: colors.cyan },
-    streak: { label: 'Streak', icon: 'flame-outline', accent: colors.primary },
-    explore: { label: 'Explore', icon: 'compass-outline', accent: colors.purple },
+    count: { label: 'Habit', icon: 'repeat-outline', accent: colors.primary },
+    streak: { label: 'Streak', icon: 'flame-outline', accent: colors.amber },
+    explore: { label: 'Explore', icon: 'compass-outline', accent: colors.amber },
 };
 
 /** Human copy for the failure banner's most recent rejection reason. */
@@ -199,7 +207,9 @@ export default function QuestsSheet({
                 {/* HERO */}
                 <View style={styles.hero}>
                     <View style={styles.heroCopy}>
-                        <Text style={styles.heroEyebrow}>Daily quests</Text>
+                        <SectionLabel color={colors.primary}>
+                            Daily quests
+                        </SectionLabel>
                         <Text style={styles.heroTitle}>
                             Earn verified rewards with {petName ?? 'Finny'}.
                         </Text>
@@ -256,7 +266,7 @@ export default function QuestsSheet({
                         <Ionicons
                             name="wallet-outline"
                             size={20}
-                            color={colors.cyan}
+                            color={colors.primary}
                         />
                         <View style={styles.deathText}>
                             <Text style={styles.deathTitle}>
@@ -335,7 +345,7 @@ export default function QuestsSheet({
 
                 {/* QUEST LIST */}
                 <View style={styles.sectionHeader}>
-                    <Text style={styles.sectionTitle}>Available</Text>
+                    <SectionLabel>Available</SectionLabel>
                     <Text style={styles.sectionCount}>{activeCount}</Text>
                 </View>
 
@@ -424,7 +434,7 @@ export default function QuestsSheet({
                                             <Ionicons
                                                 name="checkmark-circle"
                                                 size={18}
-                                                color={colors.primary}
+                                                color={colors.success}
                                             />
                                         ) : isLocked ? (
                                             <Ionicons
@@ -537,7 +547,7 @@ const styles = StyleSheet.create({
     hero: {
         width: '100%',
         padding: spacing.md,
-        borderRadius: radius.lg,
+        borderRadius: radius.xl,
         backgroundColor: colors.surface,
         borderWidth: 1,
         borderColor: colors.border,
@@ -546,17 +556,11 @@ const styles = StyleSheet.create({
     heroCopy: {
         gap: spacing.xs,
     },
-    heroEyebrow: {
-        color: colors.primary,
-        fontSize: typography.small,
-        letterSpacing: 0.5,
-        fontFamily: 'Poppins_700Bold',
-        textTransform: 'uppercase',
-    },
     heroTitle: {
-        color: colors.text,
+        color: colors.textStrong,
         fontSize: typography.heading,
-        fontFamily: 'Poppins_800ExtraBold',
+        fontFamily: fonts.bold,
+        letterSpacing: tracking.heading,
     },
     progressWrap: {
         gap: spacing.sm,
@@ -568,18 +572,20 @@ const styles = StyleSheet.create({
     },
     progressLabel: {
         color: colors.textMuted,
-        fontSize: typography.small,
-        fontFamily: 'Poppins_600SemiBold',
+        fontSize: typography.micro,
+        fontFamily: fonts.mono,
+        letterSpacing: tracking.eyebrow,
+        textTransform: 'uppercase',
     },
     progressValue: {
         color: colors.primary,
         fontSize: typography.small,
-        fontFamily: 'Poppins_800ExtraBold',
+        fontFamily: fonts.monoBold,
     },
     progressTrack: {
         height: 8,
         borderRadius: 4,
-        backgroundColor: 'rgba(255,255,255,0.07)',
+        backgroundColor: colors.surfaceLight,
         overflow: 'hidden',
     },
     progressFill: {
@@ -591,9 +597,9 @@ const styles = StyleSheet.create({
         marginTop: spacing.md,
         padding: spacing.md,
         borderRadius: radius.md,
-        backgroundColor: 'rgba(255,100,124,0.10)',
+        backgroundColor: 'rgba(243,111,124,0.08)',
         borderWidth: 1,
-        borderColor: 'rgba(255,100,124,0.20)',
+        borderColor: 'rgba(243,111,124,0.20)',
         flexDirection: 'row',
         alignItems: 'center',
         gap: spacing.md,
@@ -606,9 +612,9 @@ const styles = StyleSheet.create({
         marginTop: spacing.md,
         padding: spacing.md,
         borderRadius: radius.md,
-        backgroundColor: 'rgba(255,209,102,0.10)',
+        backgroundColor: 'rgba(233,184,70,0.08)',
         borderWidth: 1,
-        borderColor: 'rgba(255,209,102,0.25)',
+        borderColor: 'rgba(233,184,70,0.22)',
         flexDirection: 'row',
         alignItems: 'center',
         gap: spacing.sm,
@@ -621,23 +627,23 @@ const styles = StyleSheet.create({
         color: colors.warning,
         fontSize: typography.small,
         lineHeight: 18,
-        fontFamily: 'Poppins_600SemiBold',
+        fontFamily: fonts.semiBold,
     },
     failedBannerReason: {
         color: colors.textMuted,
         fontSize: typography.small,
         lineHeight: 18,
-        fontFamily: 'Poppins_400Regular',
+        fontFamily: fonts.regular,
     },
     deathTitle: {
-        color: colors.text,
+        color: colors.textStrong,
         fontSize: typography.body,
-        fontFamily: 'Poppins_700Bold',
+        fontFamily: fonts.semiBold,
     },
     deathBody: {
         color: colors.textMuted,
         fontSize: typography.small,
-        fontFamily: 'Poppins_400Regular',
+        fontFamily: fonts.regular,
         lineHeight: 18,
     },
     filters: {
@@ -650,18 +656,18 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         justifyContent: 'center',
         borderRadius: radius.pill,
-        backgroundColor: colors.surface,
+        backgroundColor: colors.surfaceLight,
         borderWidth: 1,
         borderColor: colors.border,
     },
     filterActive: {
-        backgroundColor: 'rgba(93,226,166,0.12)',
-        borderColor: 'rgba(93,226,166,0.28)',
+        backgroundColor: 'rgba(141,201,246,0.12)',
+        borderColor: 'rgba(141,201,246,0.30)',
     },
     filterText: {
         color: colors.textMuted,
         fontSize: typography.small,
-        fontFamily: 'Poppins_600SemiBold',
+        fontFamily: fonts.semiBold,
     },
     filterTextActive: {
         color: colors.primary,
@@ -672,19 +678,14 @@ const styles = StyleSheet.create({
         marginBottom: spacing.sm,
         gap: spacing.sm,
     },
-    sectionTitle: {
-        color: colors.text,
-        fontSize: typography.body,
-        fontFamily: 'Poppins_700Bold',
-    },
     sectionCount: {
         paddingHorizontal: spacing.sm,
         paddingVertical: spacing.xs,
         borderRadius: radius.sm,
         color: colors.textMuted,
-        backgroundColor: 'rgba(255,255,255,0.05)',
+        backgroundColor: colors.chip,
         fontSize: typography.small,
-        fontFamily: 'Poppins_600SemiBold',
+        fontFamily: fonts.monoBold,
     },
     questList: {
         gap: spacing.sm,
@@ -703,12 +704,12 @@ const styles = StyleSheet.create({
         fontSize: typography.small,
         lineHeight: 18,
         textAlign: 'center',
-        fontFamily: 'Poppins_400Regular',
+        fontFamily: fonts.regular,
     },
     questCard: {
         minHeight: 108,
         padding: spacing.md,
-        borderRadius: radius.lg,
+        borderRadius: radius.md,
         flexDirection: 'row',
         alignItems: 'center',
         backgroundColor: colors.surface,
@@ -717,17 +718,17 @@ const styles = StyleSheet.create({
         overflow: 'hidden',
     },
     questCardSponsored: {
-        borderColor: 'rgba(153,69,255,0.35)',
-        backgroundColor: 'rgba(153,69,255,0.06)',
+        borderColor: 'rgba(248,180,60,0.35)',
+        backgroundColor: 'rgba(248,180,60,0.06)',
     },
     questCompleted: {
         opacity: 0.6,
-        borderColor: 'rgba(93,226,166,0.25)',
+        borderColor: 'rgba(126,214,167,0.30)',
     },
     questLocked: {
         opacity: 0.65,
-        backgroundColor: 'rgba(255,255,255,0.02)',
-        borderColor: 'rgba(255,255,255,0.05)',
+        backgroundColor: colors.panel,
+        borderColor: colors.borderSoft,
     },
     questIcon: {
         width: 48,
@@ -755,32 +756,32 @@ const styles = StyleSheet.create({
     },
     questCategory: {
         fontSize: 10,
-        letterSpacing: 0.6,
-        fontFamily: 'Poppins_700Bold',
+        letterSpacing: tracking.eyebrow,
+        fontFamily: fonts.mono,
     },
     sponsoredBadge: {
         paddingVertical: 2,
         paddingHorizontal: 6,
         borderRadius: 6,
-        backgroundColor: 'rgba(153,69,255,0.15)',
+        backgroundColor: 'rgba(248,180,60,0.15)',
     },
     sponsoredText: {
-        color: colors.purple,
+        color: colors.amber,
         fontSize: 9,
-        fontFamily: 'Poppins_800ExtraBold',
+        fontFamily: fonts.semiBold,
         textTransform: 'uppercase',
         letterSpacing: 0.4,
     },
     questTitle: {
-        color: colors.text,
+        color: colors.textStrong,
         fontSize: typography.body,
-        fontFamily: 'Poppins_700Bold',
+        fontFamily: fonts.semiBold,
     },
     questDescription: {
         color: colors.textMuted,
         fontSize: typography.small,
         lineHeight: 18,
-        fontFamily: 'Poppins_400Regular',
+        fontFamily: fonts.regular,
     },
     questProgressRow: {
         flexDirection: 'row',
@@ -791,7 +792,7 @@ const styles = StyleSheet.create({
         flex: 1,
         height: 5,
         borderRadius: 3,
-        backgroundColor: 'rgba(255,255,255,0.08)',
+        backgroundColor: colors.surfaceLight,
         overflow: 'hidden',
     },
     questProgressFill: {
@@ -801,7 +802,7 @@ const styles = StyleSheet.create({
     questProgressText: {
         color: colors.textMuted,
         fontSize: typography.small,
-        fontFamily: 'Poppins_700Bold',
+        fontFamily: fonts.mono,
     },
     questBottom: {
         flexDirection: 'row',
@@ -818,28 +819,28 @@ const styles = StyleSheet.create({
         paddingHorizontal: spacing.sm,
         paddingVertical: spacing.xs,
         borderRadius: radius.sm,
-        backgroundColor: 'rgba(255,209,102,0.10)',
+        backgroundColor: colors.chip,
     },
     pointText: {
-        color: colors.warning,
+        color: colors.gold,
         fontSize: typography.small,
-        fontFamily: 'Poppins_700Bold',
+        fontFamily: fonts.monoBold,
     },
     xpPill: {
         paddingHorizontal: spacing.sm,
         paddingVertical: spacing.xs,
         borderRadius: radius.sm,
-        backgroundColor: 'rgba(153,69,255,0.12)',
+        backgroundColor: colors.chip,
     },
     xpText: {
-        color: colors.purple,
+        color: colors.primary,
         fontSize: typography.small,
-        fontFamily: 'Poppins_700Bold',
+        fontFamily: fonts.monoBold,
     },
     claimHint: {
         color: colors.primary,
         fontSize: typography.small,
-        fontFamily: 'Poppins_600SemiBold',
+        fontFamily: fonts.semiBold,
     },
     lockedHintOverlay: {
         position: 'absolute',
@@ -849,12 +850,12 @@ const styles = StyleSheet.create({
         bottom: 0,
         alignItems: 'center',
         justifyContent: 'center',
-        backgroundColor: 'rgba(7,17,31,0.85)',
+        backgroundColor: 'rgba(6,29,61,0.88)',
     },
     lockedHintText: {
-        color: colors.text,
+        color: colors.textStrong,
         fontSize: typography.small,
-        fontFamily: 'Poppins_700Bold',
+        fontFamily: fonts.semiBold,
     },
     footer: {
         alignItems: 'center',
@@ -863,16 +864,16 @@ const styles = StyleSheet.create({
         gap: spacing.xs,
     },
     footerTitle: {
-        color: colors.text,
+        color: colors.textStrong,
         fontSize: typography.small,
         textAlign: 'center',
-        fontFamily: 'Poppins_700Bold',
+        fontFamily: fonts.semiBold,
     },
     footerText: {
         color: colors.textMuted,
         fontSize: typography.small,
         lineHeight: 18,
         textAlign: 'center',
-        fontFamily: 'Poppins_400Regular',
+        fontFamily: fonts.regular,
     },
 });

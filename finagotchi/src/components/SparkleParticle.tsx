@@ -1,6 +1,8 @@
 import React, { useMemo } from 'react';
 import { Path, G } from 'react-native-svg';
 
+import { colors } from '../theme/tokens';
+
 interface SparkleParticleProps {
   index: number;
   total: number;
@@ -41,7 +43,7 @@ export function SparkleParticle({
 
   return (
     <G transform={`translate(${translateX}, ${translateY})`} opacity={opacity}>
-      <Path d={d} fill="#FFD700" />
+      <Path d={d} fill={colors.gold} />
     </G>
   );
 }

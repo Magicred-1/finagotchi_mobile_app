@@ -27,14 +27,14 @@ import { useCreatureSync } from '../src/features/pet/creatureSync';
 import { useUpdateCheck } from '../src/hooks/useUpdateCheck';
 
 import {
-  Poppins_400Regular,
-  Poppins_500Medium,
-  Poppins_600SemiBold,
-  Poppins_700Bold,
-  Poppins_800ExtraBold,
-  Poppins_900Black,
+  DMSans_400Regular,
+  DMSans_500Medium,
+  DMSans_600SemiBold,
+  DMSans_700Bold,
+  DMSans_800ExtraBold,
+  DMSans_900Black,
   useFonts,
-} from '@expo-google-fonts/poppins';
+} from '@expo-google-fonts/dm-sans';
 
 SplashScreen.preventAutoHideAsync();
 
@@ -60,12 +60,12 @@ export default function RootLayout() {
 
 function AppContent() {
   const [fontsLoaded, fontError] = useFonts({
-    Poppins_400Regular,
-    Poppins_500Medium,
-    Poppins_600SemiBold,
-    Poppins_700Bold,
-    Poppins_800ExtraBold,
-    Poppins_900Black,
+    DMSans_400Regular,
+    DMSans_500Medium,
+    DMSans_600SemiBold,
+    DMSans_700Bold,
+    DMSans_800ExtraBold,
+    DMSans_900Black,
   });
 
   const hasCompletedOnboarding = useOnboardingStore(

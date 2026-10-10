@@ -22,8 +22,9 @@ import { BottomSheet } from './BottomSheet';
 import { Button } from './Button';
 import { HardwarePreview } from './HardwarePreview';
 import { PressableScale } from './PressableScale';
+import { SectionLabel } from './SectionLabel';
 import { useWaitlistStore } from '../features/waitlist/store';
-import { colors, radius, spacing, springs, typography } from '../theme/tokens';
+import { colors, fonts, radius, spacing, springs, tracking, typography } from '../theme/tokens';
 
 type Props = {
     visible: boolean;
@@ -316,14 +317,18 @@ export default function WaitlistSheet({ visible, onClose }: Props) {
                                 <HardwarePlaceholder />
                             </Animated.View>
 
-                            <Text style={styles.eyebrow}>Early Access</Text>
+                            <View style={styles.eyebrowWrap}>
+                                <SectionLabel>
+                                    Founder's list · Hardware coming next
+                                </SectionLabel>
+                            </View>
                             <Text style={styles.heroTitle}>
-                                Get early access to Finagotchi hardware
+                                Join the list and reap the reward.
                             </Text>
                             <Text style={styles.heroBody}>
-                                Join the list for the hardware pre-order and
-                                unlock double XP when your companion is bound to
-                                the app.
+                                Be first to hear about Finagotchi devices, new
+                                drops, and the little companions making better
+                                financial habits feel more human.
                             </Text>
 
                             {/* <View style={styles.scarcityPill}>
@@ -344,7 +349,7 @@ export default function WaitlistSheet({ visible, onClose }: Props) {
                             <TextInput
                                 value={email}
                                 onChangeText={setEmail}
-                                placeholder="Enter your email"
+                                placeholder="you@example.com"
                                 placeholderTextColor={colors.textMuted}
                                 style={styles.input}
                                 keyboardType="email-address"
@@ -362,11 +367,15 @@ export default function WaitlistSheet({ visible, onClose }: Props) {
                                 title={
                                     loading
                                         ? 'Joining…'
-                                        : 'Get early access'
+                                        : 'Join waitlist'
                                 }
                                 onPress={handleSubmit}
                                 disabled={loading}
                             />
+
+                            <Text style={styles.reassurance}>
+                                One email, zero spam.
+                            </Text>
 
                             <PressableScale
                                 onPress={handleClose}
@@ -421,10 +430,10 @@ const styles = StyleSheet.create({
         height: 36,
         alignItems: 'center',
         justifyContent: 'center',
-        borderRadius: 12,
+        borderRadius: radius.sm,
         backgroundColor: colors.surfaceLight,
         borderWidth: 1,
-        borderColor: 'rgba(255,255,255,0.10)',
+        borderColor: colors.border,
         zIndex: 10,
     },
     hero: {
@@ -440,27 +449,23 @@ const styles = StyleSheet.create({
     deviceGlow: {
         position: 'absolute',
         borderRadius: 999,
-        backgroundColor: 'rgba(53,215,255,0.08)',
+        backgroundColor: 'rgba(141,201,246,0.10)',
     },
-    eyebrow: {
-        color: colors.primary,
-        fontSize: typography.small,
-        fontFamily: 'Poppins_700Bold',
-        textTransform: 'uppercase',
-        letterSpacing: 1.2,
+    eyebrowWrap: {
         marginBottom: spacing.xs,
     },
     heroTitle: {
-        color: colors.text,
+        color: colors.textStrong,
         fontSize: typography.heading,
-        fontFamily: 'Poppins_800ExtraBold',
+        fontFamily: fonts.bold,
+        letterSpacing: tracking.heading,
         textAlign: 'center',
         marginBottom: spacing.xs,
     },
     heroBody: {
         color: colors.textMuted,
         fontSize: typography.small,
-        fontFamily: 'Poppins_400Regular',
+        fontFamily: fonts.regular,
         textAlign: 'center',
         lineHeight: 20,
         maxWidth: 300,
@@ -473,14 +478,14 @@ const styles = StyleSheet.create({
         paddingVertical: 6,
         paddingHorizontal: 12,
         borderRadius: radius.pill,
-        backgroundColor: 'rgba(255,209,102,0.10)',
+        backgroundColor: 'rgba(233,184,70,0.10)',
         borderWidth: 1,
-        borderColor: 'rgba(255,209,102,0.20)',
+        borderColor: 'rgba(233,184,70,0.20)',
     },
     scarcityText: {
         color: colors.warning,
-        fontSize: 11,
-        fontFamily: 'Poppins_700Bold',
+        fontSize: typography.micro,
+        fontFamily: fonts.medium,
         textTransform: 'uppercase',
         letterSpacing: 0.5,
     },
@@ -489,20 +494,26 @@ const styles = StyleSheet.create({
         marginBottom: spacing.lg,
     },
     input: {
-        backgroundColor: colors.background,
+        backgroundColor: colors.surfaceLight,
         color: colors.text,
         borderWidth: 1,
         borderColor: colors.border,
-        borderRadius: radius.md,
+        borderRadius: radius.sm,
         paddingVertical: spacing.md,
         paddingHorizontal: spacing.lg,
         fontSize: typography.body,
-        fontFamily: 'Poppins_500Medium',
+        fontFamily: fonts.regular,
     },
     error: {
         color: colors.danger,
         fontSize: typography.small,
-        fontFamily: 'Poppins_500Medium',
+        fontFamily: fonts.regular,
+    },
+    reassurance: {
+        color: colors.textMuted,
+        fontSize: typography.small,
+        fontFamily: fonts.regular,
+        textAlign: 'center',
     },
     later: {
         alignItems: 'center',
@@ -511,7 +522,7 @@ const styles = StyleSheet.create({
     laterText: {
         color: colors.textMuted,
         fontSize: typography.body,
-        fontFamily: 'Poppins_600SemiBold',
+        fontFamily: fonts.medium,
     },
     bullets: {
         gap: spacing.sm,
@@ -526,22 +537,22 @@ const styles = StyleSheet.create({
         height: 32,
         alignItems: 'center',
         justifyContent: 'center',
-        borderRadius: 10,
-        backgroundColor: 'rgba(93,226,166,0.08)',
+        borderRadius: radius.sm,
+        backgroundColor: 'rgba(141,201,246,0.10)',
     },
     bulletText: {
         flex: 1,
         gap: 1,
     },
     bulletTitle: {
-        color: colors.text,
+        color: colors.textStrong,
         fontSize: typography.small,
-        fontFamily: 'Poppins_700Bold',
+        fontFamily: fonts.medium,
     },
     bulletBody: {
         color: colors.textMuted,
         fontSize: typography.small,
-        fontFamily: 'Poppins_400Regular',
+        fontFamily: fonts.regular,
         lineHeight: 18,
     },
     success: {
@@ -553,16 +564,17 @@ const styles = StyleSheet.create({
         marginBottom: spacing.md,
     },
     successTitle: {
-        color: colors.text,
+        color: colors.textStrong,
         fontSize: typography.heading,
-        fontFamily: 'Poppins_700Bold',
+        fontFamily: fonts.bold,
+        letterSpacing: tracking.heading,
         textAlign: 'center',
         marginBottom: spacing.sm,
     },
     successBody: {
         color: colors.textMuted,
         fontSize: typography.body,
-        fontFamily: 'Poppins_400Regular',
+        fontFamily: fonts.regular,
         textAlign: 'center',
         lineHeight: 24,
         marginBottom: spacing.xl,
@@ -573,34 +585,34 @@ const styles = StyleSheet.create({
         height: 38,
         alignItems: 'center',
         justifyContent: 'center',
-        borderRadius: 10,
-        backgroundColor: 'rgba(255,209,102,0.12)',
+        borderRadius: radius.sm,
+        backgroundColor: 'rgba(233,184,70,0.12)',
     },
     multiplierText: {
         flex: 1,
         gap: 2,
     },
     multiplierTitle: {
-        color: colors.text,
+        color: colors.textStrong,
         fontSize: typography.small,
-        fontFamily: 'Poppins_700Bold',
+        fontFamily: fonts.medium,
     },
     multiplierBody: {
         color: colors.textMuted,
-        fontSize: 11,
-        fontFamily: 'Poppins_400Regular',
+        fontSize: typography.micro,
+        fontFamily: fonts.regular,
         lineHeight: 16,
     },
     multiplierBadge: {
         paddingVertical: 6,
         paddingHorizontal: 10,
-        borderRadius: 10,
+        borderRadius: radius.sm,
         backgroundColor: colors.warning,
     },
     multiplierBadgeText: {
         color: colors.background,
         fontSize: 14,
-        fontFamily: 'Poppins_800ExtraBold',
+        fontFamily: fonts.semiBold,
     },
     boostPill: {
         flexDirection: 'row',
@@ -610,13 +622,13 @@ const styles = StyleSheet.create({
         paddingVertical: 8,
         paddingHorizontal: 14,
         borderRadius: radius.pill,
-        backgroundColor: 'rgba(255,209,102,0.10)',
+        backgroundColor: 'rgba(233,184,70,0.10)',
         borderWidth: 1,
-        borderColor: 'rgba(255,209,102,0.20)',
+        borderColor: 'rgba(233,184,70,0.20)',
     },
     boostPillText: {
         color: colors.warning,
         fontSize: typography.small,
-        fontFamily: 'Poppins_700Bold',
+        fontFamily: fonts.medium,
     },
 });

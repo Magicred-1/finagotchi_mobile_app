@@ -72,7 +72,7 @@ function Comet({ delay }: { delay: number }) {
 }
 
 /**
- * Waiting-for-sync scene, mirroring the device's own: two cyan comets orbit
+ * Waiting-for-sync scene, mirroring the device's own: two accent comets orbit
  * the pet half a revolution apart over a slowly breathing orbit ring. Shown
  * while the app is scanning/connecting; cleared by the parent as soon as the
  * first state notification arrives.

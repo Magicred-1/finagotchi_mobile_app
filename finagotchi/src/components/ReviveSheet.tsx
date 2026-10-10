@@ -5,13 +5,14 @@ import {
     Text,
     View,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 
 import { BottomSheet } from './BottomSheet';
 import { Button } from './Button';
 import { PressableScale } from './PressableScale';
 import { RadialPet } from './RadialPet';
-import { colors, radius, spacing, typography } from '../theme/tokens';
+import { colors, fonts, radius, spacing, tracking, typography } from '../theme/tokens';
 
 const REMINT_COST_POINTS = 500;
 const GUARDIAN_COST_POINTS = 300;
@@ -90,7 +91,7 @@ export default function ReviveSheet({
                 </Text>
 
                 <View style={styles.costCard}>
-                    <View style={styles.costRow}>
+                    <View style={[styles.costRow, styles.costRowFirst]}>
                         <Text style={styles.costLabel}>Cost</Text>
                         <Text style={styles.costValue}>
                             {reviveTokens > 0
@@ -151,9 +152,26 @@ export default function ReviveSheet({
                             balance < GUARDIAN_COST_POINTS && styles.guardianButtonDisabled,
                         ]}
                     >
-                        <Text style={styles.guardianButtonText}>
-                            Hire a {GUARDIAN_HOURS}h guardian · {GUARDIAN_COST_POINTS} pts
-                        </Text>
+                        <View style={styles.guardianIcon}>
+                            <Ionicons
+                                name="shield-checkmark-outline"
+                                size={18}
+                                color={colors.amber}
+                            />
+                        </View>
+                        <View style={styles.guardianText}>
+                            <Text style={styles.guardianButtonText}>
+                                Hire a {GUARDIAN_HOURS}h guardian
+                            </Text>
+                            <Text style={styles.guardianButtonBody}>
+                                A guardian keeps your companion fed while you're away.
+                            </Text>
+                        </View>
+                        <View style={styles.costPill}>
+                            <Text style={styles.costPillText}>
+                                {GUARDIAN_COST_POINTS} pts
+                            </Text>
+                        </View>
                     </PressableScale>
                 </View>
             </View>
@@ -173,18 +191,21 @@ const styles = StyleSheet.create({
         borderRadius: 60,
         alignItems: 'center',
         justifyContent: 'center',
-        backgroundColor: 'rgba(255,255,255,0.04)',
+        backgroundColor: colors.surface,
+        borderWidth: 1,
+        borderColor: colors.border,
     },
     title: {
-        color: colors.text,
+        color: colors.textStrong,
         fontSize: typography.heading,
-        fontFamily: 'Poppins_800ExtraBold',
+        fontFamily: fonts.bold,
+        letterSpacing: tracking.heading,
         textAlign: 'center',
     },
     body: {
         color: colors.textMuted,
         fontSize: typography.body,
-        fontFamily: 'Poppins_400Regular',
+        fontFamily: fonts.regular,
         textAlign: 'center',
         lineHeight: 24,
         maxWidth: 300,
@@ -193,23 +214,35 @@ const styles = StyleSheet.create({
         width: '100%',
         padding: spacing.lg,
         borderRadius: radius.lg,
-        backgroundColor: colors.background,
-        gap: spacing.sm,
+        backgroundColor: colors.panel,
+        borderWidth: 1,
+        borderColor: colors.border,
     },
     costRow: {
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'center',
+        paddingTop: spacing.sm,
+        marginTop: spacing.sm,
+        borderTopWidth: 1,
+        borderTopColor: colors.borderSoft,
+    },
+    costRowFirst: {
+        paddingTop: 0,
+        marginTop: 0,
+        borderTopWidth: 0,
     },
     costLabel: {
         color: colors.textMuted,
-        fontSize: typography.body,
-        fontFamily: 'Poppins_500Medium',
+        fontSize: typography.micro,
+        fontFamily: fonts.mono,
+        letterSpacing: tracking.eyebrow,
+        textTransform: 'uppercase',
     },
     costValue: {
-        color: colors.text,
+        color: colors.textStrong,
         fontSize: typography.body,
-        fontFamily: 'Poppins_800ExtraBold',
+        fontFamily: fonts.monoBold,
     },
     costValueReady: {
         color: colors.primary,
@@ -218,18 +251,18 @@ const styles = StyleSheet.create({
         marginTop: spacing.sm,
         paddingTop: spacing.sm,
         borderTopWidth: 1,
-        borderTopColor: 'rgba(255,255,255,0.06)',
+        borderTopColor: colors.borderSoft,
     },
     tokenText: {
         color: colors.primary,
         fontSize: typography.small,
-        fontFamily: 'Poppins_700Bold',
+        fontFamily: fonts.medium,
         textAlign: 'center',
     },
     urge: {
-        color: colors.danger,
+        color: colors.gold,
         fontSize: typography.small,
-        fontFamily: 'Poppins_600SemiBold',
+        fontFamily: fonts.medium,
         textAlign: 'center',
     },
     actions: {
@@ -239,25 +272,54 @@ const styles = StyleSheet.create({
     freeText: {
         color: colors.primary,
         fontSize: typography.small,
-        fontFamily: 'Poppins_600SemiBold',
+        fontFamily: fonts.medium,
         textAlign: 'center',
     },
     guardianButton: {
         width: '100%',
+        flexDirection: 'row',
         alignItems: 'center',
-        justifyContent: 'center',
-        paddingVertical: spacing.md,
-        borderRadius: radius.lg,
-        backgroundColor: 'rgba(139,92,246,0.12)',
+        gap: spacing.sm,
+        padding: spacing.md,
+        borderRadius: radius.md,
+        backgroundColor: colors.surface,
         borderWidth: 1,
-        borderColor: 'rgba(139,92,246,0.25)',
+        borderColor: colors.border,
     },
     guardianButtonDisabled: {
         opacity: 0.5,
     },
+    guardianIcon: {
+        width: 36,
+        height: 36,
+        alignItems: 'center',
+        justifyContent: 'center',
+        borderRadius: radius.sm,
+        backgroundColor: 'rgba(248,180,60,0.12)',
+    },
+    guardianText: {
+        flex: 1,
+        gap: 1,
+    },
     guardianButtonText: {
-        color: '#8B5CF6',
+        color: colors.textStrong,
         fontSize: typography.body,
-        fontFamily: 'Poppins_700Bold',
+        fontFamily: fonts.medium,
+    },
+    guardianButtonBody: {
+        color: colors.textMuted,
+        fontSize: typography.small,
+        fontFamily: fonts.regular,
+    },
+    costPill: {
+        paddingVertical: 4,
+        paddingHorizontal: 10,
+        borderRadius: radius.pill,
+        backgroundColor: colors.chip,
+    },
+    costPillText: {
+        color: colors.gold,
+        fontSize: typography.small,
+        fontFamily: fonts.monoBold,
     },
 });

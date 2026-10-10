@@ -57,7 +57,7 @@ const SOLANA_RPC =
 const MINT_TREASURY_ADDRESS = process.env.EXPO_PUBLIC_MINT_TREASURY_ADDRESS;
 
 // Demo amounts until real Metaplex minting is wired.
-const MINT_COST_LAMPORTS = 0.001 * 1_000_000_000;
+export const MINT_COST_LAMPORTS = 0.001 * 1_000_000_000;
 const REVIVE_COST_LAMPORTS = 0.05 * 1_000_000_000;
 
 // Mint price plus a buffer for the network fee. Wallets below this cannot

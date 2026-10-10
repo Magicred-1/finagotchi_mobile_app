@@ -16,8 +16,11 @@ import { Button } from '../../components/Button';
 import { IconButton } from '../../components/IconButton';
 import { PressableScale } from '../../components/PressableScale';
 import { RadialPet } from '../../components/RadialPet';
+import { LandingGradient } from '../../components/LandingGradient';
+import { SectionLabel } from '../../components/SectionLabel';
 import { useWalletStore } from '../wallet/store';
-import { colors, radius, spacing, typography } from '../../theme/tokens';
+import { FadeInUp } from './FadeInUp';
+import { fonts, landing, radius, spacing, tracking, typography } from '../../theme/tokens';
 
 type Props = {
     platform: 'ios' | 'android' | 'web';
@@ -169,7 +172,7 @@ export default function ConnectWalletStep({
                     <TextInput
                         style={[styles.input, styles.otpInput]}
                         placeholder="123456 or ABC123"
-                        placeholderTextColor={colors.textMuted}
+                        placeholderTextColor={landing.placeholder}
                         keyboardType="default"
                         autoCapitalize="characters"
                         autoCorrect={false}
@@ -189,6 +192,7 @@ export default function ConnectWalletStep({
                         onPress={handleVerifyOtp}
                         loading={isLoading('email-verify')}
                         disabled={isBusy}
+                        tone="landing"
                     />
                     <View style={styles.emailActions}>
                         <PressableScale
@@ -217,7 +221,7 @@ export default function ConnectWalletStep({
                         ref={emailInputRef}
                         style={styles.input}
                         placeholder="you@example.com"
-                        placeholderTextColor={colors.textMuted}
+                        placeholderTextColor={landing.placeholder}
                         keyboardType="email-address"
                         autoCapitalize="none"
                         autoComplete="email"
@@ -235,6 +239,7 @@ export default function ConnectWalletStep({
                         loading={isLoading('email-request')}
                         disabled={isBusy}
                         variant="secondary"
+                        tone="landing"
                     />
                 </>
             )}
@@ -243,6 +248,7 @@ export default function ConnectWalletStep({
 
     return (
         <SafeAreaView style={styles.safe}>
+            <LandingGradient />
             <KeyboardAvoidingView
                 style={styles.keyboard}
                 behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
@@ -263,7 +269,7 @@ export default function ConnectWalletStep({
                             },
                         ]}
                     >
-                        <View style={styles.hero}>
+                        <FadeInUp style={styles.hero}>
                             <View
                                 style={[
                                     styles.creatureWrap,
@@ -276,20 +282,23 @@ export default function ConnectWalletStep({
                                     size={isSmall ? 88 : 120}
                                 />
                             </View>
+                            <View style={styles.eyebrowWrap}>
+                                <SectionLabel color={landing.eyebrow}>Connect</SectionLabel>
+                            </View>
                             <Text
                                 style={[
                                     styles.title,
                                     isSmall && styles.titleSmall,
                                 ]}
                             >
-                                Sign in
+                                Your companion lives onchain.
                             </Text>
                             <Text style={styles.body}>
                                 Connect a wallet to mint your Finagotchi.
                             </Text>
-                        </View>
+                        </FadeInUp>
 
-                        <View style={styles.footer}>
+                        <FadeInUp delay={160} style={styles.footer}>
                             {(isSeeker || platform === 'android') && (
                                 <>
                                     <View style={styles.stack}>
@@ -298,11 +307,12 @@ export default function ConnectWalletStep({
                                             onPress={handleMwa}
                                             loading={isLoading('mwa')}
                                             disabled={isBusy}
+                                            tone="landing"
                                             icon={
                                                 <Ionicons
                                                     name="wallet-outline"
                                                     size={20}
-                                                    color="#07111F"
+                                                    color={landing.onAccent}
                                                 />
                                             }
                                         />
@@ -324,31 +334,37 @@ export default function ConnectWalletStep({
                             )}
 
                             <View style={styles.stack}>
+                                <View style={styles.labelWrap}>
+                                    <SectionLabel color={landing.eyebrow}>Continue with</SectionLabel>
+                                </View>
                                 <View style={styles.socialRow}>
                                     {platform === 'ios' && (
                                         <IconButton
-                                            icon={<Ionicons name="logo-apple" size={24} color={colors.text} />}
+                                            icon={<Ionicons name="logo-apple" size={24} color={landing.ink} />}
                                             label="Apple"
                                             onPress={handleApple}
                                             loading={isLoading('apple')}
                                             disabled={isBusy}
+                                            tone="landing"
                                         />
                                     )}
                                     <IconButton
-                                        icon={<Ionicons name="logo-google" size={24} color={colors.text} />}
+                                        icon={<Ionicons name="logo-google" size={24} color={landing.ink} />}
                                         label="Google"
                                         onPress={handleGoogle}
                                         loading={isLoading('google')}
                                         disabled={isBusy}
+                                        tone="landing"
                                     />
                                     <IconButton
-                                        icon={<Ionicons name="mail-outline" size={24} color={colors.text} />}
+                                        icon={<Ionicons name="mail-outline" size={24} color={landing.ink} />}
                                         label="Email"
                                         onPress={() => {
                                             setShowEmail(true);
                                             clearError();
                                         }}
                                         disabled={isBusy}
+                                        tone="landing"
                                     />
                                 </View>
 
@@ -366,11 +382,12 @@ export default function ConnectWalletStep({
                                     loading={isLoading('own-wallet')}
                                     disabled={isBusy}
                                     variant="secondary"
+                                    tone="landing"
                                     icon={
                                         <Ionicons
                                             name="wallet-outline"
                                             size={20}
-                                            color={colors.text}
+                                            color={landing.ink}
                                         />
                                     }
                                 />
@@ -384,7 +401,7 @@ export default function ConnectWalletStep({
                                     {embeddedWalletError}
                                 </Text>
                             ) : null}
-                        </View>
+                        </FadeInUp>
                     </View>
                 </ScrollView>
             </KeyboardAvoidingView>
@@ -395,7 +412,7 @@ export default function ConnectWalletStep({
 const styles = StyleSheet.create({
     safe: {
         flex: 1,
-        backgroundColor: colors.background,
+        backgroundColor: landing.navy,
     },
     keyboard: {
         flex: 1,
@@ -424,20 +441,24 @@ const styles = StyleSheet.create({
         height: 88,
         marginBottom: spacing.sm,
     },
+    eyebrowWrap: {
+        marginBottom: spacing.xs,
+    },
     title: {
-        color: colors.text,
-        fontSize: typography.heading,
-        fontFamily: 'Poppins_800ExtraBold',
+        color: landing.text,
+        fontSize: typography.title,
+        fontFamily: fonts.medium,
+        letterSpacing: tracking.title,
         textAlign: 'center',
         marginBottom: spacing.xs,
     },
     titleSmall: {
-        fontSize: 28,
+        fontSize: 26,
     },
     body: {
-        color: colors.textMuted,
+        color: landing.textMuted,
         fontSize: typography.body,
-        fontFamily: 'Poppins_400Regular',
+        fontFamily: fonts.regular,
         textAlign: 'center',
         lineHeight: 22,
         maxWidth: 280,
@@ -452,6 +473,9 @@ const styles = StyleSheet.create({
         width: '100%',
         gap: spacing.sm,
     },
+    labelWrap: {
+        alignItems: 'center',
+    },
     socialRow: {
         flexDirection: 'row',
         justifyContent: 'center',
@@ -463,14 +487,14 @@ const styles = StyleSheet.create({
         gap: spacing.sm,
         padding: spacing.md,
         borderRadius: radius.md,
-        backgroundColor: colors.surface,
+        backgroundColor: landing.glass,
         borderWidth: 1,
-        borderColor: 'rgba(255,255,255,0.06)',
+        borderColor: landing.glassBorder,
     },
     emailLabel: {
-        color: colors.textMuted,
+        color: landing.textMuted,
         fontSize: typography.small,
-        fontFamily: 'Poppins_500Medium',
+        fontFamily: fonts.medium,
         textAlign: 'center',
         marginBottom: spacing.xs,
     },
@@ -482,20 +506,21 @@ const styles = StyleSheet.create({
     },
     input: {
         width: '100%',
-        minHeight: 48,
+        minHeight: 54,
         borderRadius: radius.sm,
-        paddingHorizontal: spacing.md,
-        backgroundColor: colors.background,
+        paddingHorizontal: 16,
+        paddingVertical: 15,
+        backgroundColor: landing.frostSurface,
         borderWidth: 1,
-        borderColor: colors.border,
-        color: colors.text,
-        fontFamily: 'Poppins_400Regular',
+        borderColor: landing.frostBorder,
+        color: landing.ink,
+        fontFamily: fonts.regular,
         fontSize: typography.body,
     },
     otpInput: {
         textAlign: 'center',
         letterSpacing: 8,
-        fontFamily: 'Poppins_600SemiBold',
+        fontFamily: fonts.semiBold,
         fontSize: 20,
     },
     textButton: {
@@ -505,20 +530,20 @@ const styles = StyleSheet.create({
         justifyContent: 'center',
     },
     textButtonLabel: {
-        color: colors.textMuted,
+        color: landing.textMuted,
         fontSize: typography.body,
-        fontFamily: 'Poppins_600SemiBold',
+        fontFamily: fonts.semiBold,
     },
     error: {
-        color: colors.danger,
+        color: landing.error,
         fontSize: typography.small,
-        fontFamily: 'Poppins_500Medium',
+        fontFamily: fonts.medium,
         textAlign: 'center',
     },
     hint: {
-        color: colors.textMuted,
-        fontSize: 11,
-        fontFamily: 'Poppins_400Regular',
+        color: landing.textMuted,
+        fontSize: typography.micro,
+        fontFamily: fonts.regular,
         textAlign: 'center',
         lineHeight: 18,
     },
@@ -530,13 +555,13 @@ const styles = StyleSheet.create({
     dividerLine: {
         flex: 1,
         height: 1,
-        backgroundColor: colors.border,
+        backgroundColor: landing.glassBorder,
     },
     dividerText: {
-        color: colors.textMuted,
-        fontSize: typography.small,
-        fontFamily: 'Poppins_600SemiBold',
+        color: landing.eyebrow,
+        fontSize: typography.micro,
+        fontFamily: fonts.medium,
         textTransform: 'uppercase',
-        letterSpacing: 1,
+        letterSpacing: tracking.eyebrow,
     },
 });

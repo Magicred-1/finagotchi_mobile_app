@@ -8,7 +8,7 @@ import Animated, {
 } from 'react-native-reanimated';
 
 import { PressableScale } from './PressableScale';
-import { colors, radius, spacing, typography } from '../theme/tokens';
+import { colors, fonts, landing, radius, shadows, spacing, tracking, typography } from '../theme/tokens';
 
 type Props = {
     visible: boolean;
@@ -65,7 +65,7 @@ const styles = StyleSheet.create({
         flex: 1,
         alignItems: 'center',
         justifyContent: 'center',
-        backgroundColor: 'rgba(0,0,0,0.6)',
+        backgroundColor: 'rgba(6,29,61,0.75)',
         padding: spacing.lg,
     },
     card: {
@@ -74,34 +74,37 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         padding: spacing.lg,
         borderRadius: radius.lg,
-        backgroundColor: colors.surface,
+        backgroundColor: landing.navy,
         borderWidth: 1,
-        borderColor: colors.border,
+        borderColor: landing.glassBorderStrong,
+        ...shadows.popup,
     },
     emoji: {
         fontSize: 64,
         marginBottom: spacing.sm,
     },
     title: {
-        color: colors.text,
+        color: colors.textStrong,
         fontSize: typography.heading,
-        fontFamily: 'Poppins_800ExtraBold',
+        fontFamily: fonts.bold,
+        letterSpacing: tracking.heading,
         textAlign: 'center',
     },
     subtitle: {
         color: colors.text,
         fontSize: typography.body,
-        fontFamily: 'Poppins_700Bold',
+        fontFamily: fonts.semiBold,
         textAlign: 'center',
         marginTop: spacing.xs,
     },
     streak: {
-        color: colors.primary,
+        color: colors.amber,
+        fontFamily: fonts.monoBold,
     },
     body: {
         color: colors.textMuted,
         fontSize: typography.small,
-        fontFamily: 'Poppins_400Regular',
+        fontFamily: fonts.regular,
         textAlign: 'center',
         marginTop: spacing.md,
         lineHeight: 20,
@@ -110,12 +113,14 @@ const styles = StyleSheet.create({
         marginTop: spacing.lg,
         paddingVertical: spacing.md,
         paddingHorizontal: spacing.xl,
-        borderRadius: radius.pill,
+        borderRadius: radius.sm,
         backgroundColor: colors.primary,
     },
     buttonText: {
-        color: colors.background,
+        color: colors.onPrimary,
         fontSize: typography.small,
-        fontFamily: 'Poppins_800ExtraBold',
+        fontFamily: fonts.semiBold,
+        letterSpacing: 0.8,
+        textTransform: 'uppercase',
     },
 });

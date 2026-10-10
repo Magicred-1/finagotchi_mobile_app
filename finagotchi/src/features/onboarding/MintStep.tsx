@@ -16,8 +16,13 @@ import Animated, {
 
 import { Button } from '../../components/Button';
 import { RadialPet } from '../../components/RadialPet';
-import { colors, spacing, typography } from '../../theme/tokens';
+import { LandingGradient } from '../../components/LandingGradient';
+import { FadeInUp } from './FadeInUp';
+import { fonts, landing, radius, spacing, tracking, typography } from '../../theme/tokens';
+import { MINT_COST_LAMPORTS } from '../../wallet/useWallet';
 import { FundWalletSheet, type FundingRequest } from './FundWalletSheet';
+
+const MINT_COST_SOL = MINT_COST_LAMPORTS / 1_000_000_000;
 
 type Props = {
     creatureName: string;
@@ -89,6 +94,7 @@ export default function MintStep({
 
     return (
         <SafeAreaView style={styles.safe}>
+            <LandingGradient />
             <View
                 style={[
                     styles.container,
@@ -98,7 +104,7 @@ export default function MintStep({
                     },
                 ]}
             >
-                <View style={styles.content}>
+                <FadeInUp style={styles.content}>
                     <View
                         style={[
                             styles.creatureWrap,
@@ -127,12 +133,30 @@ export default function MintStep({
                         ]}
                     >
                         {isDemo
-                            ? 'Demo account: minting is free and no real NFT is created.'
-                            : 'Minting your creature requires a small SOL fee, and the NFT metadata will be tied to your wallet.'}
+                            ? `Demo account: minting is free and no real NFT is created.`
+                            : `Minting your creature costs ${MINT_COST_SOL} SOL, and the NFT metadata will be tied to your wallet.`}
                     </Text>
-                    <Text style={styles.address}>
-                        Wallet: {truncatedAddress}
-                    </Text>
+
+                    <View style={styles.specPlate}>
+                        <View style={styles.specRow}>
+                            <Text style={styles.specLabel}>Cost</Text>
+                            <Text style={styles.specValueMono}>
+                                {isDemo ? 'Free' : `${MINT_COST_SOL} SOL`}
+                            </Text>
+                        </View>
+                        <View style={[styles.specRow, styles.specRowDivider]}>
+                            <Text style={styles.specLabel}>NFT</Text>
+                            <Text style={styles.specValue}>
+                                {isDemo ? 'Demo only' : 'Tied to your wallet'}
+                            </Text>
+                        </View>
+                        <View style={[styles.specRow, styles.specRowDivider]}>
+                            <Text style={styles.specLabel}>Wallet</Text>
+                            <Text style={styles.specValueMono}>
+                                {truncatedAddress}
+                            </Text>
+                        </View>
+                    </View>
 
                     {status === 'minting' ? (
                         <View style={styles.minting}>
@@ -169,10 +193,10 @@ export default function MintStep({
                     {status === 'error' && error ? (
                         <Text style={styles.error}>{error}</Text>
                     ) : null}
-                </View>
+                </FadeInUp>
 
                 {status !== 'success' ? (
-                    <View style={styles.footer}>
+                    <FadeInUp delay={160} style={styles.footer}>
                         <Button
                             title={
                                 status === 'minting'
@@ -181,8 +205,9 @@ export default function MintStep({
                             }
                             onPress={handleMint}
                             disabled={status === 'minting'}
+                            tone="landing"
                         />
-                    </View>
+                    </FadeInUp>
                 ) : null}
             </View>
 
@@ -203,7 +228,7 @@ export default function MintStep({
 const styles = StyleSheet.create({
     safe: {
         flex: 1,
-        backgroundColor: colors.background,
+        backgroundColor: landing.navy,
     },
     container: {
         flex: 1,
@@ -229,9 +254,10 @@ const styles = StyleSheet.create({
         marginBottom: spacing.sm,
     },
     title: {
-        color: colors.text,
+        color: landing.text,
         fontSize: typography.title,
-        fontFamily: 'Poppins_700Bold',
+        fontFamily: fonts.medium,
+        letterSpacing: tracking.title,
         textAlign: 'center',
         marginBottom: spacing.md,
     },
@@ -242,9 +268,9 @@ const styles = StyleSheet.create({
         fontSize: 24,
     },
     body: {
-        color: colors.textMuted,
+        color: landing.textMuted,
         fontSize: typography.body,
-        fontFamily: 'Poppins_400Regular',
+        fontFamily: fonts.regular,
         textAlign: 'center',
         lineHeight: 24,
         maxWidth: 320,
@@ -254,11 +280,44 @@ const styles = StyleSheet.create({
         fontSize: 14,
         lineHeight: 20,
     },
-    address: {
-        color: colors.textMuted,
+    specPlate: {
+        width: '100%',
+        maxWidth: 320,
+        borderRadius: radius.md,
+        backgroundColor: landing.glass,
+        borderWidth: 1,
+        borderColor: landing.glassBorder,
+        paddingHorizontal: spacing.md,
+    },
+    specRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: spacing.md,
+        paddingVertical: 12,
+    },
+    specRowDivider: {
+        borderTopWidth: 1,
+        borderTopColor: landing.glassBorder,
+    },
+    specLabel: {
+        color: landing.eyebrow,
+        fontSize: typography.micro,
+        fontFamily: fonts.mono,
+        letterSpacing: tracking.eyebrow,
+        textTransform: 'uppercase',
+    },
+    specValue: {
+        color: landing.text,
         fontSize: typography.small,
-        fontFamily: 'Poppins_500Medium',
-        textAlign: 'center',
+        fontFamily: fonts.bold,
+        textAlign: 'right',
+    },
+    specValueMono: {
+        color: landing.text,
+        fontSize: typography.small,
+        fontFamily: fonts.monoBold,
+        textAlign: 'right',
     },
     minting: {
         marginTop: spacing.xl,
@@ -272,9 +331,9 @@ const styles = StyleSheet.create({
         justifyContent: 'center',
     },
     mintingText: {
-        color: colors.primary,
+        color: landing.accent,
         fontSize: typography.body,
-        fontFamily: 'Poppins_600SemiBold',
+        fontFamily: fonts.semiBold,
     },
     success: {
         marginTop: spacing.xl,
@@ -288,16 +347,17 @@ const styles = StyleSheet.create({
         justifyContent: 'center',
     },
     successText: {
-        color: colors.primary,
+        color: landing.text,
         fontSize: typography.heading,
-        fontFamily: 'Poppins_700Bold',
+        fontFamily: fonts.medium,
+        letterSpacing: tracking.heading,
         textAlign: 'center',
     },
     error: {
         marginTop: spacing.xl,
-        color: colors.danger,
+        color: landing.error,
         fontSize: typography.body,
-        fontFamily: 'Poppins_500Medium',
+        fontFamily: fonts.medium,
         textAlign: 'center',
         maxWidth: 320,
     },

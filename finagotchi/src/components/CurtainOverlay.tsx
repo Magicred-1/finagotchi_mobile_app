@@ -22,7 +22,7 @@ type Props = {
 
 export default function CurtainOverlay({
     active,
-    color = colors.primary,
+    color = colors.panel,
     coverDuration = 280,
     revealDuration = 320,
     onCovered,
