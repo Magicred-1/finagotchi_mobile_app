@@ -45,7 +45,7 @@ import DeathOverlay from '../../src/components/DeathOverlay';
 import ReviveSheet from '../../src/components/ReviveSheet';
 import CommunityResurrectSheet from '../../src/components/CommunityResurrectSheet';
 import { ConnectDeviceSheet } from '../../src/components/ConnectDeviceSheet';
-import { DCAHome } from '../../src/screens/dca/DCAHome';
+import { EarnHome } from '../../src/screens/earn/EarnHome';
 import { useDcaSyncEngine } from '../../src/services/ble/SyncEngine';
 import { dcaEvents, useDcaUiStore } from '../../src/services/dca';
 import { MILESTONES, useCheckinStore } from '../../src/features/checkin/store';
@@ -965,7 +965,7 @@ export default function HomeScreen() {
             </PressableScale>
           </Animated.View>
 
-          {/* DCA PROMO */}
+          {/* EARN PROGRAMS: Swap / DCA Plan switch */}
           <Animated.View
             style={styles.dcaCardWrap}
             entering={FadeInDown.withInitialValues({
@@ -976,7 +976,7 @@ export default function HomeScreen() {
               .duration(260)
               .reduceMotion(ReduceMotion.System)}
           >
-            <DCAHome />
+            <EarnHome />
           </Animated.View>
 
           {/* ACTION BAR: icon buttons flanking the big Check in CTA.

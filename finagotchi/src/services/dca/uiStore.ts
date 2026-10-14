@@ -31,14 +31,18 @@ type DcaUiState = {
     wizardPrefill: DcaWizardPrefill | null;
     /** Recreate target (`dca:pause` on a paused plan); null otherwise. */
     wizardRecreate: DcaWizardRecreate | null;
+    /** Who asked — hardware device (default) or a quest-card redirect. */
+    wizardSource: 'device' | 'quest';
     requestWizardOpen: (request?: {
         prefill?: DcaWizardPrefill;
         recreate?: DcaWizardRecreate;
+        source?: 'device' | 'quest';
     }) => void;
     /** Reads and clears the wizard-open request (DCAHome consumes it). */
     consumeWizardOpen: () => {
         prefill: DcaWizardPrefill | null;
         recreate: DcaWizardRecreate | null;
+        source: 'device' | 'quest';
     } | null;
     /** Set when the device asks to open a plan's detail (`dca:pause` on an active plan). */
     detailOpenRequested: boolean;
@@ -66,12 +70,14 @@ export const useDcaUiStore = create<DcaUiState>()((set, get) => ({
     wizardOpenRequested: false,
     wizardPrefill: null,
     wizardRecreate: null,
+    wizardSource: 'device',
 
     requestWizardOpen: (request) => {
         set({
             wizardOpenRequested: true,
             wizardPrefill: request?.prefill ?? null,
             wizardRecreate: request?.recreate ?? null,
+            wizardSource: request?.source ?? 'device',
         });
     },
 
@@ -79,12 +85,14 @@ export const useDcaUiStore = create<DcaUiState>()((set, get) => ({
         if (!get().wizardOpenRequested) return null;
         const prefill = get().wizardPrefill;
         const recreate = get().wizardRecreate;
+        const source = get().wizardSource;
         set({
             wizardOpenRequested: false,
             wizardPrefill: null,
             wizardRecreate: null,
+            wizardSource: 'device',
         });
-        return { prefill, recreate };
+        return { prefill, recreate, source };
     },
 
     detailOpenRequested: false,

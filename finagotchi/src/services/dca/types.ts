@@ -55,6 +55,14 @@ export const USDC_MINT = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v';
 export const USDC_DECIMALS = 6;
 
 /**
+ * Jupiter DCA program — the starter quest "Plant a Seed" watches it, and
+ * quest cards key their redirect target off it (it is in the quest engine's
+ * EXPLORE_CANDIDATES, so plan txs are whitelisted for ingest/verification).
+ */
+export const JUPITER_DCA_PROGRAM_ID =
+    'DCA265Vj8a9CEuX1eb1LWRnDT7uK6q1xMipnNyatn23M';
+
+/**
  * Supported tokenized stocks (Backed xStocks). This is the ONLY set the
  * wizard may offer — arbitrary mints are not accepted.
  */

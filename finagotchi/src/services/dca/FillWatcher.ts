@@ -9,6 +9,7 @@
  */
 
 import { useEffect } from 'react';
+import type { AppStateStatic } from 'react-native/Libraries/AppState/AppState';
 
 import { usePlanStore } from './PlanStore';
 import { DcaReauthRequiredError } from './JupiterDcaClient';
@@ -343,8 +344,13 @@ export function useFillWatcher(): void {
         // removed PushNotificationIOS), which throws a fatal invariant on iOS
         // release builds.
         void import('react-native/Libraries/AppState/AppState').then(
-            ({ AppState }) => {
+            (mod) => {
                 if (cancelled) return;
+                // RN 0.81's JS exports AppState as the default export while
+                // its .d.ts declares a named export; accept either shape.
+                const AppState: AppStateStatic =
+                    (mod as unknown as { default?: AppStateStatic }).default ??
+                    mod.AppState;
                 subscription = AppState.addEventListener('change', (state) => {
                     if (state === 'active') {
                         void watcher.poll();

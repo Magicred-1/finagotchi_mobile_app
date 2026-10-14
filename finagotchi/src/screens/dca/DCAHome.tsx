@@ -199,17 +199,20 @@ export function DCAHome() {
         const request = useDcaUiStore.getState().consumeWizardOpen();
         if (!request) return;
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        // Quest redirects arrive with their own context (the card the user
+        // just tapped) — the hardware toast would mislabel them.
+        const fromDevice = request.source !== 'quest';
 
         // `dca:pause` on a paused plan: resume = recreate (review + sign).
         if (request.recreate) {
-            showDeviceToast('Device asked to resume a plan');
+            if (fromDevice) showDeviceToast('Device asked to resume a plan');
             setWizardPrefill(null);
             setWizardRecreate(request.recreate);
             setWizardOpen(true);
             return;
         }
 
-        showDeviceToast('Device requested DCA');
+        if (fromDevice) showDeviceToast('Device requested DCA');
         const prefill = request.prefill;
         if (!prefill) {
             setWizardRecreate(null);

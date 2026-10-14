@@ -9,6 +9,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 
 import type { QuestKind } from '../../../shared/quest-engine';
+import { EXPLORE_CANDIDATES } from '../../../shared/quest-engine';
 import { BottomSheet } from './BottomSheet';
 import { Button } from './Button';
 import { PressableScale } from './PressableScale';
@@ -22,8 +23,15 @@ import {
     type QuestWithProgress,
 } from '../features/quest-engine';
 import {
+    JUPITER_DCA_PROGRAM_ID,
+    useDcaUiStore,
+} from '../services/dca';
+import { JUPITER_SWAP_PROGRAM_ID } from '../services/swap';
+import { useEarnUiStore, type EarnProgram } from '../screens/earn/earnUiStore';
+import {
     colors,
     fonts,
+    landing,
     radius,
     spacing,
     tracking,
@@ -64,6 +72,27 @@ function failureReasonCopy(reason: string): string {
 }
 
 type QuestStatus = 'active' | 'claiming' | 'credited' | 'locked';
+
+/**
+ * Quests whose program has an in-app flow: tapping an unfinished card jumps
+ * straight into it. Programs without one (Orca, Marinade) keep the
+ * tap-hint overlay.
+ */
+const QUEST_FLOW_BY_PROGRAM: Record<string, EarnProgram> = {
+    [JUPITER_SWAP_PROGRAM_ID]: 'swap',
+    [JUPITER_DCA_PROGRAM_ID]: 'dca',
+};
+
+/** Program display names for the external-venue hint copy. */
+const PROGRAM_NAMES: Record<string, string> = Object.fromEntries(
+    EXPLORE_CANDIDATES.map((candidate) => [candidate.programId, candidate.name])
+);
+
+/**
+ * Gap between the quests sheet closing and the target sheet opening —
+ * overlapping portal sheets fight for the same window (close anim ~200ms).
+ */
+const SHEET_HANDOFF_MS = 260;
 
 type Props = {
     visible: boolean;
@@ -186,6 +215,24 @@ export default function QuestsSheet({
                 });
                 void useClaimQueue.getState().flush();
             }
+            return;
+        }
+
+        // Unfinished quest with an in-app flow: redirect straight into it —
+        // close this sheet, slide the earn pager onto the program, and open
+        // its flow (swap sheet / DCA wizard) once the close animation clears.
+        const flow = QUEST_FLOW_BY_PROGRAM[quest.programId];
+        if (quest.status === 'active' && flow && isWalletConnected && !isDead) {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            onClose();
+            setTimeout(() => {
+                useEarnUiStore.getState().requestProgram(flow);
+                if (flow === 'dca') {
+                    useDcaUiStore
+                        .getState()
+                        .requestWizardOpen({ source: 'quest' });
+                }
+            }, SHEET_HANDOFF_MS);
             return;
         }
 
@@ -375,6 +422,13 @@ export default function QuestsSheet({
                         const tappedInactive =
                             recentlyTappedId === quest.id &&
                             (isLocked || quest.status === 'active');
+                        const flow = QUEST_FLOW_BY_PROGRAM[quest.programId];
+                        // Tappable straight into the flow that finishes it.
+                        const isActionable =
+                            quest.status === 'active' &&
+                            flow !== undefined &&
+                            isWalletConnected &&
+                            !isDead;
                         const questPercent =
                             quest.goal > 0
                                 ? Math.min(100, (quest.current / quest.goal) * 100)
@@ -502,6 +556,21 @@ export default function QuestsSheet({
                                                     : 'Tap to verify'}
                                             </Text>
                                         ) : null}
+
+                                        {isActionable ? (
+                                            <View style={styles.goPill}>
+                                                <Text style={styles.goPillText}>
+                                                    {flow === 'swap'
+                                                        ? 'Open Swap'
+                                                        : 'Open DCA'}
+                                                </Text>
+                                                <Ionicons
+                                                    name="arrow-forward"
+                                                    size={11}
+                                                    color={landing.accent}
+                                                />
+                                            </View>
+                                        ) : null}
                                     </View>
                                 </View>
 
@@ -509,8 +578,10 @@ export default function QuestsSheet({
                                     <View style={styles.lockedHintOverlay}>
                                         <Text style={styles.lockedHintText}>
                                             {isLocked
-                                                ? 'Complete the requirement first'
-                                                : 'Do it on-chain to complete this quest'}
+                                                ? !isWalletConnected
+                                                    ? 'Connect your wallet first'
+                                                    : 'Revive your pet to earn rewards'
+                                                : `Complete it on ${PROGRAM_NAMES[quest.programId] ?? 'the venue'}, progress counts automatically`}
                                         </Text>
                                     </View>
                                 ) : null}
@@ -839,6 +910,22 @@ const styles = StyleSheet.create({
     },
     claimHint: {
         color: colors.primary,
+        fontSize: typography.small,
+        fontFamily: fonts.semiBold,
+    },
+    goPill: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 4,
+        paddingHorizontal: spacing.sm,
+        paddingVertical: spacing.xs,
+        borderRadius: radius.pill,
+        backgroundColor: 'rgba(141,201,246,0.10)',
+        borderWidth: 1,
+        borderColor: 'rgba(141,201,246,0.35)',
+    },
+    goPillText: {
+        color: landing.accent,
         fontSize: typography.small,
         fontFamily: fonts.semiBold,
     },

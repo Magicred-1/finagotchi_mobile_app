@@ -23,6 +23,7 @@ import {
 import { useWallet } from '../../wallet/useWallet';
 import { Button } from '../../components/Button';
 import { PressableScale } from '../../components/PressableScale';
+import { Skeleton } from '../../components/Skeleton';
 import {
     colors,
     radius,
@@ -324,7 +325,14 @@ export function DCADetail({ planId, onClose }: Props) {
                                 {`  ${formatChange(quote.change24h)}`}
                             </Text>
                         </Text>
-                    ) : null}
+                    ) : (
+                        <Skeleton
+                            width={92}
+                            height={11}
+                            borderRadius={6}
+                            style={styles.headerQuoteSkeleton}
+                        />
+                    )}
                 </View>
             </View>
 
@@ -480,6 +488,9 @@ const styles = StyleSheet.create({
     },
     headerQuoteDown: {
         color: colors.heart,
+    },
+    headerQuoteSkeleton: {
+        marginTop: 3,
     },
     body: {
         // Horizontal padding comes from the BottomSheet container.

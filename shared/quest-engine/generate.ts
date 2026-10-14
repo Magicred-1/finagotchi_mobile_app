@@ -27,14 +27,17 @@ export interface ExploreCandidate {
 /**
  * Well-known mainnet programs offered as explore/sponsored quests. Fixed order
  * matters (the explore-roll indexes into this array — part of the protocol).
- * Append-only: the server derives its default WATCHED_PROGRAMS allowlist from
- * this list and the app derives observe.ts's WATCHED_PROGRAM_IDS from it, so
- * an entry here is whitelisted for ingest/backfill/verification on both sides.
- * Includes the Jupiter classic DCA program — the app's own core onchain flow.
+ * The server derives its default WATCHED_PROGRAMS allowlist from this list and
+ * the app derives observe.ts's WATCHED_PROGRAM_IDS from it, so an entry here is
+ * whitelisted for ingest/backfill/verification on both sides. Includes the
+ * Jupiter classic DCA program — the app's own core onchain flow.
+ *
+ * Changing this list (add/remove/reorder) is a BREAKING protocol change: quest
+ * ids are position-based, so app and server must run the same revision or
+ * generation and verification desync. Ship both sides together.
  */
 export const EXPLORE_CANDIDATES: readonly ExploreCandidate[] = [
   { programId: 'JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4', name: 'Jupiter', sponsor: 'Jupiter' },
-  { programId: '675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8', name: 'Raydium', sponsor: 'Raydium' },
   { programId: 'whirLbMiicVdio4qvUfM5KAg6Ct8VwpYzGff3uctyCc', name: 'Orca', sponsor: 'Orca' },
   { programId: 'MarBmsSgKXdrN1egZf5sqG1W9CasPJmPsoCJokbpEpq', name: 'Marinade', sponsor: 'Marinade' },
   { programId: 'DCA265Vj8a9CEuX1eb1LWRnDT7uK6q1xMipnNyatn23M', name: 'Jupiter DCA', sponsor: 'Jupiter' },
@@ -223,16 +226,6 @@ export const COHORT_DEFAULT_QUESTS: readonly CohortQuest[] = [
     xp: EXPLORE_XP,
     title: 'Plant a Seed',
     description: 'Create your first Jupiter DCA plan and let it grow on autopilot.',
-  },
-  {
-    programId: '675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8',
-    name: 'Raydium',
-    sponsor: 'Raydium',
-    kind: 'explore',
-    goal: 1,
-    xp: EXPLORE_XP,
-    title: 'New Waters',
-    description: "Try a transaction on Raydium to widen your creature's world.",
   },
   {
     programId: 'JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4',

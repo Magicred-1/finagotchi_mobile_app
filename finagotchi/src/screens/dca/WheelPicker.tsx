@@ -37,6 +37,8 @@ export type WheelItem = {
     /** Right-aligned second line, tinted success/heart by `trailingUp`. */
     trailingSubtitle?: string;
     trailingUp?: boolean;
+    /** Right-aligned node — overrides the trailing text pair when set. */
+    trailing?: React.ReactNode;
 };
 
 type Props = {
@@ -126,7 +128,9 @@ function WheelRow({
                         </Text>
                     ) : null}
                 </View>
-                {item.trailingTitle ? (
+                {item.trailing ? (
+                    item.trailing
+                ) : item.trailingTitle ? (
                     <View style={styles.rowTrailingCol}>
                         <Text
                             style={[

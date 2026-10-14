@@ -92,6 +92,13 @@ export type Wallet = {
     signMessage: (message: string) => Promise<string>;
     /** Signs (without sending) a base64 VersionedTransaction; returns base64. */
     signTransaction: (base64Tx: string) => Promise<string>;
+    /**
+     * Signs (without sending) a base64 v0 transaction AS-IS — no legacy
+     * conversion. Required by Jupiter Swap /execute, which validates the
+     * signed bytes against the cached order and rejects the rewritten legacy
+     * shape signTransaction produces for Trigger crafts.
+     */
+    signVersionedTransaction: (base64Tx: string) => Promise<string>;
     /** True only for Dynamic embedded wallets — the only connection whose key the app can export. MWA wallets hold their own keys. */
     canExportPrivateKey: boolean;
     /** Dynamic only: opens Dynamic's secure key-export modal. */
@@ -620,6 +627,90 @@ export const signTransactionWithWallet = withHumanReadableErrors(
                           verifySignatures: false,
                       });
             return Buffer.from(bytes).toString('base64');
+        });
+    }
+
+    throw new Error('No active wallet connection');
+    }
+);
+
+/**
+ * Serializes whatever the wallet returned (its own web3.js copy or a rebuilt
+ * transaction) to base64, tolerating missing non-user signatures.
+ */
+function serializeWalletTx(signed: Transaction | VersionedTransaction): string {
+    const bytes =
+        'version' in signed
+            ? signed.serialize()
+            : signed.serialize({
+                  requireAllSignatures: false,
+                  verifySignatures: false,
+              });
+    return Buffer.from(bytes).toString('base64');
+}
+
+/**
+ * Signs (WITHOUT sending) a base64 v0 transaction AS-IS — no legacy
+ * conversion, no account-order tricks. Jupiter Swap's /execute validates the
+ * signed transaction against the cached order, so the bytes must stay exactly
+ * what /order crafted (unlike Trigger DCA deposits, which only validate
+ * semantically and get the legacy treatment in signTransactionWithWallet).
+ *
+ * A wallet that still rewrites the v0 payload (Seeker's Lighthouse
+ * assertion) will fail at /execute with "invalid transaction" — that error
+ * is surfaced to the user, not repaired here.
+ */
+export const signVersionedTransaction = withHumanReadableErrors(
+    async (base64Tx: string): Promise<string> => {
+    const { session } = useWalletStore.getState();
+    const transaction = deserializeVersionedTx(base64Tx);
+
+    if (session.connectionType === 'dynamic') {
+        await ensureDynamicSignerReady();
+        const dynamicWallet = findDynamicSolanaWallet();
+        const signer = dynamicClient.solana.getSigner({ wallet: dynamicWallet });
+        const signed = await withTimeout(
+            signer.signTransaction(
+                transaction as unknown as Parameters<typeof signer.signTransaction>[0]
+            ),
+            WALLET_SIGNING_TIMEOUT_MS,
+            'The wallet never answered the signature request — please try again.'
+        );
+        return serializeWalletTx(signed as unknown as Transaction | VersionedTransaction);
+    }
+
+    if (session.connectionType === 'external') {
+        const { address } = useWalletStore.getState();
+        if (!address) {
+            throw new Error('Wallet not connected');
+        }
+        const signed = await withTimeout(
+            signTransactionWithExternalWallet(address, transaction),
+            WALLET_SIGNING_TIMEOUT_MS,
+            'The wallet never answered the signature request — please try again.'
+        );
+        return serializeWalletTx(signed);
+    }
+
+    if (session.connectionType === 'mwa') {
+        const transact = await loadMwaTransact();
+        return transact(async (wallet: Web3MobileWallet) => {
+            // Jupiter swap orders are mainnet transactions; authorize a fresh
+            // mainnet session or the wallet "fixes" the cluster mismatch by
+            // rewriting the transaction (which /execute then rejects).
+            await mwaAuthorize(wallet, 'solana:mainnet');
+
+            const [signed] = await wallet.signTransactions({
+                transactions: [
+                    transaction as unknown as Parameters<
+                        typeof wallet.signTransactions
+                    >[0]['transactions'][number],
+                ],
+            });
+            if (!signed) {
+                throw new Error('MWA did not return a signed transaction');
+            }
+            return serializeWalletTx(signed as Transaction | VersionedTransaction);
         });
     }
 
@@ -1192,6 +1283,7 @@ export function useWallet(): Wallet {
             signAndSendTransaction,
             signMessage: signMessageWithWallet,
             signTransaction: signTransactionWithWallet,
+            signVersionedTransaction,
             canExportPrivateKey,
             exportPrivateKey: exportPrivateKeyWithWallet,
             disconnect,

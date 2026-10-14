@@ -13,6 +13,7 @@ import * as Haptics from 'expo-haptics';
 import { ScrollView } from 'react-native-gesture-handler';
 import Animated, {
     Easing,
+    FadeInDown,
     ReduceMotion,
     runOnJS,
     useAnimatedStyle,
@@ -23,10 +24,14 @@ import Animated, {
 
 import { BottomSheet } from '../../components/BottomSheet';
 import { Button } from '../../components/Button';
+import { FitText } from '../../components/FitText';
 import { PressableScale } from '../../components/PressableScale';
 import { SectionLabel } from '../../components/SectionLabel';
+import { SegmentedControl } from '../../components/SegmentedControl';
+import { StepDots } from '../../components/StepDots';
 import {
     CADENCE_OPTIONS,
+    JUPITER_DCA_PROGRAM_ID,
     SUPPORTED_TOKENS,
     cancelPlanOrder,
     createPlanOrder,
@@ -40,6 +45,7 @@ import { useClaimQueue, useQuestsStore } from '../../features/quest-engine';
 import { useWallet } from '../../wallet/useWallet';
 import {
     colors,
+    fonts,
     landing,
     radius,
     spacing,
@@ -72,9 +78,6 @@ const PERCENT_PRESETS = [5, 10, 25, 50];
 /** Jupiter enforces a $10 minimum per executed round. */
 const MIN_ROUND_USD = 10;
 
-/** Jupiter DCA program — the starter quest "Plant a Seed" watches it. */
-const JUPITER_DCA_PROGRAM_ID = 'DCA265Vj8a9CEuX1eb1LWRnDT7uK6q1xMipnNyatn23M';
-
 const CADENCE_NOUNS: Record<CadenceId, string> = {
     daily: 'day',
     weekly: 'week',
@@ -84,6 +87,19 @@ const CADENCE_NOUNS: Record<CadenceId, string> = {
 
 const STEP_OUT = { duration: 150, easing: Easing.out(Easing.cubic) } as const;
 const STEP_IN = { duration: 200, easing: Easing.out(Easing.cubic) } as const;
+
+/** Per-block entrance stagger inside a step (on top of the step fade). */
+const STAGGER_MS = 50;
+
+function staggerIn(index: number) {
+    return FadeInDown.withInitialValues({
+        opacity: 0,
+        transform: [{ translateY: 8 }],
+    })
+        .delay(index * STAGGER_MS)
+        .duration(220)
+        .reduceMotion(ReduceMotion.System);
+}
 
 /** Submit-progress copy per create/cancel stage (shown while submitting). */
 const STEP_LABELS: Record<PlanOrderStep, string> = {
@@ -116,8 +132,6 @@ const FACTS = [
     },
 ] as const;
 
-const SEGMENTED_PAD = 3;
-
 /** Short cadence segment labels (the math card carries the plain-English). */
 const CADENCE_SHORT: Record<CadenceId, string> = {
     daily: 'Daily',
@@ -143,120 +157,9 @@ const PERCENT_SEGMENTS = PERCENT_PRESETS.map((preset) => ({
 }));
 
 /**
- * iOS segmented control: mutually exclusive short options on one row, a
- * sliding indicator springing between segments. One selection idiom for the
- * whole wizard (cadence, amount presets); the drum wheel covers long lists.
+ * iOS segmented control lives in components/SegmentedControl.tsx and the
+ * progress dots in components/StepDots.tsx — both shared with the Swap wizard.
  */
-function SegmentedControl({
-    options,
-    value,
-    onChange,
-    disabledIds,
-}: {
-    options: readonly { id: string; label: string }[];
-    value: string;
-    onChange: (id: string) => void;
-    /** Dimmed and non-selectable segments (e.g. below the Jupiter minimum). */
-    disabledIds?: ReadonlySet<string>;
-}) {
-    const [width, setWidth] = useState(0);
-    const x = useSharedValue(0);
-    // A free-form value (slider-set percent) may match no segment: hide the
-    // indicator rather than highlighting the wrong one.
-    const selectedIndex = options.findIndex((option) => option.id === value);
-    const index = Math.max(0, selectedIndex);
-    const segWidth = (width - SEGMENTED_PAD * 2) / options.length;
-
-    useEffect(() => {
-        if (segWidth <= 0) return;
-        x.value = withSpring(index * segWidth, springs.snappy);
-    }, [index, segWidth, x]);
-
-    const indicatorStyle = useAnimatedStyle(() => ({
-        transform: [{ translateX: x.value }],
-    }));
-
-    return (
-        <View
-            style={styles.segmented}
-            onLayout={(event) => {
-                const w = event.nativeEvent.layout.width;
-                // First measure: land directly on the selected segment so the
-                // indicator never sweeps in from the left on open.
-                if (width === 0 && w > 0) {
-                    x.value =
-                        index * ((w - SEGMENTED_PAD * 2) / options.length);
-                }
-                setWidth(w);
-            }}
-        >
-            {segWidth > 0 && selectedIndex >= 0 ? (
-                <Animated.View
-                    style={[
-                        styles.segmentIndicator,
-                        { width: segWidth },
-                        indicatorStyle,
-                    ]}
-                />
-            ) : null}
-            {options.map((option) => {
-                const selected = option.id === value;
-                const disabled = disabledIds?.has(option.id) ?? false;
-                return (
-                    <PressableScale
-                        key={option.id}
-                        disabled={disabled}
-                        onPress={() => {
-                            Haptics.selectionAsync();
-                            onChange(option.id);
-                        }}
-                        style={[
-                            styles.segment,
-                            disabled && styles.segmentDisabled,
-                        ]}
-                    >
-                        <Text
-                            style={[
-                                styles.segmentText,
-                                selected && styles.segmentTextSelected,
-                            ]}
-                        >
-                            {option.label}
-                        </Text>
-                    </PressableScale>
-                );
-            })}
-        </View>
-    );
-}
-
-function StepDots({ step }: { step: number }) {
-    return (
-        <View style={styles.dots}>
-            {STEP_TITLES.map((title, index) => (
-                <StepDot key={title} active={index <= step} />
-            ))}
-        </View>
-    );
-}
-
-function StepDot({ active }: { active: boolean }) {
-    const width = useSharedValue(active ? 18 : 8);
-
-    useEffect(() => {
-        width.value = withSpring(active ? 18 : 8, {
-            ...springs.snappy,
-            reduceMotion: ReduceMotion.System,
-        });
-    }, [active, width]);
-
-    const style = useAnimatedStyle(() => ({
-        width: width.value,
-        opacity: 0.4 + (width.value - 8) / 10 * 0.6,
-    }));
-
-    return <Animated.View style={[styles.dot, style]} />;
-}
 
 /**
  * The "what you're signing up for" sentence, shared by the Review and
@@ -550,7 +453,7 @@ export function DCAWizardSheet({
                 <SectionLabel>
                     {`Step ${step + 1} of ${STEP_TITLES.length}`}
                 </SectionLabel>
-                <StepDots step={step} />
+                <StepDots count={STEP_TITLES.length} step={step} />
             </View>
 
             <Text style={styles.stepSubtitle}>{STEP_SUBTITLES[step]}</Text>
@@ -593,219 +496,287 @@ export function DCAWizardSheet({
 
                     {step === 1 && (
                         <View style={styles.section}>
-                            <Text style={styles.sectionLabel}>
-                                Total budget
-                            </Text>
-                            <SegmentedControl
-                                options={BUDGET_SEGMENTS}
-                                value={String(budget)}
-                                onChange={(id) => setBudget(Number(id))}
-                                disabledIds={
-                                    new Set(
-                                        BUDGET_OPTIONS.filter(
-                                            (option) =>
-                                                (option * percent) / 100 <
-                                                MIN_ROUND_USD
-                                        ).map(String)
-                                    )
-                                }
-                            />
+                            <Animated.View
+                                entering={staggerIn(0)}
+                                style={styles.section}
+                            >
+                                <Text style={styles.sectionLabel}>
+                                    Total budget
+                                </Text>
+                                <SegmentedControl
+                                    options={BUDGET_SEGMENTS}
+                                    value={String(budget)}
+                                    onChange={(id) => setBudget(Number(id))}
+                                    disabledIds={
+                                        new Set(
+                                            BUDGET_OPTIONS.filter(
+                                                (option) =>
+                                                    (option * percent) / 100 <
+                                                    MIN_ROUND_USD
+                                            ).map(String)
+                                        )
+                                    }
+                                />
+                            </Animated.View>
 
-                            <Text style={styles.sectionLabel}>
-                                Amount per buy
-                            </Text>
-                            <Text style={styles.amountValue}>
-                                {formatUsdc(amountPerTick)} USDC
-                            </Text>
-                            <Text style={styles.amountCaption}>
-                                {percent}% of your budget each buy
-                            </Text>
-                            <SegmentedControl
-                                options={PERCENT_SEGMENTS}
-                                value={String(percent)}
-                                onChange={(id) => setPercent(Number(id))}
-                            />
-                            <AmountSlider
-                                min={PERCENT_MIN}
-                                max={PERCENT_MAX}
-                                step={PERCENT_STEP}
-                                value={percent}
-                                onChange={setPercent}
-                            />
-                            {belowRoundMinimum && (
-                                <View style={styles.errorRow}>
+                            <Animated.View
+                                entering={staggerIn(1)}
+                                style={styles.section}
+                            >
+                                <Text style={styles.sectionLabel}>
+                                    Amount per buy
+                                </Text>
+                                {/* Hero number: reacts to every slider tick,
+                                    shrinking to fit and flashing danger below
+                                    the Jupiter round minimum. */}
+                                <FitText
+                                    text={formatUsdc(amountPerTick)}
+                                    suffix="USDC"
+                                    baseFontSize={52}
+                                    minFontSize={30}
+                                    color={
+                                        belowRoundMinimum
+                                            ? colors.danger
+                                            : colors.textStrong
+                                    }
+                                />
+                                <Text style={styles.amountCaption}>
+                                    {percent}% of your budget each buy
+                                </Text>
+                                <SegmentedControl
+                                    options={PERCENT_SEGMENTS}
+                                    value={String(percent)}
+                                    onChange={(id) => setPercent(Number(id))}
+                                />
+                                <AmountSlider
+                                    min={PERCENT_MIN}
+                                    max={PERCENT_MAX}
+                                    step={PERCENT_STEP}
+                                    value={percent}
+                                    onChange={setPercent}
+                                />
+                                {belowRoundMinimum && (
+                                    <View style={styles.errorRow}>
+                                        <Ionicons
+                                            name="alert-circle-outline"
+                                            size={14}
+                                            color={colors.danger}
+                                        />
+                                        <Text style={styles.errorText}>
+                                            Each buy needs at least 10 USDC.
+                                            Raise the percentage or the budget.
+                                        </Text>
+                                    </View>
+                                )}
+                            </Animated.View>
+
+                            <Animated.View
+                                entering={staggerIn(2)}
+                                style={styles.section}
+                            >
+                                <Text style={styles.sectionLabel}>Cadence</Text>
+                                <SegmentedControl
+                                    options={CADENCE_SEGMENTS}
+                                    value={cadenceId}
+                                    onChange={(id) =>
+                                        setCadenceId(id as CadenceId)
+                                    }
+                                />
+
+                                <View style={styles.mathCard}>
                                     <Ionicons
-                                        name="alert-circle-outline"
+                                        name="repeat-outline"
                                         size={14}
-                                        color={colors.danger}
+                                        color={colors.primary}
                                     />
-                                    <Text style={styles.errorText}>
-                                        Each buy needs at least 10 USDC. Raise
-                                        the percentage or the budget.
+                                    <Text style={styles.mathLine}>
+                                        {`${formatUsdc(amountPerTick)} USDC of ${ticker ?? 'stock'} every ${CADENCE_NOUNS[cadenceId]}, ${buys} buys over ${humanDuration(buys * intervalSec)}.`}
                                     </Text>
                                 </View>
-                            )}
-
-                            <Text style={styles.sectionLabel}>Cadence</Text>
-                            <SegmentedControl
-                                options={CADENCE_SEGMENTS}
-                                value={cadenceId}
-                                onChange={(id) =>
-                                    setCadenceId(id as CadenceId)
-                                }
-                            />
-
-                            <View style={styles.mathCard}>
-                                <Ionicons
-                                    name="repeat-outline"
-                                    size={14}
-                                    color={colors.primary}
-                                />
-                                <Text style={styles.mathLine}>
-                                    {`${formatUsdc(amountPerTick)} USDC of ${ticker ?? 'stock'} every ${CADENCE_NOUNS[cadenceId]}, ${buys} buys over ${humanDuration(buys * intervalSec)}.`}
-                                </Text>
-                            </View>
+                            </Animated.View>
                         </View>
                     )}
 
                     {step === 2 && selectedToken && (
                         <View style={styles.section}>
-                            <View style={styles.groupCard}>
-                                <View style={styles.groupRow}>
-                                    <TokenLogo
-                                        ticker={selectedToken.ticker}
-                                        size={28}
-                                    />
-                                    <View style={styles.groupRowTextCol}>
-                                        <Text style={styles.summaryTicker}>
-                                            {selectedToken.ticker}
-                                        </Text>
-                                        <Text style={styles.summaryName}>
-                                            {selectedToken.name}
-                                        </Text>
-                                    </View>
-                                </View>
-                                <View style={styles.groupSeparator} />
-                                <View style={styles.summaryRow}>
-                                    <Text style={styles.summaryLabel}>
-                                        Per buy
-                                    </Text>
-                                    <Text style={styles.summaryValue}>
-                                        {formatUsdc(amountPerTick)} USDC
-                                    </Text>
-                                </View>
-                                <View style={styles.groupSeparator} />
-                                <View style={styles.summaryRow}>
-                                    <Text style={styles.summaryLabel}>
-                                        Cadence
-                                    </Text>
-                                    <Text style={styles.summaryValue}>
-                                        Every {CADENCE_NOUNS[cadenceId]}
-                                    </Text>
-                                </View>
-                                <View style={styles.groupSeparator} />
-                                <View style={styles.summaryRow}>
-                                    <Text style={styles.summaryLabel}>
-                                        Total budget
-                                    </Text>
-                                    <Text style={styles.summaryValue}>
-                                        {formatUsdc(budget)} USDC
-                                    </Text>
-                                </View>
-                                <View style={styles.groupSeparator} />
-                                <View style={styles.summaryRow}>
-                                    <Text style={styles.summaryLabel}>
-                                        Buys
-                                    </Text>
-                                    <Text style={styles.summaryValue}>
-                                        {buys} over{' '}
-                                        {humanDuration(buys * intervalSec)}
-                                    </Text>
-                                </View>
-                            </View>
-
-                            <ReviewSummary
-                                ticker={selectedToken.ticker}
-                                amountPerTick={amountPerTick}
-                                cadenceWord={cadenceWord}
-                                budget={budget}
-                            />
-                            {recreate && (
-                                <Text style={styles.recreateText}>
-                                    Recreating a plan: confirming first cancels
-                                    your old plan (unspent USDC returns to your
-                                    wallet), then creates this one. A login
-                                    message signature if needed, then a cancel
-                                    signature and a deposit signature.
+                            {/* Hero recap: the plan at a glance before the
+                                fine print, sized to fit whatever the numbers
+                                are. */}
+                            <Animated.View
+                                entering={staggerIn(0)}
+                                style={styles.reviewHero}
+                            >
+                                <TokenLogo
+                                    ticker={selectedToken.ticker}
+                                    size={48}
+                                />
+                                <FitText
+                                    text={`${formatUsdc(amountPerTick)} USDC`}
+                                    suffix={`every ${CADENCE_NOUNS[cadenceId]}`}
+                                    baseFontSize={28}
+                                    minFontSize={18}
+                                    fontFamily={fonts.bold}
+                                />
+                                <Text style={styles.reviewHeroName}>
+                                    {`${selectedToken.name} · auto-buy plan`}
                                 </Text>
-                            )}
+                            </Animated.View>
 
-                            <View style={styles.groupCard}>
-                                {FACTS.map((fact, index) => (
-                                    <View key={fact.icon}>
-                                        {index > 0 && (
-                                            <View
-                                                style={styles.groupSeparator}
-                                            />
-                                        )}
-                                        <View style={styles.groupRow}>
-                                            <Ionicons
-                                                name={fact.icon}
-                                                size={16}
-                                                color={colors.primary}
-                                            />
-                                            <Text style={styles.factText}>
-                                                {fact.text}
+                            <Animated.View entering={staggerIn(1)}>
+                                <View style={styles.groupCard}>
+                                    <View style={styles.groupRow}>
+                                        <TokenLogo
+                                            ticker={selectedToken.ticker}
+                                            size={28}
+                                        />
+                                        <View style={styles.groupRowTextCol}>
+                                            <Text style={styles.summaryTicker}>
+                                                {selectedToken.ticker}
+                                            </Text>
+                                            <Text style={styles.summaryName}>
+                                                {selectedToken.name}
                                             </Text>
                                         </View>
                                     </View>
-                                ))}
-                            </View>
-
-                            {wallet.connected ? (
-                                <>
-                                    <Text style={styles.approvalsText}>
-                                        {recreate
-                                            ? "You'll approve a login message (once per ~24h), a cancel signature, and a deposit signature."
-                                            : "You'll approve a login message (once per ~24h) and 1 deposit signature."}
-                                    </Text>
-                                    {error !== null && (
-                                        <Text style={styles.errorText}>
-                                            {error}
+                                    <View style={styles.groupSeparator} />
+                                    <View style={styles.summaryRow}>
+                                        <Text style={styles.summaryLabel}>
+                                            Per buy
                                         </Text>
-                                    )}
-                                    {submitting && (
-                                        <View style={styles.submittingRow}>
-                                            <ActivityIndicator
-                                                size="small"
-                                                color={colors.primary}
-                                            />
-                                            <Text
-                                                style={styles.submittingText}
-                                            >
-                                                {progressStep
-                                                    ? STEP_LABELS[progressStep]
-                                                    : recreate
-                                                      ? 'Approve the login message, then the cancel and deposit signatures…'
-                                                      : 'Approve the login message, then 1 deposit signature…'}
-                                            </Text>
-                                        </View>
-                                    )}
-                                </>
-                            ) : (
-                                <View style={styles.groupCard}>
-                                    <View style={styles.connectRow}>
-                                        <Ionicons
-                                            name="wallet-outline"
-                                            size={28}
-                                            color={colors.textMuted}
-                                        />
-                                        <Text style={styles.connectText}>
-                                            Connect wallet in onboarding first
+                                        <Text style={styles.summaryValue}>
+                                            {formatUsdc(amountPerTick)} USDC
+                                        </Text>
+                                    </View>
+                                    <View style={styles.groupSeparator} />
+                                    <View style={styles.summaryRow}>
+                                        <Text style={styles.summaryLabel}>
+                                            Cadence
+                                        </Text>
+                                        <Text style={styles.summaryValue}>
+                                            Every {CADENCE_NOUNS[cadenceId]}
+                                        </Text>
+                                    </View>
+                                    <View style={styles.groupSeparator} />
+                                    <View style={styles.summaryRow}>
+                                        <Text style={styles.summaryLabel}>
+                                            Total budget
+                                        </Text>
+                                        <Text style={styles.summaryValue}>
+                                            {formatUsdc(budget)} USDC
+                                        </Text>
+                                    </View>
+                                    <View style={styles.groupSeparator} />
+                                    <View style={styles.summaryRow}>
+                                        <Text style={styles.summaryLabel}>
+                                            Buys
+                                        </Text>
+                                        <Text style={styles.summaryValue}>
+                                            {buys} over{' '}
+                                            {humanDuration(buys * intervalSec)}
                                         </Text>
                                     </View>
                                 </View>
-                            )}
+                            </Animated.View>
+
+                            <Animated.View
+                                entering={staggerIn(2)}
+                                style={styles.section}
+                            >
+                                <ReviewSummary
+                                    ticker={selectedToken.ticker}
+                                    amountPerTick={amountPerTick}
+                                    cadenceWord={cadenceWord}
+                                    budget={budget}
+                                />
+                                {recreate && (
+                                    <Text style={styles.recreateText}>
+                                        Recreating a plan: confirming first
+                                        cancels your old plan (unspent USDC
+                                        returns to your wallet), then creates
+                                        this one. A login message signature if
+                                        needed, then a cancel signature and a
+                                        deposit signature.
+                                    </Text>
+                                )}
+                            </Animated.View>
+
+                            <Animated.View entering={staggerIn(3)}>
+                                <View style={styles.groupCard}>
+                                    {FACTS.map((fact, index) => (
+                                        <View key={fact.icon}>
+                                            {index > 0 && (
+                                                <View
+                                                    style={
+                                                        styles.groupSeparator
+                                                    }
+                                                />
+                                            )}
+                                            <View style={styles.groupRow}>
+                                                <Ionicons
+                                                    name={fact.icon}
+                                                    size={16}
+                                                    color={colors.primary}
+                                                />
+                                                <Text style={styles.factText}>
+                                                    {fact.text}
+                                                </Text>
+                                            </View>
+                                        </View>
+                                    ))}
+                                </View>
+                            </Animated.View>
+
+                            <Animated.View entering={staggerIn(4)}>
+                                {wallet.connected ? (
+                                    <View style={styles.section}>
+                                        <Text style={styles.approvalsText}>
+                                            {recreate
+                                                ? "You'll approve a login message (once per ~24h), a cancel signature, and a deposit signature."
+                                                : "You'll approve a login message (once per ~24h) and 1 deposit signature."}
+                                        </Text>
+                                        {error !== null && (
+                                            <Text style={styles.errorText}>
+                                                {error}
+                                            </Text>
+                                        )}
+                                        {submitting && (
+                                            <View style={styles.submittingRow}>
+                                                <ActivityIndicator
+                                                    size="small"
+                                                    color={colors.primary}
+                                                />
+                                                <Text
+                                                    style={
+                                                        styles.submittingText
+                                                    }
+                                                >
+                                                    {progressStep
+                                                        ? STEP_LABELS[
+                                                              progressStep
+                                                          ]
+                                                        : recreate
+                                                          ? 'Approve the login message, then the cancel and deposit signatures…'
+                                                          : 'Approve the login message, then 1 deposit signature…'}
+                                                </Text>
+                                            </View>
+                                        )}
+                                    </View>
+                                ) : (
+                                    <View style={styles.groupCard}>
+                                        <View style={styles.connectRow}>
+                                            <Ionicons
+                                                name="wallet-outline"
+                                                size={28}
+                                                color={colors.textMuted}
+                                            />
+                                            <Text style={styles.connectText}>
+                                                Connect wallet in onboarding
+                                                first
+                                            </Text>
+                                        </View>
+                                    </View>
+                                )}
+                            </Animated.View>
                         </View>
                     )}
                 </Animated.View>
@@ -860,16 +831,6 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         gap: spacing.xs,
         paddingBottom: spacing.md,
-    },
-    dots: {
-        flexDirection: 'row',
-        justifyContent: 'center',
-        gap: spacing.sm,
-    },
-    dot: {
-        height: 8,
-        borderRadius: 4,
-        backgroundColor: colors.primary,
     },
     body: {
         flexShrink: 1,
@@ -956,13 +917,16 @@ const styles = StyleSheet.create({
         fontSize: typography.small,
         fontFamily: 'DMSans_400Regular',
     },
-    amountValue: {
-        color: colors.textStrong,
-        fontSize: typography.heading,
-        fontFamily: 'DMSans_700Bold',
-        fontVariant: ['tabular-nums'],
+    reviewHero: {
+        alignItems: 'center',
+        gap: spacing.xs,
+        paddingVertical: spacing.xs,
+    },
+    reviewHeroName: {
+        color: colors.textMuted,
+        fontSize: typography.small,
+        fontFamily: 'DMSans_500Medium',
         textAlign: 'center',
-        marginTop: spacing.xs,
     },
     amountCaption: {
         color: colors.textMuted,
@@ -970,42 +934,6 @@ const styles = StyleSheet.create({
         fontFamily: 'DMSans_500Medium',
         textAlign: 'center',
         marginTop: 2,
-    },
-    segmented: {
-        flexDirection: 'row',
-        backgroundColor: landing.glass,
-        borderRadius: radius.sm,
-        borderWidth: 1,
-        borderColor: landing.glassBorder,
-        padding: SEGMENTED_PAD,
-    },
-    segmentIndicator: {
-        position: 'absolute',
-        top: SEGMENTED_PAD,
-        bottom: SEGMENTED_PAD,
-        left: SEGMENTED_PAD,
-        borderRadius: radius.sm - SEGMENTED_PAD,
-        backgroundColor: 'rgba(141,201,246,0.14)',
-        borderWidth: 1,
-        borderColor: colors.primary,
-    },
-    segment: {
-        flex: 1,
-        height: 38,
-        alignItems: 'center',
-        justifyContent: 'center',
-    },
-    segmentDisabled: {
-        opacity: 0.35,
-    },
-    segmentText: {
-        color: colors.textMuted,
-        fontSize: typography.small,
-        fontFamily: 'DMSans_500Medium',
-    },
-    segmentTextSelected: {
-        color: colors.primary,
-        fontFamily: 'DMSans_600SemiBold',
     },
     mathCard: {
         flexDirection: 'row',

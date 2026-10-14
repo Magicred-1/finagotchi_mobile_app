@@ -1,7 +1,9 @@
 import React, { useState } from 'react';
 import { Image, StyleSheet, Text, View } from 'react-native';
+import { SvgXml } from 'react-native-svg';
 
 import { colors } from '../../theme/tokens';
+import { BRAND_TOKEN_ICONS } from './brandTokenIcons';
 import { tokenLogoUrl } from './format';
 
 type Props = {
@@ -10,12 +12,14 @@ type Props = {
 };
 
 /**
- * xStock logo with a permanent letter fallback: the muted circle renders
- * underneath (no spinner while loading), and a failed fetch just never
- * covers it.
+ * Token logo with a permanent letter fallback: branded web3icons SVGs for
+ * SOL/USDC (bundled, crisp at any size), the Backed metadata host for
+ * xStocks, and the muted circle underneath it all (no spinner while
+ * loading, a failed fetch just never covers it).
  */
 export function TokenLogo({ ticker, size = 28 }: Props) {
     const [failed, setFailed] = useState(false);
+    const brandSvg = BRAND_TOKEN_ICONS[ticker];
 
     return (
         <View
@@ -27,15 +31,26 @@ export function TokenLogo({ ticker, size = 28 }: Props) {
             <Text style={[styles.letter, { fontSize: size * 0.45 }]}>
                 {ticker.charAt(0)}
             </Text>
-            {!failed && (
-                <Image
-                    source={{ uri: tokenLogoUrl(ticker) }}
-                    style={[
-                        StyleSheet.absoluteFill,
-                        { borderRadius: size / 2 },
-                    ]}
-                    onError={() => setFailed(true)}
+            {brandSvg ? (
+                <SvgXml
+                    xml={brandSvg}
+                    width={size}
+                    height={size}
+                    // Same overlay as the remote Image below: without this the
+                    // SVG stacks under the letter instead of covering it.
+                    style={StyleSheet.absoluteFill}
                 />
+            ) : (
+                !failed && (
+                    <Image
+                        source={{ uri: tokenLogoUrl(ticker) }}
+                        style={[
+                            StyleSheet.absoluteFill,
+                            { borderRadius: size / 2 },
+                        ]}
+                        onError={() => setFailed(true)}
+                    />
+                )
             )}
         </View>
     );

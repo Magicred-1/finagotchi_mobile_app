@@ -1,6 +1,7 @@
 import React, { useMemo } from 'react';
 
 import type { SupportedToken } from '../../services/dca';
+import { Skeleton } from '../../components/Skeleton';
 import { WheelPicker, type WheelItem } from './WheelPicker';
 import { formatChange, formatPrice, type TokenQuote } from './prices';
 import { TokenLogo } from './TokenLogo';
@@ -43,7 +44,11 @@ export function TokenWheelPicker({
                     title: token.ticker,
                     subtitle: token.name,
                     leading: <TokenLogo ticker={token.ticker} size={32} />,
-                    trailingTitle: quote ? formatPrice(quote.price) : '–',
+                    // Price still loading: breathe a skeleton instead of '–'.
+                    trailing: quote ? undefined : (
+                        <Skeleton width={52} height={13} borderRadius={6} />
+                    ),
+                    trailingTitle: quote ? formatPrice(quote.price) : undefined,
                     trailingSubtitle: quote
                         ? formatChange(quote.change24h)
                         : undefined,
