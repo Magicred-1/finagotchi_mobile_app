@@ -53,7 +53,8 @@ Android — requested at runtime).
 - `useBle.ts` — scan → filter by the Finagotchi service UUID → connect →
   discover → subscribe. Exposes `sendCommand(cmd)` with a serialized write
   queue (writes never overlap; `;`-separated commands are sent one per
-  write). Negotiates MTU 185 on Android. Unexpected disconnects trigger
+  write). Negotiates MTU 256 on Android and reads the negotiated limit before
+  Wi-Fi provisioning. Unexpected disconnects trigger
   auto-reconnect with exponential backoff; `reconnect()` retries manually.
 - `types.ts` — UUIDs, status,
   `<stage>:<streak>:<mood>:<item>:<points>:<happy>` parser, hook interface.

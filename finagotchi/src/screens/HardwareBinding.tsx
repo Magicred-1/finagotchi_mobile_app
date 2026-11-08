@@ -30,7 +30,8 @@ import {
     saveWifiCredentials,
     useFinagotchiDevice,
     useWifiAutoSyncStore,
-    writeWifiCredentialsToDevice,
+    useWifiProvisioning,
+    validateWifiCredentials,
 } from '../features/ble';
 import { useDcaSyncEngine } from '../services/ble/SyncEngine';
 import { requestDeviceToken } from '../features/dbs/client';
@@ -90,9 +91,12 @@ export default function HardwareBinding() {
     const [ssid, setSsid] = useState('');
     const [password, setPassword] = useState('');
     const [rememberNetwork, setRememberNetwork] = useState(true);
-    const [provisioning, setProvisioning] = useState(false);
-    const [provisionError, setProvisionError] = useState<string | null>(null);
+    const [requestingToken, setRequestingToken] = useState(false);
     const [cloudLinked, setCloudLinked] = useState(false);
+    const deviceTokenRef = useRef<string | null>(null);
+    const { sendState, sendError, send } = useWifiProvisioning(ble);
+    const provisioning =
+        requestingToken || sendState === 'sending' || sendState === 'joining';
 
     const autoSync = useWifiAutoSyncStore();
 
@@ -214,12 +218,8 @@ export default function HardwareBinding() {
 
     async function handleProvision() {
         if (!connectedDevice) return;
-        setProvisioning(true);
-        setProvisionError(null);
+        setRequestingToken(true);
         try {
-            // When the wallet is server-authed, also issue a device token so
-            // the hardware can pull pet state from the API while standalone.
-            // Without it, fall back to Wi-Fi-only provisioning.
             let deviceToken: string | null = null;
             const wallet = useWalletStore.getState().address;
             const consent = useOnboardingStore.getState().serverAuthConsentAt;
@@ -230,31 +230,21 @@ export default function HardwareBinding() {
                     deviceToken = null;
                 }
             }
-
-            // Contract §2: "<ssid>\n<pass>" (optional third field carries the
-            // device token), one separator, no trailing newline. Firmware
-            // rejects writes on an unencrypted link.
-            await writeWifiCredentialsToDevice(
-                connectedDevice,
-                ssid,
-                password,
-                deviceToken
-            );
-
-            setCloudLinked(deviceToken !== null);
-            if (rememberNetwork) {
-                await saveWifiCredentials(ssid, password);
-            }
-            setStep('done');
-        } catch (e) {
-            setProvisionError(
-                e instanceof Error ? e.message : 'Provisioning write failed.'
-            );
+            deviceTokenRef.current = deviceToken;
+            await send(ssid, password, deviceToken);
         } finally {
-            setProvisioning(false);
+            setRequestingToken(false);
         }
     }
 
+    useEffect(() => {
+        if (sendState !== 'done') return;
+        setCloudLinked(deviceTokenRef.current !== null);
+        if (rememberNetwork) void saveWifiCredentials(ssid, password);
+        setStep('done');
+    }, [sendState, rememberNetwork, ssid, password]);
+
+    const validationError = validateWifiCredentials(ssid, password);
     const scanStatusText = scanning
         ? 'Searching for nearby Finagotchi…'
         : connecting
@@ -402,10 +392,16 @@ export default function HardwareBinding() {
                                 autoCorrect={false}
                                 secureTextEntry
                             />
-                            {provisionError && (
+                            {sendError && (
+                                <Text style={styles.errorText}>{sendError}</Text>
+                            )}
+                            {sendState === 'pairing-required' && (
                                 <Text style={styles.errorText}>
-                                    {provisionError}
+                                    Enter the PCB's 6-digit code in the system pairing dialog, then send again.
                                 </Text>
+                            )}
+                            {validationError && ssid.length > 0 && (
+                                <Text style={styles.errorText}>{validationError}</Text>
                             )}
                             <View style={styles.rememberRow}>
                                 <View style={styles.rememberInfo}>
@@ -427,10 +423,19 @@ export default function HardwareBinding() {
                                     }}
                                 />
                             </View>
+                            {autoSync.lastResult === 'sent' && (
+                                <Text style={styles.syncLabel}>
+                                    Wi-Fi sent — waiting for the PCB to join '{autoSync.lastSsid}'.
+                                </Text>
+                            )}
                             {autoSync.lastResult === 'synced' && (
                                 <Text style={styles.syncLabel}>
-                                    Auto-sync: pushed '{autoSync.lastSsid}' on
-                                    connect
+                                    PCB confirmed it joined '{autoSync.lastSsid}'.
+                                </Text>
+                            )}
+                            {autoSync.lastResult === 'join-failed' && (
+                                <Text style={styles.errorText}>
+                                    Auto-sync could not join '{autoSync.lastSsid}'.
                                 </Text>
                             )}
                             {autoSync.lastResult === 'unknown-network' && (
@@ -452,9 +457,15 @@ export default function HardwareBinding() {
                                 </Text>
                             )}
                             <Button
-                                title="Provision Wi-Fi"
+                                title={
+                                    sendState === 'joining'
+                                        ? 'Joining Wi-Fi…'
+                                        : sendState === 'pairing-required'
+                                          ? 'Send again'
+                                          : 'Provision Wi-Fi'
+                                }
                                 loading={provisioning}
-                                disabled={!ssid.trim() || provisioning}
+                                disabled={Boolean(validationError) || provisioning}
                                 onPress={handleProvision}
                             />
                         </View>

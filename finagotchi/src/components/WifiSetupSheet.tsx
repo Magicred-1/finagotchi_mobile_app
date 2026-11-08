@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
     ActivityIndicator,
     StyleSheet,
@@ -21,48 +21,16 @@ import { colors, fonts, radius, spacing, typography } from '../theme/tokens';
 import {
     getExpoLocation,
     hasLocationPermission,
-    isPairingRequiredError,
     requestLocationPermission,
     saveWifiCredentials,
     useWifiAutoSyncStore,
-    writeWifiCredentialsToDevice,
-    WifiProvisionTimeoutError,
+    useWifiProvisioning,
+    validateWifiCredentials,
     type FinagotchiBle,
-    type WifiFailureCode,
 } from '../features/ble';
 import { requestDeviceToken } from '../features/dbs/client';
 import { useWalletStore } from '../features/wallet/store';
 import { useOnboardingStore } from '../features/onboarding/store';
-
-/** Firmware contract: ssid 1–32 chars, passphrase 0 (open) or 8–63 chars. */
-function validate(ssid: string, password: string): string | null {
-    if (ssid.trim().length === 0 || ssid.length > 32) {
-        return 'Wi-Fi name must be 1–32 characters.';
-    }
-    if (password.length > 0 && (password.length < 8 || password.length > 63)) {
-        return 'Password must be 8–63 characters (or empty for an open network).';
-    }
-    return null;
-}
-
-/** The device takes ~10 s to attempt a join; verdicts arrive as wifi: lines. */
-const JOIN_VERDICT_TIMEOUT_MS = 15_000;
-
-/** Per-code failure copy for the device's join verdict. */
-const WIFI_FAILURE_COPY: Record<WifiFailureCode, string> = {
-    ssid: "Network not found — check the name exactly. iPhone hotspot names use a curly apostrophe (’), not a straight one (').",
-    auth: 'Wrong password — try again.',
-    ip: 'Joined but no internet address — try again in a moment.',
-    off: "The device didn't attempt the join.",
-};
-
-type SendState =
-    | 'idle'
-    | 'sending'
-    | 'joining'
-    | 'pairing-required'
-    | 'failed'
-    | 'done';
 
 /**
  * Wi-Fi provisioning as a sheet over the device connection UX: the SSID is
@@ -89,30 +57,18 @@ export function WifiSetupSheet({
     const [password, setPassword] = useState('');
     const [showPassword, setShowPassword] = useState(false);
     const [rememberNetwork, setRememberNetwork] = useState(true);
-    const [sendState, setSendState] = useState<SendState>('idle');
-    const [sendError, setSendError] = useState<string | null>(null);
-    /** SSID the device confirmed it joined (from the wifi:ok verdict). */
-    const [joinedSsid, setJoinedSsid] = useState<string | null>(null);
+    const [requestingToken, setRequestingToken] = useState(false);
     const [locationGranted, setLocationGranted] = useState<boolean | null>(null);
-
-    // Verdict bookkeeping: ignore wifi: lines older than the current attempt.
-    const joinStartRef = useRef(0);
-    const joinTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-
+    const { sendState, sendError, joinedSsid, send, reset } = useWifiProvisioning(ble);
     const autoSync = useWifiAutoSyncStore();
 
-    // SSID detection capability: location permission + the ExpoLocation native
-    // module (absent on older dev clients — then it's manual entry only).
     const detectionAvailable = getExpoLocation() !== null;
 
-    // Fresh state on each open; prefill the SSID when permitted.
     useEffect(() => {
         if (!visible) return;
         setPassword('');
         setShowPassword(false);
-        setSendState('idle');
-        setSendError(null);
-        setJoinedSsid(null);
+        reset();
         if (!detectionAvailable) return;
         let cancelled = false;
         void (async () => {
@@ -134,7 +90,7 @@ export function WifiSetupSheet({
         return () => {
             cancelled = true;
         };
-    }, [visible, detectionAvailable]);
+    }, [visible, detectionAvailable, reset]);
 
     async function handleUseCurrentNetwork() {
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -151,14 +107,10 @@ export function WifiSetupSheet({
     }
 
     async function handleSend() {
-        const device = connectedDevice;
-        if (!device) return;
+        if (!connectedDevice) return;
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-        setSendState('sending');
-        setSendError(null);
+        setRequestingToken(true);
         try {
-            // When the wallet is server-authed, also issue a device token so
-            // the hardware can pull pet state from the API while standalone.
             let deviceToken: string | null = null;
             const wallet = useWalletStore.getState().address;
             const consent = useOnboardingStore.getState().serverAuthConsentAt;
@@ -169,79 +121,23 @@ export function WifiSetupSheet({
                     deviceToken = null;
                 }
             }
-
-            await writeWifiCredentialsToDevice(device, ssid, password, deviceToken);
-
-            // The write being accepted is not the verdict: the join itself
-            // takes ~10 s and the device reports back with a wifi: line.
-            joinStartRef.current = Date.now();
-            setSendState('joining');
-            if (joinTimer.current) clearTimeout(joinTimer.current);
-            joinTimer.current = setTimeout(() => {
-                joinTimer.current = null;
-                setSendState('failed');
-                setSendError(
-                    'No answer from the device — check its screen to see if it joined.'
-                );
-            }, JOIN_VERDICT_TIMEOUT_MS);
-        } catch (e) {
-            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-            if (isPairingRequiredError(e)) {
-                // The write attempt itself raised the OS pairing dialog; if
-                // the user dismissed or failed it, offer guided retry.
-                setSendState('pairing-required');
-                setSendError(null);
-            } else if (e instanceof WifiProvisionTimeoutError) {
-                setSendState('failed');
-                setSendError(
-                    'The device did not answer in time. Stay close and try again.'
-                );
-            } else {
-                setSendState('failed');
-                setSendError(
-                    e instanceof Error ? e.message : 'Provisioning write failed.'
-                );
-            }
+            await send(ssid, password, deviceToken);
+        } finally {
+            setRequestingToken(false);
         }
     }
 
-    // The device's join verdict arrives as a wifi: notification on the state
-    // characteristic; only verdicts newer than the current attempt count.
-    const wifiResult = ble.wifiResult;
     useEffect(() => {
-        if (sendState !== 'joining' || !wifiResult) return;
-        if (wifiResult.at < joinStartRef.current) return;
-        if (joinTimer.current) {
-            clearTimeout(joinTimer.current);
-            joinTimer.current = null;
-        }
-        if (wifiResult.ok) {
-            setJoinedSsid(wifiResult.ssid ?? null);
-            setSendState('done');
-            if (rememberNetwork) {
-                void saveWifiCredentials(ssid, password);
-            }
+        if (sendState === 'done') {
+            if (rememberNetwork) void saveWifiCredentials(ssid, password);
             Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-            return;
+        } else if (sendState === 'failed') {
+            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
         }
-        setSendState('failed');
-        setSendError(
-            wifiResult.code
-                ? WIFI_FAILURE_COPY[wifiResult.code]
-                : 'The join failed — try again.'
-        );
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-    }, [wifiResult, sendState, rememberNetwork, ssid, password]);
+    }, [sendState, rememberNetwork, ssid, password]);
 
-    useEffect(
-        () => () => {
-            if (joinTimer.current) clearTimeout(joinTimer.current);
-        },
-        []
-    );
-
-    const validationError = validate(ssid, password);
-    const sending = sendState === 'sending';
+    const validationError = validateWifiCredentials(ssid, password);
+    const sending = requestingToken || sendState === 'sending';
 
     return (
         <BottomSheet visible={visible} onClose={onClose} title="Wi-Fi Setup">
@@ -275,10 +171,19 @@ export function WifiSetupSheet({
                         </View>
                     )}
 
+                    {autoSync.lastResult === 'sent' && (
+                        <Text style={styles.autoSyncNote}>
+                            Wi-Fi sent — waiting for the Finagotchi to join '{autoSync.lastSsid}'.
+                        </Text>
+                    )}
                     {autoSync.lastResult === 'synced' && (
                         <Text style={styles.autoSyncNote}>
-                            Auto-sync pushed '{autoSync.lastSsid}' on connect —
-                            you're already set.
+                            Finagotchi confirmed it joined '{autoSync.lastSsid}'.
+                        </Text>
+                    )}
+                    {autoSync.lastResult === 'join-failed' && (
+                        <Text style={styles.errorText}>
+                            Auto-sync could not join '{autoSync.lastSsid}' — check the network and password.
                         </Text>
                     )}
                     {autoSync.lastResult === 'unknown-network' && (

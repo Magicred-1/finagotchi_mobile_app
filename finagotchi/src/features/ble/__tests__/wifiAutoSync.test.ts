@@ -5,7 +5,11 @@ import type { Device } from 'react-native-ble-plx';
 
 import { FINAGOTCHI_SERVICE_UUID, PROVISIONING_CHAR_UUID } from '../types';
 import { hasLocationPermission } from '../locationPermission';
-import { autoSyncWifiToDevice, useWifiAutoSyncStore } from '../wifiAutoSync';
+import {
+    autoSyncWifiToDevice,
+    noteWifiJoinResult,
+    useWifiAutoSyncStore,
+} from '../wifiAutoSync';
 import { saveWifiCredentials } from '../wifiCredentials';
 
 vi.mock('@react-native-community/netinfo', () => ({
@@ -60,7 +64,7 @@ beforeEach(async () => {
 
 describe('autoSyncWifiToDevice', () => {
     it('pushes saved credentials for the current network and dedupes repeats', async () => {
-        await saveWifiCredentials('HomeWifi', 'hunter2');
+        await saveWifiCredentials('HomeWifi', 'hunter23');
         onWifi('HomeWifi');
         const { device, write } = makeDevice('dev-sync');
 
@@ -70,16 +74,40 @@ describe('autoSyncWifiToDevice', () => {
         expect(write).toHaveBeenCalledWith(
             FINAGOTCHI_SERVICE_UUID,
             PROVISIONING_CHAR_UUID,
-            Buffer.from('HomeWifi\nhunter2', 'utf8').toString('base64'),
+            Buffer.from('HomeWifi\nhunter23', 'utf8').toString('base64'),
         );
         expect(useWifiAutoSyncStore.getState()).toMatchObject({
             lastSsid: 'HomeWifi',
-            lastResult: 'synced',
+            lastResult: 'sent',
         });
 
-        // Double openConnection for the same physical connect: no second write.
         await autoSyncWifiToDevice(device);
         expect(write).toHaveBeenCalledTimes(1);
+    });
+
+    it('marks the network synced only after the PCB confirms the join', async () => {
+        await saveWifiCredentials('HomeWifi', 'hunter23');
+        onWifi('HomeWifi');
+        const { device } = makeDevice('dev-verdict');
+
+        await autoSyncWifiToDevice(device);
+        expect(useWifiAutoSyncStore.getState().lastResult).toBe('sent');
+
+        noteWifiJoinResult({ ok: true, ssid: 'HomeWifi', at: Date.now() });
+        expect(useWifiAutoSyncStore.getState().lastResult).toBe('synced');
+    });
+
+    it('reports a failed join and allows a later retry', async () => {
+        await saveWifiCredentials('HomeWifi', 'hunter23');
+        onWifi('HomeWifi');
+        const { device, write } = makeDevice('dev-join-fail');
+
+        await autoSyncWifiToDevice(device);
+        noteWifiJoinResult({ ok: false, code: 'auth', at: Date.now() });
+
+        expect(useWifiAutoSyncStore.getState().lastResult).toBe('join-failed');
+        await autoSyncWifiToDevice(device);
+        expect(write).toHaveBeenCalledTimes(2);
     });
 
     it('records unknown-network and writes nothing for an unsaved SSID', async () => {
@@ -123,7 +151,7 @@ describe('autoSyncWifiToDevice', () => {
     });
 
     it('records write-failed and retries on the next connect', async () => {
-        await saveWifiCredentials('HomeWifi', 'hunter2');
+        await saveWifiCredentials('HomeWifi', 'hunter23');
         onWifi('HomeWifi');
         const { device, write } = makeDevice('dev-fail');
         write.mockRejectedValueOnce(new Error('link not encrypted'));
@@ -135,6 +163,6 @@ describe('autoSyncWifiToDevice', () => {
 
         await autoSyncWifiToDevice(device);
         expect(write).toHaveBeenCalledTimes(2);
-        expect(useWifiAutoSyncStore.getState().lastResult).toBe('synced');
+        expect(useWifiAutoSyncStore.getState().lastResult).toBe('sent');
     });
 });

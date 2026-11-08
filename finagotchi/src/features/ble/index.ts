@@ -28,6 +28,7 @@ export {
 } from './wifiCredentials';
 export {
     autoSyncWifiToDevice,
+    noteWifiJoinResult,
     useWifiAutoSyncStore,
     type WifiAutoSyncResult,
 } from './wifiAutoSync';
@@ -38,6 +39,12 @@ export {
 } from './locationPermission';
 export {
     isPairingRequiredError,
+    validateWifiCredentials,
     writeWifiCredentialsToDevice,
+    WifiProvisionMtuError,
     WifiProvisionTimeoutError,
 } from './wifiProvision';
+export {
+    useWifiProvisioning,
+    type WifiProvisionSendState,
+} from './useWifiProvisioning';

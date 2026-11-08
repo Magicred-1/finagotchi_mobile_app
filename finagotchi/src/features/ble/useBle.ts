@@ -16,7 +16,8 @@ import {
     type FinagotchiState,
     type WifiResult,
 } from './types';
-import { autoSyncWifiToDevice } from './wifiAutoSync';
+import { autoSyncWifiToDevice, noteWifiJoinResult } from './wifiAutoSync';
+import { isPairingRequiredError } from './wifiProvision';
 
 export {
     FINAGOTCHI_CHARACTERISTIC_UUID,
@@ -75,6 +76,7 @@ export function useFinagotchiBle(): FinagotchiBle {    const [status, setStatus]
     const [deviceState, setDeviceState] = useState<FinagotchiState | null>(null);
     const [deviceRequest, setDeviceRequest] = useState<DeviceRequest | null>(null);
     const [wifiResult, setWifiResult] = useState<WifiResult | null>(null);
+    const [writePayloadBytes, setWritePayloadBytes] = useState(DEFAULT_WRITE_PAYLOAD);
     const [error, setError] = useState<string | null>(null);
 
     const monitorSub = useRef<Subscription | null>(null);
@@ -99,7 +101,11 @@ export function useFinagotchiBle(): FinagotchiBle {    const [status, setStatus]
     const handleNotification = useCallback((raw: string) => {
         if (isWifiResultLine(raw)) {
             const result = parseWifiResult(raw);
-            if (result) setWifiResult({ ...result, at: Date.now() });
+            if (result) {
+                const stamped = { ...result, at: Date.now() };
+                setWifiResult(stamped);
+                noteWifiJoinResult(stamped);
+            }
             return;
         }
         const request = parseDeviceRequest(raw);
@@ -216,9 +222,6 @@ export function useFinagotchiBle(): FinagotchiBle {    const [status, setStatus]
 
                 if (Platform.OS === 'android') {
                     try {
-                        // High priority (short connection interval) keeps the
-                        // link responsive and less likely to be dropped by the
-                        // stack. Requested before MTU, and never fatal.
                         await device.requestConnectionPriority(
                             ConnectionPriority.High
                         );
@@ -226,20 +229,21 @@ export function useFinagotchiBle(): FinagotchiBle {    const [status, setStatus]
                         console.warn('[BLE] connection priority request failed:', e);
                     }
                     try {
-                        // Resolves with the Device on success; Android grants the
-                        // requested MTU or rejects, so the payload is known.
-                        await device.requestMTU(REQUESTED_MTU);
-                        writePayload.current = REQUESTED_MTU - 3;
+                        const negotiated = await device.requestMTU(REQUESTED_MTU);
+                        writePayload.current = Math.max(
+                            DEFAULT_WRITE_PAYLOAD,
+                            negotiated.mtu - 3
+                        );
                     } catch (e) {
                         console.warn('[BLE] MTU negotiation failed, using default:', e);
                         writePayload.current = DEFAULT_WRITE_PAYLOAD;
                     }
+                } else {
+                    writePayload.current = Math.max(DEFAULT_WRITE_PAYLOAD, device.mtu - 3);
                 }
+                setWritePayloadBytes(writePayload.current);
 
-                // Pairing-required firmware rejects this read until the bond
-                // exists — the read attempt is what raises the OS pairing
-                // dialog. Never fail the connect over it: monitoring still
-                // comes up, and notifications flow once paired.
+                let pairingPending = false;
                 try {
                     const initial = await device.readCharacteristicForService(
                         FINAGOTCHI_SERVICE_UUID,
@@ -251,6 +255,7 @@ export function useFinagotchiBle(): FinagotchiBle {    const [status, setStatus]
                         );
                     }
                 } catch (e) {
+                    pairingPending = isPairingRequiredError(e);
                     console.warn('[BLE] initial read failed (pairing pending?):', e);
                 }
 
@@ -259,10 +264,7 @@ export function useFinagotchiBle(): FinagotchiBle {    const [status, setStatus]
                     FINAGOTCHI_SERVICE_UUID,
                     FINAGOTCHI_CHARACTERISTIC_UUID,
                     (monError, characteristic) => {
-                        if (monError) {
-                            // Fires on disconnect too; handled by onDeviceDisconnected.
-                            return;
-                        }
+                        if (monError) return;
                         if (characteristic?.value) {
                             handleNotification(
                                 Buffer.from(characteristic.value, 'base64').toString(
@@ -283,9 +285,29 @@ export function useFinagotchiBle(): FinagotchiBle {    const [status, setStatus]
                 connectedDeviceRef.current = device;
                 setConnectedDevice(device);
                 setStatus('connected');
-                // Push saved Wi-Fi credentials for the phone's current network
-                // (best effort, deduped across hook instances).
-                void autoSyncWifiToDevice(device).catch(() => {});
+
+                void (async () => {
+                    for (let attempt = 0; attempt < 30; attempt++) {
+                        if (connectedDeviceRef.current?.id !== device.id) return;
+                        if (pairingPending) {
+                            try {
+                                await device.readCharacteristicForService(
+                                    FINAGOTCHI_SERVICE_UUID,
+                                    FINAGOTCHI_CHARACTERISTIC_UUID
+                                );
+                                pairingPending = false;
+                            } catch (error) {
+                                if (!isPairingRequiredError(error)) return;
+                                await new Promise<void>((resolve) =>
+                                    setTimeout(resolve, 2000)
+                                );
+                                continue;
+                            }
+                        }
+                        await autoSyncWifiToDevice(device, writePayload.current);
+                        return;
+                    }
+                })().catch(() => {});
                 return true;
             } catch (e) {
                 console.warn('[BLE] connection setup failed:', e);
@@ -491,6 +513,7 @@ export function useFinagotchiBle(): FinagotchiBle {    const [status, setStatus]
         deviceState,
         deviceRequest,
         wifiResult,
+        writePayloadBytes,
         error,
         startScan,
         stopScan,

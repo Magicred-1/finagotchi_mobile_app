@@ -130,6 +130,8 @@ export interface FinagotchiBle {
     deviceRequest: DeviceRequest | null;
     /** Last `wifi:ok`/`wifi:fail` join verdict, or null since connect. */
     wifiResult: WifiResult | null;
+    /** Payload available for one write on the negotiated BLE connection. */
+    writePayloadBytes: number;
     error: string | null;
     startScan: () => void;
     stopScan: () => void;
